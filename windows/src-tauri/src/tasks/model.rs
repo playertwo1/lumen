@@ -760,4 +760,83 @@ mod tests {
         };
         assert!(bad.validate().is_err());
     }
+
+    // Espelha a seção 8 de segundamente/docs/lumen/CONTRATO-SYNC.md (exemplos 8.1 a 8.3, sintéticos).
+    // A fixture é cópia exata desses envelopes; se os dois divergirem, o contrato manda.
+    #[test]
+    fn contrato_sync_v1_task_envelopes_match_the_model() {
+        let raw = include_str!("../../tests/fixtures/contrato-sync-v1-task.json");
+        let envelopes: Vec<serde_json::Value> = serde_json::from_str(raw).expect("fixture is a JSON array");
+        assert_eq!(envelopes.len(), 3);
+
+        for env in &envelopes {
+            assert_eq!(env["contract_version"], 1);
+            assert!(env.get("op").is_none(), "contract v1 has no op");
+            assert_eq!(env["entity_type"], "task");
+            let base = env["base_version"].as_u64().unwrap();
+            let new = env["new_version"].as_u64().unwrap();
+            assert_eq!(new, base + 1);
+            assert_eq!(env["entity_id"], env["payload"]["id"]);
+            assert_eq!(new, env["payload"]["version"].as_u64().unwrap());
+        }
+
+        let item = |i: usize| -> TodoItem { serde_json::from_value(envelopes[i]["payload"].clone()).expect("payload is a TodoItem") };
+
+        // 8.1: tarefa criada no PC.
+        let created = item(0);
+        assert_eq!(created.id, "task-syn-001");
+        assert_eq!(created.text, "Revisar pauta da reunião semanal");
+        assert_eq!(created.due, "2026-11-15 09:00");
+        assert_eq!(created.due_date.as_deref(), Some("2026-11-15"));
+        assert_eq!(created.due_time.as_deref(), Some("09:00"));
+        assert_eq!(created.priority, TodoPriority::High);
+        assert_eq!(
+            created.subtasks,
+            vec![TodoSubtask { id: "sub-syn-1".into(), text: "Separar tópicos".into(), done: false }]
+        );
+        assert_eq!(created.recurrence, None);
+        assert!(!created.done);
+        assert_eq!(created.done_at, None);
+        assert_eq!(created.version, 1);
+        assert_eq!(created.deleted_at, None);
+
+        // 8.2: conclusão no celular.
+        let done = item(1);
+        assert_eq!(done.id, "task-syn-001");
+        assert_eq!(done.text, "Revisar pauta da reunião semanal");
+        assert_eq!(done.due, "2026-11-15 09:00");
+        assert_eq!(done.due_date.as_deref(), Some("2026-11-15"));
+        assert_eq!(done.due_time.as_deref(), Some("09:00"));
+        assert_eq!(done.priority, TodoPriority::High);
+        assert_eq!(
+            done.subtasks,
+            vec![TodoSubtask { id: "sub-syn-1".into(), text: "Separar tópicos".into(), done: true }]
+        );
+        assert_eq!(done.recurrence, None);
+        assert!(done.done);
+        assert_eq!(done.done_at.as_deref(), Some("2026-11-15T08:45:00Z"));
+        assert_eq!(done.version, 2);
+        assert_eq!(done.deleted_at, None);
+
+        // 8.3: exclusão no PC (tombstone) de tarefa semanal sem data.
+        let tombstone = item(2);
+        assert_eq!(tombstone.id, "task-syn-002");
+        assert_eq!(tombstone.text, "Regar as plantas da varanda");
+        assert_eq!(tombstone.due, "");
+        assert_eq!(tombstone.due_date, None);
+        assert_eq!(tombstone.due_time, None);
+        assert_eq!(tombstone.priority, TodoPriority::Low);
+        assert!(tombstone.subtasks.is_empty());
+        assert_eq!(
+            tombstone.recurrence,
+            Some(TodoRecurrence { frequency: TodoRepeatFrequency::Weekly, weekdays: vec![2, 5], day_of_month: None })
+        );
+        assert_eq!(tombstone.series_id.as_deref(), Some("series-syn-002"));
+        assert!(!tombstone.done);
+        assert_eq!(tombstone.done_at, None);
+        assert_eq!(tombstone.source, None);
+        assert!(!tombstone.source_stale);
+        assert_eq!(tombstone.version, 4);
+        assert_eq!(tombstone.deleted_at.as_deref(), Some("2026-11-16T10:00:00Z"));
+    }
 }

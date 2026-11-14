@@ -33,7 +33,7 @@ Operações dentro do `Room` Durable Object (`ctx.storage.sql`):
 - **Schema SQLite inicializado sob demanda** (somente ao receber requisição `/v1/mailbox/`; conexões exclusivas `/v1/room/` continuam sem tocar storage):
   - `mailbox_meta (id INTEGER PRIMARY KEY CHECK (id = 1), join_verifier TEXT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, next_seq INTEGER NOT NULL DEFAULT 1)`
   - `mailbox_messages (seq INTEGER PRIMARY KEY, recipient TEXT NOT NULL, msg_id TEXT, size_bytes INTEGER NOT NULL, created_at INTEGER NOT NULL, payload BLOB NOT NULL)` + índice único parcial `(recipient, msg_id)` quando `msg_id IS NOT NULL`.
-  - `mailbox_daily_usage (day TEXT PRIMARY KEY, writes INTEGER NOT NULL DEFAULT 0, reads INTEGER NOT NULL DEFAULT 0, enqueued_bytes INTEGER NOT NULL DEFAULT 0)`
+  - `mailbox_daily_usage (day TEXT PRIMARY KEY, writes INTEGER NOT NULL DEFAULT 0, requests INTEGER NOT NULL DEFAULT 0, enqueued_bytes INTEGER NOT NULL DEFAULT 0)`
 - **Verificação de sala (`join_verifier` & `revoked`):**
   - Na primeira operação `/v1/mailbox/` da sala (exceto `POST`), se ainda não há metadados e for `POST /messages`, grava `join_verifier = SHA-256(K_join)`.
   - Se a sala já estiver marcada `revoked = 1`, responde `410 Gone`.
@@ -44,7 +44,7 @@ Operações dentro do `Room` Durable Object (`ctx.storage.sql`):
     - Header opcional `X-Lumen-Msg-Id` (`[A-Za-z0-9_-]{8,64}`): se já existir para aquele `recipient`, devolve `200 OK` com o `seq` já gravado sem gastar escrita duplicada nem duplicar entrega.
     - Faz limpeza preguiçosa (`DELETE` por TTL > 30 dias) apenas quando necessário antes de checar limites: máx. `500` mensagens pendentes por destinatário e máx. `16 MiB` totais na sala (excesso -> `507 Insufficient Storage`).
     - Insere mensagem, avança `next_seq` e soma no `mailbox_daily_usage` na mesma transação (`201 Created` com `{ seq, id, createdAt, storedMessages, storedBytes, freePlan }`).
-  - `GET /v1/mailbox/<room>/messages?for=pc|phone&after=<seq>&limit=<1..50>`
+  - `GET /v1/mailbox/<room>/messages?for=pc|phone&after=<seq>&limit=<1..100>`
     - Retorna `{ messages: [{ seq, id, createdAt, sizeBytes, payloadB64 }], latestSeq, pendingCount, freePlan }`.
     - Se a sala ainda não tiver sido inicializada (nunca recebeu `POST`), responde `200` com lista vazia **sem** gravar nada no SQLite (0 escritas).
   - `POST /v1/mailbox/<room>/ack?for=pc|phone`
