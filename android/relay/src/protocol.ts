@@ -106,3 +106,119 @@ export class Bucket {
 
 export const PEER_ONLINE = '{"peer":"online"}';
 export const PEER_OFFLINE = '{"peer":"offline"}';
+
+// ── Persistent E2EE mailbox (L6.1 / D-054) ──────────────────────────────────────
+
+export const MAILBOX_MAX_BYTES = MAX_FRAME;
+export const MAILBOX_MAX_ROOM_BYTES = 16 * 1024 * 1024;
+export const MAILBOX_MAX_PENDING_PER_ROLE = 500;
+export const MAILBOX_DEFAULT_LIMIT = 50;
+export const MAILBOX_MAX_LIMIT = 100;
+export const MAILBOX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const FREE_PLAN_DAILY_REQUESTS = 100_000;
+export const FREE_PLAN_DAILY_DO_WRITES = 100_000;
+export const FREE_PLAN_MAX_STORAGE_BYTES = 5 * 1024 * 1024 * 1024;
+export const MSG_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+
+export type MailboxAction =
+  | { room: string; kind: "messages"; method: "POST"; to: Role }
+  | { room: string; kind: "messages"; method: "GET"; recipient: Role; after: number; limit: number }
+  | { room: string; kind: "ack"; method: "POST"; recipient: Role }
+  | { room: string; kind: "revoke"; method: "POST" }
+  | { room: string; kind: "stats"; method: "GET" };
+
+export interface FreePlanReport {
+  day: string;
+  dailyWrites: number;
+  dailyWriteLimit: number;
+  dailyWritePct: number;
+  dailyRequests: number;
+  dailyRequestLimit: number;
+  enqueuedBytesToday: number;
+  roomBytes: number;
+  roomBytesLimit: number;
+  accountStorageLimitBytes: number;
+}
+
+function parseRoleParam(raw: string | null): Role | null {
+  return raw === "pc" || raw === "phone" ? raw : null;
+}
+
+/** Parses `/v1/mailbox/<22 chars>/(messages|ack|revoke|stats)` or returns `"method"` (405) / `null` (404). */
+export function parseMailboxRequest(url: URL, method: string): MailboxAction | "method" | null {
+  const m = /^\/v1\/mailbox\/([^/]+)\/(messages|ack|revoke|stats)$/.exec(url.pathname);
+  if (!m || !ROOM_ID.test(m[1])) return null;
+  const room = m[1];
+  const endpoint = m[2];
+  if (endpoint === "messages") {
+    if (method === "POST") {
+      const to = parseRoleParam(url.searchParams.get("to"));
+      return to ? { room, kind: "messages", method: "POST", to } : null;
+    }
+    if (method === "GET") {
+      const recipient = parseRoleParam(url.searchParams.get("for"));
+      if (!recipient) return null;
+      const afterRaw = url.searchParams.get("after");
+      const after = afterRaw === null ? 0 : Number(afterRaw);
+      if (!Number.isInteger(after) || after < 0) return null;
+      const limitRaw = url.searchParams.get("limit");
+      const limit = limitRaw === null ? MAILBOX_DEFAULT_LIMIT : Number(limitRaw);
+      if (!Number.isInteger(limit) || limit < 1 || limit > MAILBOX_MAX_LIMIT) return null;
+      return { room, kind: "messages", method: "GET", recipient, after, limit };
+    }
+    return "method";
+  }
+  if (endpoint === "ack") {
+    if (method !== "POST") return "method";
+    const recipient = parseRoleParam(url.searchParams.get("for"));
+    return recipient ? { room, kind: "ack", method: "POST", recipient } : null;
+  }
+  if (endpoint === "revoke") {
+    return method === "POST" ? { room, kind: "revoke", method: "POST" } : "method";
+  }
+  return method === "GET" ? { room, kind: "stats", method: "GET" } : "method";
+}
+
+export function parseMailboxJoinHeader(header: string | null): string | null {
+  const value = (header ?? "").trim();
+  return B64URL_32.test(value) ? value : null;
+}
+
+export function parseMailboxMsgId(header: string | null): string | null | "invalid" {
+  if (header === null) return null;
+  const trimmed = header.trim();
+  if (!trimmed) return null;
+  return MSG_ID_RE.test(trimmed) ? trimmed : "invalid";
+}
+
+export function utcDayKey(nowMs: number = Date.now()): string {
+  return new Date(nowMs).toISOString().slice(0, 10);
+}
+
+export function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+export function buildFreePlanReport(
+  daily: { day: string; writes: number; requests: number; enqueuedBytes: number },
+  roomBytes: number,
+): FreePlanReport {
+  const dailyWritePct = Number(((daily.writes / FREE_PLAN_DAILY_DO_WRITES) * 100).toFixed(4));
+  return {
+    day: daily.day,
+    dailyWrites: daily.writes,
+    dailyWriteLimit: FREE_PLAN_DAILY_DO_WRITES,
+    dailyWritePct,
+    dailyRequests: daily.requests,
+    dailyRequestLimit: FREE_PLAN_DAILY_REQUESTS,
+    enqueuedBytesToday: daily.enqueuedBytes,
+    roomBytes,
+    roomBytesLimit: MAILBOX_MAX_ROOM_BYTES,
+    accountStorageLimitBytes: FREE_PLAN_MAX_STORAGE_BYTES,
+  };
+}

@@ -183,3 +183,14 @@ The access key can be rotated as often as the user likes: it protects the quota,
 - An attacker who knows both the access key and a room id could occupy an empty room before its owner connects (the join
   proof is not stored); the owner sees “room is taken” and does “Pair again”.
 - Free-tier quota can be exhausted by anyone who holds the access key.
+
+## 10. L6.1 Persistent E2EE Mailbox (`android/relay/`)
+
+For offline sync between Lumen and Segunda Mente (`docs/lumen/CONTRATO-SYNC.md` / `D-054`), the same Worker (`android/relay/`, SQLite-backed `Room` Durable Object) adds `/v1/mailbox/<room>/` HTTP endpoints without touching `relay/` (which remains macOS APNs only):
+
+- `POST /v1/mailbox/<room>/messages?to=pc|phone` (raw opaque binary up to 66,000 bytes, `Authorization: Bearer <access>`, `X-Lumen-Join: <K_join>`, optional `X-Lumen-Msg-Id` for idempotent retry dedup): persists ciphertext in Room SQLite (`K_join` verifier pinned on first write, TTL 30 days, caps 500 msgs/role and 16 MiB/room).
+- `GET /v1/mailbox/<room>/messages?for=pc|phone&after=<seq>&limit=<1..100>`: pulls queued ciphertexts with `seq > after` (0 DO SQLite writes on idle polls).
+- `POST /v1/mailbox/<room>/ack?for=pc|phone` with `{ "uptoSeq": N }`: deletes acknowledged ciphertexts after local commit.
+- `POST /v1/mailbox/<room>/revoke`: deletes all queued ciphertexts, permanently marks the room `410 Gone`, and closes open WebSockets (`1008 revoked`).
+- `GET /v1/mailbox/<room>/stats`: reports room byte/message counts and UTC daily write count measured against Cloudflare Free limits (`100,000` reqs/day, `100,000` DO SQLite writes/day, `5 GB` total).
+- Live WebSocket `/v1/room/<room>` remains storage-free whenever `/v1/mailbox/` is not initialized on that room.

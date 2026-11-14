@@ -94,11 +94,11 @@ Depende de: F11-01 da Segunda Mente (modelo de tarefa fixado).
 - [x] Animação P3 da L5 (código e testes sintéticos em 2026-11-14): evento `"mail-inbox-summarized"` aciona `triggerMailInboxSummary()` em `CompassEngine`, fazendo um envelope descer suavemente até pousar na palma aberta sem trajetória de saída nem sugestão de envio, respeitando `prefers-reduced-motion` e voltando a `busy = false`.
 
 ### L6 — Sync com a Segunda Mente (G)
-Depende de: F12-01 da Segunda Mente (contrato de sync).
-- [ ] L6.1 Caixa de correio persistente no relay (`relay/`, Worker com Durable Objects/SQLite): mensagem cifrada fica guardada até o outro lado buscar. Uso medido contra o plano Free.
-- [ ] L6.2 Pareamento com a Segunda Mente Android pelo protocolo existente (`docs/ANDROID_LINK.md`, `docs/RELAY_LINK.md`), com revogação.
-- [ ] L6.3 Outbox, aplicação idempotente e status "salvo neste PC" separado de "sincronizado".
-- [ ] L6.4 Escopo: tarefas, notas, conversas e comentários, personas, preferências e memória resumida. Concluir ou adiar num aparelho cancela o aviso no outro. (QwenPaw) A memória resumida atualiza cada conclusão por uma de quatro ações (criar, corroborar, refinar, corrigir), em vez de acumular notas repetidas; o formato é fixado com a Segunda Mente no contrato F12-01.
+Depende de: F12-01 da Segunda Mente (contrato de sync — rascunho canônico criado em `segundamente/docs/lumen/CONTRATO-SYNC.md` aguardando revisão do proprietário; spec/plano em `docs/superpowers/specs/2026-11-14-l6-sync-segunda-mente.md` e `docs/superpowers/plans/2026-11-14-l61-mailbox-relay.md`).
+- [x] L6.1 (código e testes sintéticos em 2026-11-14; uso real em conta Cloudflare pendente) Caixa de correio persistente no Worker do link (`android/relay/`, mantendo `relay/` intacto para APNs/Mac) com Durable Objects + SQLite (`Room`): `POST /v1/mailbox/<room>/messages`, `GET /messages`, `POST /ack`, `POST /revoke` (`410`) e `GET /stats` com medição direta contra os limites do plano Free (`100.000` req/dia, `100.000` escritas SQL/dia, teto `16 MiB`/sala, `500` mensagens/papel e TTL `30d`), deduplicação por `X-Lumen-Msg-Id`, zero gravações em `/v1/room/` quando a mailbox não é inicializada e espelho no gêmeo Node (`tools/dev-relay.ts`).
+- [ ] L6.2 Pareamento com a Segunda Mente Android pelo protocolo existente (`docs/ANDROID_LINK.md`, `docs/RELAY_LINK.md`), com revogação. (Aguardando aprovação de `F12-01`.)
+- [ ] L6.3 Outbox, aplicação idempotente e status "salvo neste PC" separado de "sincronizado". (Aguardando aprovação de `F12-01`.)
+- [ ] L6.4 Escopo: tarefas, notas, conversas e comentários, personas, preferências e memória resumida. Concluir ou adiar num aparelho cancela o aviso no outro. (QwenPaw) A memória resumida atualiza cada conclusão por uma de quatro ações (criar, corroborar, refinar, corrigir), em vez de acumular notas repetidas; o formato é fixado com a Segunda Mente no contrato F12-01. (Aguardando aprovação de `F12-01`.)
 - Checkpoint L6: com o celular desligado, a tarefa criada no PC chega ao celular uma vez quando ele reconecta, e o alarme dele toca.
 - Animação P3 (adiada até a L6): duas bolinhas percorrem o trajeto de sync; poses diferentes distinguem “salvo neste PC” de “sincronizado”.
 
