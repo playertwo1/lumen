@@ -186,9 +186,9 @@ export function showsUpdateHint(waiting: boolean, state: BotStateName, pending: 
 }
 
 /** The release page of this version, for "All changes". */
-export function releasePage(platform: "windows" | "linux", version: string): string {
-  const owner = LUMEN_WINDOWS && platform === "windows" ? "playertwo1" : "Louis-CFM";
-  return `https://github.com/${owner}/coucou/releases/tag/${platform}-v${encodeURIComponent(version)}`;
+export function releasePage(platform: "windows" | "linux", version: string, lumen = LUMEN_WINDOWS): string {
+  const repo = lumen && platform === "windows" ? "playertwo1/lumen" : "Louis-CFM/coucou";
+  return `https://github.com/${repo}/releases/tag/${platform}-v${encodeURIComponent(version)}`;
 }
 
 /** Buy Mochi a coffee: the same Stripe link as the Coucou page (docs/index.html). */

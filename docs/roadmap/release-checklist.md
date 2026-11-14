@@ -12,6 +12,19 @@
 - [x] Comparar os SHA-256 dos instaladores publicados com o preflight. Os hashes diferiram; os assets finais foram baixados, conferidos com os digests do GitHub e examinados diretamente pelo Defender sem detecções (evento 1001, exame `{9AD2DD74-E9E4-4DCE-8E77-D2954870AA9F}`).
 - Nunca executar esta lista de publicação sem o proprietário pedir release.
 
+## Windows 0.7.0 — Etapa L3 (Anotador, personas e animação P3) e links completos para `playertwo1/lumen` (publicação local)
+
+- [x] Pedido explícito do proprietário em 2026-11-14 para versionar como `0.7.0`, apontar links/atualizador para o repositório próprio `playertwo1/lumen`, empacotar e publicar localmente (`no-github-actions`).
+- [x] `update.rs` já apontava para `playertwo1/lumen` desde a `0.6.18`; `share.ts` e `whats-new.ts` foram atualizados para `playertwo1/lumen` nesta release. `lumen.exe` não contém a string `playertwo1/coucou` e contém `playertwo1/lumen`.
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.0: 3 items in 1 languages`), `npm run build` (`tsc --noEmit && vite build`), `npm test` (`676/676`), `cargo test --lib` (`676` passaram, `8` ignorados), `cargo test` em `windows/hook/` (`37/37`) e `npm run pack`.
+- [x] Microsoft Defender (`MpCmdRun.exe -Scan -ScanType 3 -File <arquivo> -DisableRemediation`) examinou os quatro arquivos: código 0 e `found no threats`.
+- [x] SHA-256:
+  - MSI `Lumen-Windows-0.7.0.msi`: `FB7D6D625A598DF3CDA3E84C1171BB5F3C366BA12155AB30316ECD8BF5FD1F87`.
+  - Setup `Lumen-Windows-0.7.0-setup.exe`: `E053F9A40B2EFE48683BB519F14AEC435882CB460DED4234FB13F848B4D26CF2`.
+  - App `lumen.exe`: `1AA310EB0708E0A5FAAADE78C39683B627129909FF87E5616389FB522311DAC2`.
+  - Hook `lumen-hook.exe`: `A9312C960360CC68A57828040519ACD122D969B46BD9BA6550363265C701C43E`.
+- [ ] Proprietário instalar a `0.7.0` (ou atualizar da `0.6.18` via `playertwo1/lumen`), testar o Checkpoint L3 real no notebook e confirmar o fluxo de atualização em `playertwo1/lumen`. Continua **NOT_RUN**.
+
 ## Windows 0.6.18 — personagens (L1.4) e repositório próprio (publicação local)
 
 - [x] Pedido do proprietário em 2026-11-14: publicar as correções dos personagens e sair do fork. Repositório novo público `playertwo1/lumen`, com o histórico e as tags do fork. O remote `origin` passa a ser `playertwo1/lumen`; o fork antigo virou o remote `fork`.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Windows 0.7.0 — 14 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Anotador de pensamentos e ideias (`L3.1`)** — captura de voz apenas pelo microfone (`notes_start`/`notes_idea`, sem gravar áudio do sistema) e criação rápida de notas em texto (`notes_create_text`), resumidas pelo provedor ativo no chat (`chatgpt` OAuth, Anthropic, compatíveis, CLI ou servidor local).
+- **Comentários das personas nas notas (`L3.2`)** — importação manual de personas (formato QwenPaw em 3 partes e `CharacterModel`), roteamento por afinidade/LLM, fios de resposta com `@menção`, limite de turnos e trava contra duplicação (`commentHash`, `characterId` e guardião em memória).
+- **Animação P3** — ao criar uma nota (`"note-created"`), o companheiro no Canvas rabisca em um minicarderno em modo completo ou compacto, respeitando `prefers-reduced-motion`.
+- **Repositório próprio `playertwo1/lumen`** — além do atualizador (`update.rs`), os links de novidades (“Todas as mudanças”) e o rodapé do resumo semanal passam a apontar para [playertwo1/lumen](https://github.com/playertwo1/lumen).
+
 ## Windows 0.6.18 — 14 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Personagens sem corte vertical e versão mini/compacta (`L1.4`)** — os personagens Canvas não são mais cortados no alto da ilha e ganham uma versão reduzida para a ilha compacta.

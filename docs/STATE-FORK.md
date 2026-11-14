@@ -1,6 +1,6 @@
 # STATE do fork — ponto de retomada
 
-**Atualizado:** 2026-11-14 · **Última release:** [`windows-v0.6.16`](https://github.com/playertwo1/coucou/releases/tag/windows-v0.6.16) (Lumen; L2 aprovado) · **Fase da vez:** [Fase L — Lumen + Segunda Mente](roadmap/fase-l-lumen.md), L0 concluída; L1.4a e L1.4d-1/d-2/d-3/d-4 aprovadas visualmente; protótipo L1.4b entregue; Canvas escolhido na L1.4c; L1.3 e L1.4 reais em avaliação; Checkpoint L2 fechado em 2026-11-14 (`0.6.16`); L3.1, L3.2 e animação P3 implementadas e validadas sinteticamente (aguardando Checkpoint L3 real no notebook)
+**Atualizado:** 2026-11-14 · **Última release:** [`windows-v0.7.0`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.0) (Lumen; L2 aprovado, L3 empacotada) · **Fase da vez:** [Fase L — Lumen + Segunda Mente](roadmap/fase-l-lumen.md), L0 concluída; L1.4a e L1.4d-1/d-2/d-3/d-4 aprovadas visualmente; protótipo L1.4b entregue; Canvas escolhido na L1.4c; L1.3 e L1.4 reais em avaliação; Checkpoint L2 fechado em 2026-11-14 (`0.6.16`); L3.1, L3.2 e animação P3 implementadas, validadas sinteticamente e empacotadas em `windows-v0.7.0` no repositório próprio `playertwo1/lumen` (aguardando Checkpoint L3 real no notebook)
 
 Este arquivo guarda só o estado atual e a próxima ação. Fases, checkpoints e evidências ficam nos arquivos de `docs/roadmap/`, e a ordem fica no [ROADMAP-FORK](ROADMAP-FORK.md).
 

@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.0",
+      "items": [
+        {
+          "icon": "mic",
+          "title": { "pt-BR": "Anotador de ideias pelo microfone e texto" },
+          "detail": { "pt-BR": "Capture pensamentos rápidos por voz (sem áudio do sistema) ou texto usando seu provedor ativo do chat." }
+        },
+        {
+          "icon": "chat",
+          "title": { "pt-BR": "Comentários das personas nas suas notas" },
+          "detail": { "pt-BR": "Importe personas locais, responda com @menção e veja o Lumen rabiscar no bloquinho ao salvar notas." }
+        },
+        {
+          "icon": "update",
+          "title": { "pt-BR": "Atualizações direto de playertwo1/lumen" },
+          "detail": { "pt-BR": "Verificação de novas versões e links de novidades agora apontam para o repositório próprio do Lumen." }
+        }
+      ]
+    },
+    {
       "version": "0.6.18",
       "items": [
         {

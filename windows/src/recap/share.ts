@@ -30,7 +30,7 @@ const T = {
   get longestSession() { return t("Longest session"); },
   get approved() { return t("Approved"); },
   get denied() { return t("Denied"); },
-  get footer() { return `${PRODUCT_NAME} · github.com/${LUMEN_WINDOWS ? "playertwo1" : "Louis-CFM"}/coucou`; },
+  get footer() { return `${PRODUCT_NAME} · github.com/${LUMEN_WINDOWS ? "playertwo1/lumen" : "Louis-CFM/coucou"}`; },
 };
 
 /**
