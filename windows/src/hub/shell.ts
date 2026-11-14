@@ -13,7 +13,7 @@ import { icon, keyLabel } from "./ui";
 import { searchSettings, type SettingsSearchHit } from "./search";
 
 export type PageId =
-  | "dictation" | "notes" | "insights" | "dictionary" | "snippets" | "styles" | "flowsettings"
+  | "dictation" | "notes" | "tasks" | "insights" | "dictionary" | "snippets" | "styles" | "flowsettings"
   | "general" | "pills" | "agents" | "chat" | "voice" | "integrations" | "phone" | "shortcuts"
   | "mailOverview" | "mailRules" | "mailBanned" | "mailVIP";
 
@@ -28,6 +28,7 @@ interface PageDef {
 export const FLOW_PAGES: PageDef[] = [
   { id: "dictation", icon: "mic", title: () => t("Dictation") },
   { id: "notes", icon: "record", title: () => (LUMEN_WINDOWS ? "Anotador" : t("Notetaker")) },
+  { id: "tasks", icon: "check", title: () => "Tarefas" },
   { id: "insights", icon: "chart", title: () => t("Statistics") },
   { id: "dictionary", icon: "book", title: () => t("Dictionary") },
   { id: "snippets", icon: "bolt", title: () => t("Snippets") },

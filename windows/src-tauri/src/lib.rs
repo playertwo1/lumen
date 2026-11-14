@@ -46,6 +46,7 @@ mod shortcuts;
 mod sounds;
 mod speech;
 mod spotify;
+mod tasks;
 mod tray;
 mod update;
 mod voice;
@@ -1233,6 +1234,24 @@ pub fn run() {
             notes::notes_retry,
             notes::notes_markdown,
             notes::notes_export,
+            tasks::tasks_state,
+            tasks::tasks_propose_from_text,
+            tasks::tasks_voice_start,
+            tasks::tasks_voice_stop,
+            tasks::tasks_voice_cancel,
+            tasks::tasks_confirm_proposal,
+            tasks::tasks_create,
+            tasks::tasks_update,
+            tasks::tasks_toggle_done,
+            tasks::tasks_snooze,
+            tasks::tasks_delete,
+            tasks::tasks_restore,
+            tasks::tasks_add_subtask,
+            tasks::tasks_toggle_subtask,
+            tasks::tasks_remove_subtask,
+            tasks::tasks_save_shortcut_settings,
+            tasks::tasks_open_page,
+            tasks::tasks_preview_reminder,
             voice::voice_done,
             voice::voice_say_native,
             update::update_status,
@@ -1261,6 +1280,7 @@ pub fn run() {
             desktop::setup(&handle);
             flow::setup(&handle);
             notes::setup(&handle);
+            tasks::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
                 // Where Tauri takes the drop itself (Linux), its paths are the
@@ -1321,6 +1341,7 @@ pub fn run() {
                 }
                 phone_link::stop_on_exit(app);
                 notes::shutdown(app);
+                tasks::shutdown(app);
                 // GOWA started by Coucou stops with it; the conversations were only in memory.
                 whatsapp::shutdown();
             }

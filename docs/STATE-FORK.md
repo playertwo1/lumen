@@ -9,7 +9,7 @@ Este arquivo guarda só o estado atual e a próxima ação. Fases, checkpoints e
 | Fase | Estado |
 |---|---|
 | 0, 1, 2 | Pausadas (D-053); ver inventário L0 na Fase L |
-| L | Em andamento. L0 concluída; L1.1 B escolhida; L1.2 implementada; L1.3 aprovada sinteticamente; avaliação real da migração e L1.4 pendente; L1.4a e L1.4d-1/d-2/d-3/d-4 aprovadas visualmente; L1.4b entregue com limites de medição registrados; Canvas escolhido na L1.4c em 2026-11-13; L2.1/L2.2 e Checkpoint L2 fechados em 2026-11-14 (`0.6.16`); L3.1, L3.2 e animação P3 concluídas sinteticamente em 2026-11-14 (aguardando Checkpoint L3 real); próxima etapa após aceite L3: L4 (depende da F11-01 na Segunda Mente) |
+| L | Em andamento. L0 concluída; L1.1 B escolhida; L1.2 implementada; L1.3 aprovada sinteticamente; avaliação real da migração e L1.4 pendente; L1.4a e L1.4d-1/d-2/d-3/d-4 aprovadas visualmente; L1.4b entregue com limites de medição registrados; Canvas escolhido na L1.4c em 2026-11-13; L2.1/L2.2 e Checkpoint L2 fechados em 2026-11-14 (`0.6.16`); L3.1, L3.2 e animação P3 concluídas sinteticamente em 2026-11-14 (`windows-v0.7.1`, aguardando Checkpoint L3 real); L4.1–L4.4 e animações P3 concluídas sinteticamente em 2026-11-14 na branch `feat/l4-tarefas` (aguardando Checkpoint L4 real); próxima etapa após aceites reais L3/L4: L5 |
 | 2B, 2C | Pausadas (decisão do dono, 2026-11-13) |
 | M0–M10 | Viram "Lumen assistente"; começam depois do Checkpoint L7 |
 | 3 (identidade) | Incorporada à L1 |
@@ -21,6 +21,7 @@ Este arquivo guarda só o estado atual e a próxima ação. Fases, checkpoints e
 - Branch `codex/windows-permission-toast-synthetic`.
 - Worktree `../coucou-lumen-identity`, branch `codex/l1-lumen-identidade`: commit `c3b2af2` está em `origin/main`; tag e release `windows-v0.6.13` publicadas. CI `43424866776` e CI da release `43428181413` passaram nos testes sintéticos MSI/NSIS; Defender não detectou ameaças nos artefatos do preflight nem nos instaladores finais. L1 aguarda avaliação real do proprietário.
 - Na worktree principal há alterações locais ainda não commitadas do app sintético (`windows/synthetic/`, testes e specs de 2026-11-12). Elas são do dono e ficaram fora do commit de reestruturação de 2026-11-13.
+- **Branch `feat/l4-tarefas` (em curso, 2026-11-14):** implementação completa da L4 (L4.1–L4.4 + animações P3 no `CompassEngine`) com armazenamento local `Todo/todo.json` v2, captura rápida `Ctrl+Alt+K`/microfone/chat com cartão de confirmação editável, scheduler e WinRT Toast COM em `permission_notifications.rs`. Sintético aprovado (`npx tsc --noEmit`, 687 testes Node, `npm run build`, 694 testes Rust / 9 ignorados). **Real: NOT_RUN** (aguarda teste de voz e Toast nativo no notebook). Spec: `docs/superpowers/specs/2026-11-14-l4-tarefas-lumen.md`.
 - Branch `feat/chat-web-localizacao` (2026-11-14, pedido do dono fora da ordem das fases): chat com internet e localização. O Plano ChatGPT envia a ferramenta `web_search` do provedor em `/responses` (com repetição sem web se o plano responder 400) e o prompt leva a data de hoje e a cidade salva em Configurações → Chat → Sua localização. Sintético aprovado: `npx tsc --noEmit`, 673 testes Node, `npm run build`, 670 testes Rust (8 ignorados). **Real: NOT_RUN** (falta o dono perguntar o clima com a conta real e registrar se o plano aceita `web_search`). Sem release e sem merge na `main`. Spec: `docs/superpowers/specs/2026-11-14-chat-web-localizacao-design.md`.
 - As worktrees acima e as alterações locais do app sintético não foram alteradas nesta sessão. O preflight 0.6.12 `43402455643` foi cancelado; a tag existe, mas não há release publicada.
 
@@ -38,6 +39,7 @@ Este arquivo guarda só o estado atual e a próxima ação. Fases, checkpoints e
 
 ## Pendências do dono
 
+- **Checkpoint L4 (Tarefas):** testar na próxima build local captura por voz (`Ctrl+Alt+K` ou Hub → Tarefas) e disparo real de aviso Toast no Windows (`Adiar`, `Concluir`, `Abrir`).
 - **Checkpoint L3 (Anotador):** testar na próxima build local uma nota ditada e confirmar geração de comentário de persona sem duplicação.
 - Informar os resultados reais pendentes da instalação da 0.6.13 (MSI/NSIS, settings, hooks, permissões e atualizador).
 - Validar no uso real os novos personagens e animações no app (L1.4), além de L1.3.

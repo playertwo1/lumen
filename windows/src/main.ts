@@ -14,6 +14,7 @@ import { applySpotify, registerSpotifyHandlers } from "./island/spotify";
 import { registerCoucoudoro } from "./island/coucoudoro";
 import { registerWhatsAppHandlers } from "./island/whatsapp";
 import { MUSIC_IDS } from "./core/spotify";
+import type { TaskReminderPayload } from "./core/tasks";
 import { Recap } from "./recap/recap";
 import { Updates } from "./island/update";
 import { WhatsNew } from "./whats-new/controller";
@@ -201,6 +202,9 @@ async function main() {
   island.onWake = checkRecap;
   await onEvent<null>("recap-check", checkRecap);
   await onEvent<string>("note-created", () => island.noteCreated());
+  await onEvent<TaskReminderPayload>("task-reminder", (payload) => island.taskReminder(payload));
+  await onEvent<string>("task-snoozed", () => island.taskSnoozed());
+  await onEvent<string>("task-completed", () => island.taskCompleted());
 
   island.launch();
 

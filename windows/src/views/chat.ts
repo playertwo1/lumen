@@ -23,6 +23,8 @@ import { N_, t, tl } from "../i18n/i18n";
 import { HOST_OS } from "../core/pills";
 import { MailChat, splitPlan } from "../core/mail";
 import { mailPlanCard } from "./mailplan";
+import { splitTodoProposal } from "../core/tasks";
+import { chatTodoProposalCard } from "./tasks";
 
 const STRINGS = {
   placeholderFirst: N_("Ask me anything…"),
@@ -47,10 +49,12 @@ function bubble(message: ChatMessage): HTMLElement {
     );
   }
   const reply = h("div", { class: "reply" });
-  // A mail plan (```coucou-mail) is never shown as raw JSON: its card goes under the answer.
+  // A mail plan (```coucou-mail) or task proposal (```lumen-todo) renders as a card under the answer.
   const { prose, plan } = splitPlan(message.content);
-  renderMarkdown(reply, prose);
+  const { text: cleanProse, proposal } = splitTodoProposal(prose);
+  renderMarkdown(reply, cleanProse);
   if (plan) reply.append(mailPlanCard(`chat-${message.id}-${message.content.length}`, "", message.content));
+  if (proposal) reply.append(chatTodoProposalCard(proposal));
   return h("div", { class: "chat-row" }, reply);
 }
 
@@ -310,7 +314,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       log.querySelector(".typing")?.parentElement?.remove();
       log.append(h("div", { class: "chat-row" }, live));
     }
-    renderMarkdown(live, splitPlan(text).prose);
+    renderMarkdown(live, splitTodoProposal(splitPlan(text).prose).text);
     log.scrollTop = log.scrollHeight;
   });
 

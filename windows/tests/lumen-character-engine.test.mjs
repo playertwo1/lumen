@@ -531,3 +531,51 @@ test("Grok e Hermes Desktop desenham silhuetas distintas com inércia secundári
     );
   }
 });
+
+test("animações P3 de tarefas (lembrete, soneca e conclusão) animam, respeitam movimento reduzido e retornam ao repouso", () => {
+  const engine = new BotEngine();
+  engine.setAgent("agent_claude");
+
+  // Sino de lembrete
+  engine.triggerTaskReminder(1.0);
+  assert.equal(engine.busy, true);
+  engine.update(0.25);
+  const bellProbe = canvasProbe();
+  engine.draw(bellProbe.ctx, 96, 96);
+  assert.ok(bellProbe.ops.some((o) => o.op === "quadraticCurveTo"), "sino de lembrete deve desenhar curva do sino");
+  for (let i = 0; i < 20; i++) engine.update(0.06);
+  assert.equal(engine.busy, false);
+
+  // Soneca (empurrão do sino)
+  engine.triggerTaskSnooze(0.9);
+  assert.equal(engine.busy, true);
+  engine.update(0.25);
+  const snoozeProbe = canvasProbe();
+  engine.draw(snoozeProbe.ctx, 96, 96);
+  assert.ok(snoozeProbe.ops.some((o) => o.op === "rotate" && Math.abs(o.args[0]) > 0.05), "soneca deve inclinar o sino");
+  for (let i = 0; i < 20; i++) engine.update(0.06);
+  assert.equal(engine.busy, false);
+
+  // Checkmark esmeralda
+  engine.triggerTaskCheck(0.8);
+  assert.equal(engine.busy, true);
+  engine.update(0.25);
+  const checkProbe = canvasProbe();
+  engine.draw(checkProbe.ctx, 96, 96);
+  assert.ok(checkProbe.ops.some((o) => o.op === "stroke"), "conclusão deve traçar o visto esmeralda");
+  for (let i = 0; i < 20; i++) engine.update(0.06);
+  assert.equal(engine.busy, false);
+
+  // prefers-reduced-motion: nada fica preso em busy
+  const previousWindow = globalThis.window;
+  globalThis.window = { matchMedia: () => ({ matches: true }) };
+  try {
+    engine.triggerTaskReminder(1.0);
+    engine.triggerTaskSnooze(1.0);
+    engine.triggerTaskCheck(1.0);
+    assert.equal(engine.busy, false);
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});

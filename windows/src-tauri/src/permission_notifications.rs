@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -35,7 +36,9 @@ use windows::UI::Notifications::{ToastNotification, ToastNotificationManager, To
 const AUMID: &str = "fr.louisraille.coucou";
 const AUMID_KEY: &str = "Software\\Classes\\AppUserModelId\\fr.louisraille.coucou";
 const GROUP: &str = "permission";
+const TASK_GROUP: &str = "task";
 const TOAST_LIFETIME: Duration = Duration::from_secs(30);
+const TASK_TOAST_LIFETIME: Duration = Duration::from_secs(60 * 60 * 12);
 const CLSID: GUID = GUID::from_u128(0x5a0c5efa_c98f_4fa4_a337_012f9685bed3);
 const CLSID_TEXT: &str = "{5A0C5EFA-C98F-4FA4-A337-012F9685BED3}";
 
@@ -55,6 +58,19 @@ enum ActionKind {
     Deny,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskToastAction {
+    Snooze,
+    Complete,
+    Open,
+}
+
+#[derive(Clone)]
+struct TaskActionEntry {
+    task_id: String,
+    expires_at: Instant,
+}
+
 enum Command {
     Show {
         request_id: String,
@@ -63,6 +79,12 @@ enum Command {
         lifetime: Duration,
     },
     Clear(String),
+    ShowTask {
+        task_id: String,
+        title: String,
+        subtitle: String,
+    },
+    ClearTask(String),
     Activate {
         app_id: String,
         args: String,
@@ -71,15 +93,26 @@ enum Command {
 }
 
 #[derive(Clone)]
-pub struct PermissionToasts(Sender<Command>);
+pub struct PermissionToasts {
+    tx: Sender<Command>,
+    available: Arc<AtomicBool>,
+}
+
+impl PermissionToasts {
+    pub fn is_available(&self) -> bool {
+        self.available.load(Ordering::Relaxed)
+    }
+}
 
 pub fn start(app: AppHandle) -> PermissionToasts {
     let (tx, rx) = mpsc::channel();
     let worker_tx = tx.clone();
+    let available = Arc::new(AtomicBool::new(false));
+    let worker_avail = available.clone();
     if let Err(err) = thread::Builder::new()
         .name("coucou-permission-toasts".into())
         .spawn(move || {
-            if let Err(err) = run(app, rx, worker_tx) {
+            if let Err(err) = run(app, rx, worker_tx, worker_avail) {
                 crate::log::line(format!("permission notifications unavailable: {err}"));
             }
         })
@@ -88,7 +121,7 @@ pub fn start(app: AppHandle) -> PermissionToasts {
             "permission notifications worker could not start: {err}"
         ));
     }
-    PermissionToasts(tx)
+    PermissionToasts { tx, available }
 }
 
 pub fn show(
@@ -106,7 +139,7 @@ pub fn show(
         return false;
     };
     toasts
-        .0
+        .tx
         .send(Command::Show {
             request_id,
             session_id,
@@ -116,17 +149,40 @@ pub fn show(
         .is_ok()
 }
 
+pub fn show_task_reminder(
+    toasts: &PermissionToasts,
+    task_id: String,
+    title: String,
+    subtitle: String,
+) -> bool {
+    if !toasts.is_available() || task_id.trim().is_empty() || title.trim().is_empty() {
+        return false;
+    }
+    toasts
+        .tx
+        .send(Command::ShowTask {
+            task_id,
+            title,
+            subtitle,
+        })
+        .is_ok()
+}
+
+pub fn clear_task_reminder(toasts: &PermissionToasts, task_id: &str) {
+    let _ = toasts.tx.send(Command::ClearTask(task_id.to_owned()));
+}
+
 pub fn clear(toasts: &PermissionToasts, request_id: &str) {
-    let _ = toasts.0.send(Command::Clear(request_id.to_owned()));
+    let _ = toasts.tx.send(Command::Clear(request_id.to_owned()));
 }
 
 pub fn clear_all(toasts: &PermissionToasts) {
-    let _ = toasts.0.send(Command::Clear(String::new()));
+    let _ = toasts.tx.send(Command::Clear(String::new()));
 }
 
 pub fn shutdown(toasts: &PermissionToasts) {
     let (tx, rx) = mpsc::channel();
-    if toasts.0.send(Command::Stop(tx)).is_ok() && rx.recv_timeout(Duration::from_secs(2)).is_err()
+    if toasts.tx.send(Command::Stop(tx)).is_ok() && rx.recv_timeout(Duration::from_secs(2)).is_err()
     {
         crate::log::line("permission notifications did not stop within two seconds");
     }
@@ -136,13 +192,20 @@ pub fn set_process_app_id() -> windows::core::Result<()> {
     unsafe { SetCurrentProcessExplicitAppUserModelID(w!("fr.louisraille.coucou")) }
 }
 
-fn run(app: AppHandle, rx: Receiver<Command>, tx: Sender<Command>) -> windows::core::Result<()> {
+fn run(
+    app: AppHandle,
+    rx: Receiver<Command>,
+    tx: Sender<Command>,
+    available: Arc<AtomicBool>,
+) -> windows::core::Result<()> {
     unsafe { RoInitialize(RO_INIT_MULTITHREADED)? };
     let _apartment = Apartment;
     let _identity = register_identity()?;
     let registration = Registration::new(tx)?;
     let notifier = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(AUMID))?;
+    available.store(true, Ordering::Relaxed);
     let mut active: HashMap<String, Action> = HashMap::new();
+    let mut active_tasks: HashMap<String, TaskActionEntry> = HashMap::new();
 
     let stopped = loop {
         match rx.recv_timeout(Duration::from_secs(1)) {
@@ -174,8 +237,38 @@ fn run(app: AppHandle, rx: Receiver<Command>, tx: Sender<Command>) -> windows::c
                     remove_toast(&mut active, &token);
                 }
             }
+            Ok(Command::ShowTask {
+                task_id,
+                title,
+                subtitle,
+            }) => {
+                // Substitui qualquer toast pendente da mesma tarefa para não empilhar na Central de Ações.
+                let stale: Vec<_> = active_tasks
+                    .iter()
+                    .filter(|(_, entry)| entry.task_id == task_id)
+                    .map(|(token, _)| token.clone())
+                    .collect();
+                for token in stale {
+                    remove_task_toast(&mut active_tasks, &token);
+                }
+                if let Err(err) =
+                    show_task_toast(&notifier, &mut active_tasks, task_id, &title, &subtitle)
+                {
+                    crate::log::line(format!("task reminder toast could not be shown: {err}"));
+                }
+            }
+            Ok(Command::ClearTask(task_id)) => {
+                let tokens: Vec<_> = active_tasks
+                    .iter()
+                    .filter(|(_, entry)| task_id.is_empty() || entry.task_id == task_id)
+                    .map(|(token, _)| token.clone())
+                    .collect();
+                for token in tokens {
+                    remove_task_toast(&mut active_tasks, &token);
+                }
+            }
             Ok(Command::Activate { app_id, args }) => {
-                activate(&app, &mut active, &app_id, &args);
+                activate(&app, &mut active, &mut active_tasks, &app_id, &args);
             }
             Ok(Command::Stop(done)) => break Some(done),
             Err(RecvTimeoutError::Disconnected) => break None,
@@ -190,10 +283,22 @@ fn run(app: AppHandle, rx: Receiver<Command>, tx: Sender<Command>) -> windows::c
         for token in expired {
             remove_toast(&mut active, &token);
         }
+        let expired_tasks: Vec<_> = active_tasks
+            .iter()
+            .filter(|(_, entry)| entry.expires_at <= Instant::now())
+            .map(|(token, _)| token.clone())
+            .collect();
+        for token in expired_tasks {
+            remove_task_toast(&mut active_tasks, &token);
+        }
     };
 
+    available.store(false, Ordering::Relaxed);
     for token in active.keys().cloned().collect::<Vec<_>>() {
         remove_toast(&mut active, &token);
+    }
+    for token in active_tasks.keys().cloned().collect::<Vec<_>>() {
+        remove_task_toast(&mut active_tasks, &token);
     }
     drop(registration);
     if let Some(done) = stopped {
@@ -259,7 +364,73 @@ fn show_toast(
     Ok(())
 }
 
-fn activate(app: &AppHandle, active: &mut HashMap<String, Action>, app_id: &str, args: &str) {
+fn build_task_toast_xml(token: &str, title: &str, subtitle: &str) -> String {
+    let title = xml_escape(title);
+    let body = xml_escape(subtitle);
+    format!(
+        r#"<toast launch="task:{token}:open"><visual><binding template="ToastGeneric"><text>{title}</text><text>{body}</text></binding></visual><actions><action content="Adiar" arguments="task:{token}:snooze" activationType="foreground"/><action content="Concluir" arguments="task:{token}:complete" activationType="foreground"/><action content="Abrir" arguments="task:{token}:open" activationType="foreground"/></actions></toast>"#
+    )
+}
+
+fn show_task_toast(
+    notifier: &ToastNotifier,
+    active_tasks: &mut HashMap<String, TaskActionEntry>,
+    task_id: String,
+    title: &str,
+    subtitle: &str,
+) -> windows::core::Result<()> {
+    let token = format!(
+        "{:08x}{:08x}",
+        std::process::id(),
+        NEXT_TOKEN.fetch_add(1, Ordering::Relaxed)
+    );
+    let xml = build_task_toast_xml(&token, title, subtitle);
+    let document = XmlDocument::new()?;
+    document.LoadXml(&HSTRING::from(xml))?;
+    let toast = ToastNotification::CreateToastNotification(&document)?;
+    toast.SetTag(&HSTRING::from(&token))?;
+    toast.SetGroup(&HSTRING::from(TASK_GROUP))?;
+    let expiry = SystemTime::now() + TASK_TOAST_LIFETIME;
+    let date = DateTime {
+        UniversalTime: (expiry
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            / 100) as i64
+            + 116_444_736_000_000_000,
+    };
+    toast
+        .SetExpirationTime(&PropertyValue::CreateDateTime(date)?.cast::<IReference<DateTime>>()?)?;
+    notifier.Show(&toast)?;
+    active_tasks.insert(
+        token,
+        TaskActionEntry {
+            task_id,
+            expires_at: Instant::now() + TASK_TOAST_LIFETIME,
+        },
+    );
+    Ok(())
+}
+
+fn activate(
+    app: &AppHandle,
+    active: &mut HashMap<String, Action>,
+    active_tasks: &mut HashMap<String, TaskActionEntry>,
+    app_id: &str,
+    args: &str,
+) {
+    if let Some((token, task_action)) = parse_task_activation(app_id, args) {
+        let Some(entry) = active_tasks.remove(token) else {
+            remove_task_history(token);
+            return;
+        };
+        remove_task_history(token);
+        if entry.expires_at > Instant::now() {
+            crate::tasks::handle_toast_action(app, &entry.task_id, task_action);
+        }
+        return;
+    }
+
     let Some((token, action)) = parse_activation(app_id, args) else {
         return;
     };
@@ -305,9 +476,32 @@ fn parse_activation<'a>(app_id: &str, args: &'a str) -> Option<(&'a str, ActionK
     Some((token, kind))
 }
 
+fn parse_task_activation<'a>(app_id: &str, args: &'a str) -> Option<(&'a str, TaskToastAction)> {
+    if app_id != AUMID {
+        return None;
+    }
+    let rest = args.strip_prefix("task:")?;
+    let (token, action) = rest.split_once(':')?;
+    if token.len() != 16 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let kind = match action {
+        "snooze" => TaskToastAction::Snooze,
+        "complete" => TaskToastAction::Complete,
+        "open" => TaskToastAction::Open,
+        _ => return None,
+    };
+    Some((token, kind))
+}
+
 fn remove_toast(active: &mut HashMap<String, Action>, token: &str) {
     active.remove(token);
     remove_history(token);
+}
+
+fn remove_task_toast(active_tasks: &mut HashMap<String, TaskActionEntry>, token: &str) {
+    active_tasks.remove(token);
+    remove_task_history(token);
 }
 
 fn remove_history(token: &str) {
@@ -315,6 +509,16 @@ fn remove_history(token: &str) {
         history.RemoveGroupedTagWithId(
             &HSTRING::from(token),
             &HSTRING::from(GROUP),
+            &HSTRING::from(AUMID),
+        )
+    });
+}
+
+fn remove_task_history(token: &str) {
+    let _ = ToastNotificationManager::History().and_then(|history| {
+        history.RemoveGroupedTagWithId(
+            &HSTRING::from(token),
+            &HSTRING::from(TASK_GROUP),
             &HSTRING::from(AUMID),
         )
     });
@@ -589,5 +793,32 @@ mod tests {
     #[test]
     fn toast_text_is_xml_escaped() {
         assert_eq!(xml_escape("& < > \" '"), "&amp; &lt; &gt; &quot; &apos;");
+    }
+
+    #[test]
+    fn task_toast_xml_and_activation_parse_snooze_complete_open() {
+        let token = "abcdef1200000007";
+        let xml = build_task_toast_xml(token, "Tomar <remédio>", "Às 14:00 & alerta");
+        assert!(xml.contains(r#"arguments="task:abcdef1200000007:snooze""#));
+        assert!(xml.contains(r#"arguments="task:abcdef1200000007:complete""#));
+        assert!(xml.contains(r#"arguments="task:abcdef1200000007:open""#));
+        assert!(xml.contains("Tomar &lt;remédio&gt;"));
+        assert!(xml.contains("Às 14:00 &amp; alerta"));
+        assert_eq!(
+            parse_task_activation(AUMID, &format!("task:{token}:snooze")),
+            Some((token, TaskToastAction::Snooze))
+        );
+        assert_eq!(
+            parse_task_activation(AUMID, &format!("task:{token}:complete")),
+            Some((token, TaskToastAction::Complete))
+        );
+        assert_eq!(
+            parse_task_activation(AUMID, &format!("task:{token}:open")),
+            Some((token, TaskToastAction::Open))
+        );
+        assert_eq!(
+            parse_task_activation("other.app", &format!("task:{token}:open")),
+            None
+        );
     }
 }

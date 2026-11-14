@@ -11,6 +11,10 @@ import type { SpotifyState } from "./spotify";
 import type { UpdateStatus } from "./update";
 import type { WaIslandView, WaSettingsView, WaTestResult } from "./whatsapp";
 import type { LaunchAgent, LaunchAgentStatus, LaunchResult } from "./launch";
+import type {
+  ConfirmProposalInput, CreateTaskInput, TasksSnapshot, TodoItem, TodoProposal,
+  TodoShortcutSettings, ToggleDoneOutcome, UpdateTaskInput,
+} from "./tasks";
 import { syntheticAgentUsage, type AgentUsageSnapshot } from "./agent-usage";
 
 export const IS_TAURI =
@@ -630,6 +634,42 @@ export const Bridge = {
   updateInstall: () => call<void>("update_install"),
   /** The release's page on github.com. */
   updateOpenPage: () => call<void>("update_open_page"),
+};
+
+/** Tarefas locais do Lumen (src-tauri/src/tasks). */
+export const TasksBridge = {
+  state: () => call<TasksSnapshot>("tasks_state"),
+  proposeFromText: (text: string) =>
+    callOrThrow<TodoProposal>("tasks_propose_from_text", { text }),
+  voiceStart: () => callOrThrow<void>("tasks_voice_start"),
+  voiceStop: () => callOrThrow<TodoProposal>("tasks_voice_stop"),
+  voiceCancel: () => call<void>("tasks_voice_cancel"),
+  confirmProposal: (input: ConfirmProposalInput) =>
+    callOrThrow<TodoItem>("tasks_confirm_proposal", { input }),
+  create: (input: CreateTaskInput) =>
+    callOrThrow<TodoItem>("tasks_create", { input }),
+  update: (input: UpdateTaskInput) =>
+    callOrThrow<TodoItem>("tasks_update", { input }),
+  toggleDone: (id: string, done?: boolean) =>
+    callOrThrow<ToggleDoneOutcome>("tasks_toggle_done", { id, done: done ?? null }),
+  snooze: (id: string, minutes?: number) =>
+    callOrThrow<TodoItem>("tasks_snooze", { id, minutes: minutes ?? null }),
+  delete: (id: string) =>
+    callOrThrow<TodoItem>("tasks_delete", { id }),
+  restore: (id: string) =>
+    callOrThrow<TodoItem>("tasks_restore", { id }),
+  addSubtask: (taskId: string, text: string) =>
+    callOrThrow<TodoItem>("tasks_add_subtask", { taskId, text }),
+  toggleSubtask: (taskId: string, subtaskId: string) =>
+    callOrThrow<TodoItem>("tasks_toggle_subtask", { taskId, subtaskId }),
+  removeSubtask: (taskId: string, subtaskId: string) =>
+    callOrThrow<TodoItem>("tasks_remove_subtask", { taskId, subtaskId }),
+  saveShortcutSettings: (settings: TodoShortcutSettings) =>
+    callOrThrow<TodoShortcutSettings>("tasks_save_shortcut_settings", { settings }),
+  openPage: (taskId?: string | null) =>
+    call<void>("tasks_open_page", { taskId: taskId ?? null }),
+  previewReminder: (id: string) =>
+    callOrThrow<void>("tasks_preview_reminder", { id }),
 };
 
 export type SpotifyAction = "playPause" | "next" | "previous" | "seek" | "shuffle" | "repeat" | "volume";
