@@ -133,3 +133,13 @@ test("the sidebar uses the selected language on its first render", async () => {
     off();
   }
 });
+
+test("every hub hero theme renders six distinct characters chosen from the Lumen cast", async () => {
+  const { THEMES, randomCastAgents } = await import("../src/hub/hero.ts");
+  for (const [page, theme] of Object.entries(THEMES)) {
+    assert.equal(theme.cast.length, 6, `${page} should show 6 hero characters`);
+  }
+  const picks = randomCastAgents(6);
+  assert.equal(picks.length, 6);
+  assert.equal(new Set(picks).size, 6);
+});

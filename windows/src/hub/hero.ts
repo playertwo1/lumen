@@ -275,10 +275,37 @@ export interface MochiSpec {
   size: number;
   /** Where he starts along the floor, 0…1. */
   start: number;
+  /** Optional Lumen character ID (defaults to a random pick from the 12 characters). */
+  agent?: string;
   outfit?: Outfit;
   state?: BotStateName;
   /** False: he stays where he is (working, thinking, asleep). */
   roams?: boolean;
+}
+
+const LUMEN_CAST_AGENTS = [
+  "claude",
+  "claude-desktop",
+  "codex",
+  "chatgpt",
+  "antigravity",
+  "gemini",
+  "opencode",
+  "grok",
+  "hermes",
+  "youtube-music",
+  "mail",
+  "generic",
+] as const;
+
+/** Picks `count` distinct character IDs from the 12 Lumen characters in random order. */
+export function randomCastAgents(count: number, rng = Math.random): string[] {
+  const pool = [...LUMEN_CAST_AGENTS];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, Math.min(count, pool.length));
 }
 
 const EMOTES: BotEmoteName[] = ["love", "happy", "wink", "proud", "surprised"];
@@ -295,7 +322,12 @@ class Walker {
   waving = 0;
 
   constructor(public spec: MochiSpec) {
-    this.engine.bodyColor = hexToRGB(spec.color);
+    const setAgent = (this.engine as { setAgent?: (id: string | null) => void }).setAgent;
+    if (spec.agent && typeof setAgent === "function") {
+      setAgent.call(this.engine, spec.agent);
+    } else {
+      this.engine.bodyColor = hexToRGB(spec.color);
+    }
     this.engine.setState(spec.state ?? "idle", true);
     if (spec.outfit && spec.outfit !== "none") this.engine.setOutfit(spec.outfit, false);
   }
@@ -400,9 +432,14 @@ export function troupe(canvas: HTMLCanvasElement, cast: MochiSpec[], width: numb
 }
 
 /** One Mochi alone (the sidebar's logo, an empty page). */
-export function liveMochi(canvas: HTMLCanvasElement, color = "#F5F6F8", state: BotStateName = "idle") {
+export function liveMochi(canvas: HTMLCanvasElement, color = "#F5F6F8", state: BotStateName = "idle", agent?: string) {
   const engine = new BotEngine();
-  engine.bodyColor = hexToRGB(color);
+  const setAgent = (engine as { setAgent?: (id: string | null) => void }).setAgent;
+  if (agent && typeof setAgent === "function") {
+    setAgent.call(engine, agent);
+  } else {
+    engine.bodyColor = hexToRGB(color);
+  }
   engine.setState(state, true);
   canvas.addEventListener("click", () => engine.slap());
   let mouse: { x: number; y: number } | null = null;
@@ -434,36 +471,38 @@ export interface Theme {
   cast: MochiSpec[];
 }
 
+const HERO_SLOTS = [0.06, 0.25, 0.44, 0.63, 0.81, 0.97] as const;
+const HERO_SIZES = [60, 50, 54, 46, 50, 44] as const;
+const HERO_COLORS = ["#F5F6F8", "#FB923C", "#2DD4BF", "#E879F9", "#C084FC", "#F472B6"] as const;
+
 const m = (color: string, size: number, start: number, extra: Partial<MochiSpec> = {}): MochiSpec => ({
   color, size, start, ...extra,
 });
 
+function hexCast(overrides: Record<number, Partial<MochiSpec>> = {}): MochiSpec[] {
+  return HERO_SLOTS.map((start, i) => m(HERO_COLORS[i], HERO_SIZES[i], start, overrides[i]));
+}
+
 export const THEMES: Record<string, Theme> = {
-  dictation: { color: "#FB923C", cast: [m("#F5F6F8", 66, 0.2), m("#FB923C", 52, 0.65), m("#F472B6", 44, 0.95, { outfit: "bow" })] },
-  notes: { color: "#3B9EFF", cast: [m("#3B9EFF", 58, 0.1, { outfit: "roundGlasses" }), m("#34D399", 50, 0.5), m("#A78BFA", 46, 0.9)] },
-  insights: { color: "#34D399", cast: [m("#F7B32B", 62, 0.3, { outfit: "crown" }), m("#34D399", 48, 0.75), m("#F5F6F8", 40, 1)] },
-  dictionary: { color: "#A78BFA", cast: [m("#A78BFA", 60, 0.2, { outfit: "roundGlasses" }), m("#F5F6F8", 48, 0.8, { outfit: "beanie" })] },
-  snippets: { color: "#F7B32B", cast: [m("#F7B32B", 56, 0.15, { state: "working" }), m("#FB923C", 46, 0.6), m("#F5F6F8", 40, 0.95)] },
-  styles: { color: "#F472B6", cast: [m("#F472B6", 60, 0.25, { outfit: "sunglasses" }), m("#F5F6F8", 48, 0.7, { outfit: "bow" }), m("#22D3EE", 42, 1, { outfit: "partyHat" })] },
-  flowsettings: { color: "#8E939C", cast: [m("#F5F6F8", 56, 0.3), m("#8E939C", 46, 0.95, { state: "sleeping", roams: false })] },
-  general: { color: "#8E939C", cast: [m("#F5F6F8", 60, 0.4, { outfit: "scarf" }), m("#FB923C", 46, 0.85)] },
-  pills: {
-    color: "#F5A524",
-    cast: [m("#F5A524", 44, 0.05), m("#3B9EFF", 44, 0.3), m("#34D399", 44, 0.55), m("#E07950", 44, 0.8), m("#A78BFA", 44, 1)],
-  },
-  agents: {
-    color: "#3B9EFF",
-    cast: [m("#3B9EFF", 56, 0.1, { state: "working", roams: false }), m("#E07950", 50, 0.5, { state: "thinking", roams: false }), m("#34D399", 50, 0.9)],
-  },
-  chat: { color: "#E07950", cast: [m("#E07950", 58, 0.3, { state: "thinking", roams: false }), m("#F5F6F8", 48, 0.85)] },
-  integrations: { color: "#7C5CFF", cast: [m("#7C5CFF", 54, 0.15), m("#22D3EE", 46, 0.55), m("#F7B32B", 42, 0.95)] },
-  phone: { color: "#3DDC84", cast: [m("#3DDC84", 56, 0.25), m("#F5F6F8", 46, 0.8, { outfit: "beanie" })] },
-  voice: { color: "#F97316", cast: [m("#F97316", 60, 0.3), m("#F5F6F8", 48, 0.85, { outfit: "roundGlasses" })] },
-  shortcuts: { color: "#6366F1", cast: [m("#6366F1", 56, 0.2, { outfit: "sunglasses" }), m("#F5F6F8", 46, 0.8)] },
-  mailOverview: { color: "#2F8CFF", cast: [m("#2F8CFF", 58, 0.2, { state: "working" }), m("#F5F6F8", 46, 0.7), m("#F5A524", 40, 1)] },
-  mailRules: { color: "#34D399", cast: [m("#34D399", 56, 0.3, { outfit: "roundGlasses" }), m("#8E939C", 46, 0.85)] },
-  mailBanned: { color: "#FF453A", cast: [m("#FF453A", 54, 0.25, { outfit: "sunglasses" }), m("#F5F6F8", 44, 0.8, { state: "sleeping", roams: false })] },
-  mailVIP: { color: "#F5A524", cast: [m("#F5A524", 60, 0.3, { outfit: "crown" }), m("#2F8CFF", 46, 0.85)] },
+  dictation: { color: "#FB923C", cast: hexCast({ 5: { outfit: "bow" } }) },
+  notes: { color: "#3B9EFF", cast: hexCast({ 0: { outfit: "roundGlasses" } }) },
+  insights: { color: "#34D399", cast: hexCast({ 0: { outfit: "crown" } }) },
+  dictionary: { color: "#A78BFA", cast: hexCast({ 0: { outfit: "roundGlasses" }, 3: { outfit: "beanie" } }) },
+  snippets: { color: "#F7B32B", cast: hexCast({ 0: { state: "working" } }) },
+  styles: { color: "#F472B6", cast: hexCast({ 0: { outfit: "sunglasses" }, 2: { outfit: "bow" }, 4: { outfit: "partyHat" } }) },
+  flowsettings: { color: "#8E939C", cast: hexCast({ 5: { state: "sleeping", roams: false } }) },
+  general: { color: "#8E939C", cast: hexCast({ 0: { outfit: "scarf" } }) },
+  pills: { color: "#F5A524", cast: hexCast() },
+  agents: { color: "#3B9EFF", cast: hexCast({ 0: { state: "working", roams: false }, 2: { state: "thinking", roams: false } }) },
+  chat: { color: "#E07950", cast: hexCast({ 0: { state: "thinking", roams: false } }) },
+  integrations: { color: "#7C5CFF", cast: hexCast() },
+  phone: { color: "#3DDC84", cast: hexCast({ 3: { outfit: "beanie" } }) },
+  voice: { color: "#F97316", cast: hexCast({ 3: { outfit: "roundGlasses" } }) },
+  shortcuts: { color: "#6366F1", cast: hexCast({ 0: { outfit: "sunglasses" } }) },
+  mailOverview: { color: "#2F8CFF", cast: hexCast({ 0: { state: "working" } }) },
+  mailRules: { color: "#34D399", cast: hexCast({ 0: { outfit: "roundGlasses" } }) },
+  mailBanned: { color: "#FF453A", cast: hexCast({ 0: { outfit: "sunglasses" }, 5: { state: "sleeping", roams: false } }) },
+  mailVIP: { color: "#F5A524", cast: hexCast({ 0: { outfit: "crown" } }) },
 };
 
 /** The band itself: title, line, actions, and the Mochis. */
@@ -496,7 +535,14 @@ export function hero(page: string, title: string, subtitle: string | null, actio
   }
   el.append(back, mochis, copy);
   backdrop(back, theme.color, el);
-  troupe(mochis, theme.cast, compact ? 280 : 340);
+  const picks = randomCastAgents(theme.cast.length);
+  const cast = theme.cast.map((spec, i) => ({
+    ...spec,
+    size: compact ? Math.round(spec.size * 0.82) : spec.size,
+    agent: spec.agent ?? picks[i],
+  }));
+  const troupeWidth = compact ? 370 : Math.min(480, Math.max(340, cast.length * 76));
+  troupe(mochis, cast, troupeWidth);
   return el;
 }
 
@@ -516,14 +562,14 @@ export function glowCard(color: string, ...content: (HTMLElement | string)[]): H
   return el;
 }
 
-/** An empty page: a Mochi asleep, and a line. */
-export function emptyState(text: string, state: BotStateName = "sleeping", color = "#F5F6F8"): HTMLElement {
+/** An empty page: a Lumen character asleep, and a line. */
+export function emptyState(text: string, state: BotStateName = "sleeping", color = "#F5F6F8", agent = randomCastAgents(1)[0]): HTMLElement {
   const el = document.createElement("div");
   el.className = "hub-empty";
   const canvas = document.createElement("canvas");
   const p = document.createElement("div");
   p.textContent = text;
   el.append(canvas, p);
-  liveMochi(canvas, color, state);
+  liveMochi(canvas, color, state, agent);
   return el;
 }
