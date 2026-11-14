@@ -326,6 +326,12 @@ export class CompassEngine {
   private waveDuration = 0;
   private noteWriteStart = -1;
   private noteWriteDuration = 0;
+  private taskBellStart = -1;
+  private taskBellDuration = 0;
+  private taskSnoozeStart = -1;
+  private taskSnoozeDuration = 0;
+  private taskCheckStart = -1;
+  private taskCheckDuration = 0;
   private badgePopStart = -1;
   private gulpStart = -1;
   private gulpChewStarted = false;
@@ -514,6 +520,47 @@ export class CompassEngine {
     this.blink();
     this.markBusyFor(dur);
   }
+  /** P3 (L4): sino tocando quando um lembrete de tarefa dispara. */
+  triggerTaskReminder(duration = 2.0) {
+    if (reducedMotion()) {
+      this.taskBellStart = -1;
+      this.taskBellDuration = 0;
+      return;
+    }
+    const dur = Math.max(0.5, duration);
+    this.taskBellStart = this.elapsed;
+    this.taskBellDuration = dur;
+    this.startHop(-0.08);
+    this.blink();
+    this.markBusyFor(dur);
+  }
+  /** P3 (L4): personagem empurra o sino para soneca quando o usuário adia. */
+  triggerTaskSnooze(duration = 1.35) {
+    if (reducedMotion()) {
+      this.taskSnoozeStart = -1;
+      this.taskSnoozeDuration = 0;
+      return;
+    }
+    const dur = Math.max(0.4, duration);
+    this.taskSnoozeStart = this.elapsed;
+    this.taskSnoozeDuration = dur;
+    this.squash();
+    this.markBusyFor(dur);
+  }
+  /** P3 (L4): traço verde esmeralda quando uma tarefa é concluída. */
+  triggerTaskCheck(duration = 1.4) {
+    if (reducedMotion()) {
+      this.taskCheckStart = -1;
+      this.taskCheckDuration = 0;
+      return;
+    }
+    const dur = Math.max(0.4, duration);
+    this.taskCheckStart = this.elapsed;
+    this.taskCheckDuration = dur;
+    this.startHop(-0.1);
+    this.blink();
+    this.markBusyFor(dur);
+  }
   get busy() {
     if (reducedMotion()) return false;
     const moodActive = !this.isMini && (
@@ -537,6 +584,9 @@ export class CompassEngine {
       this.isDancing ||
       this.dancingLevel > 0.001 ||
       this.noteWriteStart >= 0 ||
+      this.taskBellStart >= 0 ||
+      this.taskSnoozeStart >= 0 ||
+      this.taskCheckStart >= 0 ||
       this.rollDuration > 0 ||
       this.elapsed < this.busyUntil ||
       this.pendingSparkAt >= 0 ||
@@ -749,6 +799,18 @@ export class CompassEngine {
     if (this.noteWriteStart >= 0 && this.elapsed >= this.noteWriteStart + this.noteWriteDuration) {
       this.noteWriteStart = -1;
       this.noteWriteDuration = 0;
+    }
+    if (this.taskBellStart >= 0 && this.elapsed >= this.taskBellStart + this.taskBellDuration) {
+      this.taskBellStart = -1;
+      this.taskBellDuration = 0;
+    }
+    if (this.taskSnoozeStart >= 0 && this.elapsed >= this.taskSnoozeStart + this.taskSnoozeDuration) {
+      this.taskSnoozeStart = -1;
+      this.taskSnoozeDuration = 0;
+    }
+    if (this.taskCheckStart >= 0 && this.elapsed >= this.taskCheckStart + this.taskCheckDuration) {
+      this.taskCheckStart = -1;
+      this.taskCheckDuration = 0;
     }
 
     // Continuous active-state P1 motion
@@ -1030,6 +1092,15 @@ export class CompassEngine {
     this.drawStateAccent(ctx, motionTime, compact);
     if (!reduced && this.noteWriteStart >= 0 && this.elapsed < this.noteWriteStart + this.noteWriteDuration) {
       this.drawNoteWriteGesture(ctx, compact);
+    }
+    if (!reduced && this.taskBellStart >= 0 && this.elapsed < this.taskBellStart + this.taskBellDuration) {
+      this.drawTaskBellGesture(ctx, compact);
+    }
+    if (!reduced && this.taskSnoozeStart >= 0 && this.elapsed < this.taskSnoozeStart + this.taskSnoozeDuration) {
+      this.drawTaskSnoozeGesture(ctx, compact);
+    }
+    if (!reduced && this.taskCheckStart >= 0 && this.elapsed < this.taskCheckStart + this.taskCheckDuration) {
+      this.drawTaskCheckGesture(ctx, compact);
     }
     if (!reduced && this.particles.length > 0) this.drawParticles(ctx);
     ctx.restore();
@@ -2105,6 +2176,131 @@ export class CompassEngine {
       ctx.strokeStyle = rgbCss(CLAUDE_DESKTOP_TERRACOTTA);
       ctx.lineWidth = compact ? 3.2 : 2.8;
       ctx.lineCap = "round";
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  private drawBellShape(ctx: CanvasRenderingContext2D, r: number, fill: RGB) {
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.85, r * 0.55);
+    ctx.quadraticCurveTo(-r * 0.72, -r * 0.65, 0, -r * 0.75);
+    ctx.quadraticCurveTo(r * 0.72, -r * 0.65, r * 0.85, r * 0.55);
+    ctx.closePath();
+    ctx.fillStyle = rgbCss(fill);
+    ctx.fill();
+    ctx.strokeStyle = rgbCss(INK);
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(0, r * 0.72, r * 0.2, 0, Math.PI * 2);
+    ctx.fillStyle = rgbCss(INK);
+    ctx.fill();
+  }
+
+  private drawTaskBellGesture(ctx: CanvasRenderingContext2D, compact: boolean) {
+    const dur = Math.max(0.2, this.taskBellDuration);
+    const p = Math.min(1, Math.max(0, (this.elapsed - this.taskBellStart) / dur));
+    const pop = Math.min(1, p / 0.14);
+    const fade = p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1;
+    const cx = compact ? 74 : 77;
+    const cy = compact ? 25 : 26;
+    const r = compact ? 10 : 11;
+    const swing = Math.sin(p * Math.PI * 9) * 0.32 * (1 - p * 0.35);
+
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    this.drawScaledAccent(ctx, cx, cy, 0.7 + pop * 0.3, () => {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(swing);
+      this.drawBellShape(ctx, r, SAND);
+      ctx.restore();
+
+      const chime = 0.5 + 0.5 * Math.sin(p * Math.PI * 9);
+      ctx.strokeStyle = rgbCss(CLAUDE_DESKTOP_TERRACOTTA);
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(cx + side * (r + 3), cy - 2, 4 + chime * 2, side > 0 ? -0.7 : Math.PI - 0.7, side > 0 ? 0.7 : Math.PI + 0.7);
+        ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+
+  private drawTaskSnoozeGesture(ctx: CanvasRenderingContext2D, compact: boolean) {
+    const dur = Math.max(0.2, this.taskSnoozeDuration);
+    const p = Math.min(1, Math.max(0, (this.elapsed - this.taskSnoozeStart) / dur));
+    const ease = 1 - Math.pow(1 - Math.min(1, p / 0.65), 2);
+    const fade = p > 0.8 ? Math.max(0, (1 - p) / 0.2) : 1;
+    const cx = (compact ? 67 : 70) + ease * 10;
+    const cy = compact ? 27 : 29;
+    const r = compact ? 9 : 10;
+
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(0.28 * ease);
+    this.drawBellShape(ctx, r, LIGHT_BLUE);
+    ctx.restore();
+
+    // Traço de empurrão suave ao lado do sino adiado.
+    ctx.strokeStyle = rgbCss(INK);
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - r - 6, cy - 1);
+    ctx.lineTo(cx - r - 1, cy - 1);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawTaskCheckGesture(ctx: CanvasRenderingContext2D, compact: boolean) {
+    const dur = Math.max(0.2, this.taskCheckDuration);
+    const p = Math.min(1, Math.max(0, (this.elapsed - this.taskCheckStart) / dur));
+    const pop = Math.min(1, p / 0.16);
+    const fade = p > 0.82 ? Math.max(0, (1 - p) / 0.18) : 1;
+    const drawP = Math.min(1, Math.max(0, (p - 0.08) / 0.36));
+    const cx = compact ? 74 : 76;
+    const cy = compact ? 26 : 58;
+    const r = compact ? 10 : 11;
+
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    this.drawScaledAccent(ctx, cx, cy, 0.72 + pop * 0.28, () => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = rgbCss(CHATGPT_GREEN);
+      ctx.fill();
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      const x0 = cx - r * 0.42;
+      const y0 = cy + r * 0.04;
+      const xm = cx - r * 0.08;
+      const ym = cy + r * 0.38;
+      const x1 = cx + r * 0.48;
+      const y1 = cy - r * 0.34;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      if (drawP <= 0.42) {
+        const k = drawP / 0.42;
+        ctx.lineTo(x0 + (xm - x0) * k, y0 + (ym - y0) * k);
+      } else {
+        const k = (drawP - 0.42) / 0.58;
+        ctx.lineTo(xm, ym);
+        ctx.lineTo(xm + (x1 - xm) * k, ym + (y1 - ym) * k);
+      }
+      ctx.strokeStyle = rgbCss(CLAUDE_WHITE);
+      ctx.lineWidth = 2.6;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
       ctx.stroke();
     });
     ctx.restore();

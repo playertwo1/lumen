@@ -70,6 +70,8 @@ pub const ACTIONS: &[ActionDef] = &[
     action("wardrobeToggle", "Ctrl+Alt+G", true, true),
     action("newSession", "Ctrl+Alt+L", true, true),
     action("noteIdea", "Ctrl+Alt+I", true, true),
+    // Capture a task quickly with Ctrl+Alt+K (K is free on the checked AltGr layouts).
+    action("captureTask", "Ctrl+Alt+K", true, true),
     // Off until a person turns it on. P is not an AltGr character on the checked layouts.
     action("captureScreen", "Ctrl+Alt+P", false, true),
 ];
@@ -97,6 +99,7 @@ pub fn description(id: &str) -> &'static str {
         "wardrobeToggle" => n_("Open the wardrobe"),
         "newSession" => n_("New Claude Code session"),
         "noteIdea" => n_("Note an idea"),
+        "captureTask" => n_("Capture a task"),
         "captureScreen" => n_("Capture part of the screen"),
         _ => "Coucou",
     }
@@ -700,10 +703,10 @@ mod wayland {
 mod tests {
     use super::*;
 
-    const MAC_IDS: [&str; 13] = [
+    const MAC_IDS: [&str; 14] = [
         "toggleIsland", "openChat", "goToAlert", "jumpToTerminal", "attachFrontWindow",
         "nextPill", "prevPill", "muteToggle", "desktopToggle", "wardrobeToggle", "newSession", "noteIdea",
-        "captureScreen",
+        "captureTask", "captureScreen",
     ];
 
     fn never(_: &Shortcut) -> Option<String> {

@@ -112,6 +112,21 @@
       "ko": "아이디어 메모",
       "ja": "アイデアをメモ"
     },
+    "Capture a task": {
+      "zh-Hans": "记录一个任务",
+      "hi": "एक कार्य दर्ज करें",
+      "es": "Capturar una tarea",
+      "ar": "تدوين مهمة",
+      "fr": "Capturer une tâche",
+      "bn": "একটি কাজ লিখুন",
+      "pt-BR": "Capturar uma tarefa",
+      "ru": "Записать задачу",
+      "id": "Catat tugas",
+      "de": "Aufgabe erfassen",
+      "tr": "Görev ekle",
+      "ko": "할 일 기록",
+      "ja": "タスクを記録"
+    },
     "Idea · {0}": {
       "zh-Hans": "想法 · {0}",
       "hi": "विचार · {0}",

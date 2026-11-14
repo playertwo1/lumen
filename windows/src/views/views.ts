@@ -24,6 +24,7 @@ import { buildWardrobe } from "./wardrobe";
 import { buildUpdate } from "./update";
 import { buildWhatsNew } from "./whatsnew";
 import { buildLaunch } from "./launch";
+import { buildTaskCaptureView, buildTaskConfirmView, buildTaskReminderView } from "./tasks";
 import { buildSpotifyCard, buildSpotifyPill, type SpotifyPillHost } from "./spotify";
 import { MUSIC_IDS } from "../core/spotify";
 import { bindCoucoudoroPill, buildCoucoudoroCard } from "./coucoudoro";
@@ -968,6 +969,9 @@ export function buildViews(
   map.set("update", buildUpdate());
   map.set("whatsNew", buildWhatsNew());
   map.set("launch", buildLaunch(actions));
+  map.set("taskCapture", buildTaskCaptureView(actions));
+  map.set("taskConfirm", buildTaskConfirmView(actions));
+  map.set("taskReminder", buildTaskReminderView(actions));
   // Not in the Windows v1: sending a file by email, window attach + web result.
   map.set("mail", buildPlaceholder(tl("Sending by email isn't in this version."), ""));
   map.set("searching", buildPlaceholder(tl("Claude is searching…"), ""));

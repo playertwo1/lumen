@@ -3926,3 +3926,133 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   font: 400 11px var(--font);
   color: var(--dim-3);
 }
+
+/* ── Tarefas (L4): captura rápida, confirmação editável e lembrete na Ilha ── */
+.task-island-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 18px 12px 118px;
+}
+
+.task-island-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.task-shortcut-badge,
+.task-reminder-badge,
+.task-prio-tag {
+  font: 600 10.5px var(--font);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cdd2dc;
+}
+
+.task-reminder-badge {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.task-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f3f4f6;
+  padding: 6px 9px;
+  font: 500 12.5px var(--font);
+}
+
+.task-chip-row,
+.task-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.task-chip {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd0db;
+  padding: 3px 8px;
+  font: 500 11px var(--font);
+  cursor: pointer;
+}
+
+.task-chip.on {
+  background: rgba(52, 211, 153, 0.22);
+  border-color: rgba(52, 211, 153, 0.65);
+  color: #d1fae5;
+}
+
+.task-native-picker,
+.task-select {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(20, 22, 28, 0.9);
+  color: #e5e7eb;
+  padding: 3px 6px;
+  font: 500 11px var(--font);
+}
+
+.task-ambiguous-banner {
+  border-radius: 7px;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fde68a;
+  padding: 4px 8px;
+  font: 500 11px var(--font);
+}
+
+.task-error {
+  color: #fca5a5;
+  font: 500 11px var(--font);
+}
+
+.chat-todo-card {
+  margin-top: 8px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.chat-todo-head {
+  margin-bottom: 6px;
+}
+
+.chat-todo-kicker {
+  font: 600 10.5px var(--font);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #93c5fd;
+}
+
+.chat-todo-done {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font: 500 12px var(--font);
+  color: #86efac;
+}
+
+.chat-todo-discarded {
+  font: 400 11.5px var(--font);
+  color: var(--dim-3);
+}

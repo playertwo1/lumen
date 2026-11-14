@@ -33,6 +33,8 @@ import { h } from "../views/dom";
 import { buildSessionDropList, type SessionDropList } from "../views/session-drop";
 import { DROP_TEXT_RIGHT_WITH_LIST, dropTargetAt, dropTargets } from "../core/launch";
 import { IslandStateMachine } from "./fsm";
+import type { TaskReminderPayload } from "../core/tasks";
+import { setActiveTaskReminder } from "../views/tasks";
 import { refreshHookPills } from "./integrations";
 import { restoreAlertFocus } from "./hooks";
 import { DesktopLink } from "./desktop";
@@ -50,7 +52,12 @@ const BOT_SIDE = 24;
 const HIT_MARGIN = 14;
 
 /** The views with a text field: the island takes the keyboard while one is on. */
-const TYPING_VIEWS: ReadonlySet<IslandViewName> = new Set(["prompt", "launch"]);
+const TYPING_VIEWS: ReadonlySet<IslandViewName> = new Set([
+  "prompt",
+  "launch",
+  "taskCapture",
+  "taskConfirm",
+]);
 
 /** The three views the drop sequence owns; leaving them stops the engine. */
 const UPLOAD_VIEWS: ReadonlySet<IslandViewName> = new Set(["upload", "uploading", "choose"]);
@@ -655,6 +662,30 @@ export class Island {
     const compass = this.engine as BotEngine & { triggerNoteWrite?: (duration?: number) => void };
     if (compass.triggerNoteWrite) compass.triggerNoteWrite();
     else this.engine.triggerEmote("happy", 1.2);
+    this.ensureRunning();
+  }
+
+  taskReminder(payload: TaskReminderPayload) {
+    setActiveTaskReminder(payload);
+    this.alert("taskReminder");
+    const compass = this.engine as BotEngine & { triggerTaskReminder?: (duration?: number) => void };
+    if (compass.triggerTaskReminder) compass.triggerTaskReminder();
+    else this.engine.triggerEmote("happy", 1.5);
+    this.ensureRunning();
+  }
+
+  taskSnoozed() {
+    const compass = this.engine as BotEngine & { triggerTaskSnooze?: (duration?: number) => void };
+    if (compass.triggerTaskSnooze) compass.triggerTaskSnooze();
+    else this.engine.triggerEmote("happy", 1.1);
+    this.ensureRunning();
+  }
+
+  taskCompleted() {
+    const compass = this.engine as BotEngine & { triggerTaskCheck?: (duration?: number) => void };
+    if (compass.triggerTaskCheck) compass.triggerTaskCheck();
+    else this.engine.triggerEmote("happy", 1.2);
+    Sound.play("approve");
     this.ensureRunning();
   }
 

@@ -20,6 +20,9 @@ export type IslandViewName =
   | "searching"
   | "result"
   | "note"
+  | "taskCapture"
+  | "taskConfirm"
+  | "taskReminder"
   | "capture"
   | "settings"
   | "greeting"
@@ -105,6 +108,10 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   whatsNew: { height: 222, botX: 62, botY: null, botDiameter: 58, agentMode: "none" },
   // A new Claude Code session: Mochi on the left, the project and the prompt (Mac: .launch).
   launch: { height: 160, botX: 58, botY: null, botDiameter: 52, agentMode: "none" },
+  // Tarefas (L4): captura rápida na ilha, confirmação editável e lembrete acionável.
+  taskCapture: { height: 170, botX: 60, botY: null, botDiameter: 52, agentMode: "none" },
+  taskConfirm: { height: 245, botX: 56, botY: 56, botDiameter: 48, agentMode: "none" },
+  taskReminder: { height: 150, botX: 56, botY: null, botDiameter: 50, agentMode: "none" },
 };
 
 // The upload views above are only the fallback geometry. Once a file is actually
