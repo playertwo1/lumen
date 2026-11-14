@@ -26,8 +26,13 @@ export interface Options {
   proof?: string; // join proof only (builds the offer)
 }
 
+export interface HttpInit {
+  headers?: Record<string, string>;
+  body?: Uint8Array | string;
+}
+
 export interface Harness {
-  http(path: string, method?: string): Promise<{ status: number; text: string }>;
+  http(path: string, method?: string, init?: HttpInit): Promise<{ status: number; text: string }>;
   connect(room: string, role: string, options?: Options): Promise<Conn | { refused: number }>;
   setAccessKey(key: string | undefined): Promise<void>;
   /** Rooms that exist (Node: with a live socket; Worker: objects ever created in this test file). */
@@ -234,6 +239,87 @@ export function behaviour(name: string, make: () => Promise<Harness>) {
       } finally {
         await h.setAccessKey(ACCESS);
       }
+    });
+
+    describe("persistent mailbox (L6.1)", () => {
+      const hdrs = (proof = P1, key: string | null = ACCESS, msgId?: string) => {
+        const out: Record<string, string> = { "X-Lumen-Join": proof };
+        if (key !== null) out.Authorization = `Bearer ${key}`;
+        if (msgId) out["X-Lumen-Msg-Id"] = msgId;
+        return out;
+      };
+
+      it("refuses unauthorized or malformed mailbox requests before reading any room", async () => {
+        const room = randomRoom();
+        expect((await h.http(`/v1/mailbox/${room}/messages?to=phone`, "POST", { headers: { Authorization: `Bearer ${ACCESS}`, "X-Lumen-Join": P1 }, body: new Uint8Array([1, 2]) })).status).toBe(201);
+        expect((await h.http(`/v1/mailbox/bad/messages?for=phone`, "GET", { headers: hdrs() })).status).toBe(404);
+        expect((await h.http(`/v1/mailbox/${room}/messages?for=phone`, "DELETE", { headers: hdrs() })).status).toBe(405);
+        expect((await h.http(`/v1/mailbox/${room}/messages?for=phone`, "GET", { headers: hdrs(P1, null) })).status).toBe(401);
+        expect((await h.http(`/v1/mailbox/${room}/messages?for=phone`, "GET", { headers: { Authorization: `Bearer ${ACCESS}`, "X-Lumen-Join": "short" } })).status).toBe(400);
+        expect((await h.http(`/v1/mailbox/${room}/messages?for=phone`, "GET", { headers: hdrs(proofOf(9)) })).status).toBe(403);
+        expect((await h.http(`/v1/mailbox/${room}/messages?to=phone`, "POST", { headers: hdrs(), body: new Uint8Array(0) })).status).toBe(400);
+        expect((await h.http(`/v1/mailbox/${room}/messages?to=phone`, "POST", { headers: hdrs(), body: new Uint8Array(66_001) })).status).toBe(413);
+      });
+
+      it("stores opaque ciphertext while peer is offline, deduplicates msgId, delivers once, acks, and measures Free plan quota", async () => {
+        const room = randomRoom();
+        const cipher = new Uint8Array([1, 9, 8, 7, 6, 5, 4, 3]);
+        const post1 = await h.http(`/v1/mailbox/${room}/messages?to=phone`, "POST", {
+          headers: hdrs(P1, ACCESS, "mut-syn-l61-001"),
+          body: cipher,
+        });
+        expect(post1.status).toBe(201);
+        const body1 = JSON.parse(post1.text);
+        expect(body1.seq).toBe(1);
+        expect(body1.duplicate).toBe(false);
+        expect(body1.freePlan.dailyWriteLimit).toBe(100_000);
+        expect(body1.freePlan.dailyWrites).toBeGreaterThan(0);
+        expect(body1.freePlan.dailyWritePct).toBeLessThan(1);
+
+        // Retry with the same X-Lumen-Msg-Id returns existing seq without duplicating storage.
+        const postDup = await h.http(`/v1/mailbox/${room}/messages?to=phone`, "POST", {
+          headers: hdrs(P1, ACCESS, "mut-syn-l61-001"),
+          body: cipher,
+        });
+        expect(postDup.status).toBe(200);
+        expect(JSON.parse(postDup.text).duplicate).toBe(true);
+        expect(JSON.parse(postDup.text).seq).toBe(1);
+
+        const pull = await h.http(`/v1/mailbox/${room}/messages?for=phone&after=0`, "GET", { headers: hdrs() });
+        expect(pull.status).toBe(200);
+        const pulled = JSON.parse(pull.text);
+        expect(pulled.messages).toHaveLength(1);
+        expect(pulled.messages[0].id).toBe("mut-syn-l61-001");
+        expect(Uint8Array.from(Buffer.from(pulled.messages[0].payloadB64, "base64"))).toEqual(cipher);
+
+        const ack = await h.http(`/v1/mailbox/${room}/ack?for=phone`, "POST", {
+          headers: hdrs(),
+          body: JSON.stringify({ uptoSeq: pulled.latestSeq }),
+        });
+        expect(ack.status).toBe(200);
+        expect(JSON.parse(ack.text).deleted).toBe(1);
+        expect(JSON.parse(ack.text).remaining).toBe(0);
+
+        const emptyPull = await h.http(`/v1/mailbox/${room}/messages?for=phone&after=0`, "GET", { headers: hdrs() });
+        expect(JSON.parse(emptyPull.text).messages).toEqual([]);
+      });
+
+      it("revokes a room permanently across mailbox and live room endpoints", async () => {
+        const { room, phone } = await pair();
+        await h.http(`/v1/mailbox/${room}/messages?to=phone`, "POST", {
+          headers: hdrs(P1, ACCESS, "mut-syn-l61-rev"),
+          body: new Uint8Array([10, 20, 30]),
+        });
+        const rev = await h.http(`/v1/mailbox/${room}/revoke`, "POST", { headers: hdrs() });
+        expect(rev.status).toBe(200);
+        expect(JSON.parse(rev.text).revoked).toBe(true);
+
+        const closeMsg = await phone.next();
+        expect(closeMsg).toEqual({ kind: "close", code: 1008, reason: "revoked" });
+        expect((await h.http(`/v1/mailbox/${room}/messages?for=phone`, "GET", { headers: hdrs() })).status).toBe(410);
+        const wsAfter = await open(h, room, "phone", { proof: P1 });
+        expect(await wsAfter.next()).toEqual({ kind: "close", code: 1008, reason: "revoked" });
+      });
     });
   });
 }

@@ -40,6 +40,7 @@ pub struct SentEntry {
 #[derive(Default)]
 pub struct Store {
     pub settings: Settings,
+    pub backend: super::mailcraft::BackendConfig,
     pub journal: Vec<JournalEntry>,
     pub sent: Vec<SentEntry>,
     seen: Vec<String>,
@@ -53,14 +54,25 @@ const SEEN: usize = 4000;
 impl Store {
     pub fn load(dir: PathBuf) -> Store {
         let seen: Vec<String> = read(&dir, "seen.json").unwrap_or_default();
+        let backend = read::<super::mailcraft::BackendConfig>(&dir, "backend.json")
+            .unwrap_or_default()
+            .normalized();
         Store {
             settings: read(&dir, "settings.json").unwrap_or_default(),
+            backend,
             journal: read(&dir, "journal.json").unwrap_or_default(),
             sent: read(&dir, "sent.json").unwrap_or_default(),
             seen_set: seen.iter().cloned().collect(),
             seen,
             dir: Some(dir),
         }
+    }
+
+    pub fn set_backend(&mut self, config: super::mailcraft::BackendConfig) -> super::mailcraft::BackendConfig {
+        let normalized = config.normalized();
+        self.backend = normalized.clone();
+        self.write("backend.json", &self.backend);
+        normalized
     }
 
     pub fn set_settings(&mut self, mut s: Settings, now: i64) {

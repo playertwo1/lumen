@@ -55,8 +55,15 @@ async function upgrade(room: string, role: string, o: Options = {}): Promise<Res
 }
 
 const harness = async (): Promise<Harness> => ({
-  async http(path, method = "GET") {
-    const r = await exports.default.fetch(`https://relay.test${path}`, { method });
+  async http(path, method = "GET", init) {
+    const body = init?.body instanceof Uint8Array
+      ? (init.body.buffer.slice(init.body.byteOffset, init.body.byteOffset + init.body.byteLength) as ArrayBuffer)
+      : init?.body;
+    const r = await exports.default.fetch(`https://relay.test${path}`, {
+      method,
+      headers: init?.headers,
+      body,
+    });
     return { status: r.status, text: await r.text() };
   },
   async connect(room, role, o = {}) {
@@ -157,5 +164,49 @@ describe("Worker only", () => {
     const b = await open(h, room, "pc", { proof: proofOf(2) });
     b.send(new Uint8Array([1])); // accepted: a different proof is fine for an empty room
     expect(await b.next()).toEqual({ kind: "text", data: '{"peer":"offline"}' });
+  });
+
+  it("persists queued encrypted mailbox bytes across Durable Object eviction (SQLite)", async () => {
+    const h = await harness();
+    const room = randomRoom();
+    const proof = proofOf(4);
+    const cipher = new Uint8Array([1, 42, 99, 7, 13]);
+    const post = await h.http(`/v1/mailbox/${room}/messages?to=phone`, "POST", {
+      headers: { Authorization: `Bearer ${ACCESS}`, "X-Lumen-Join": proof, "X-Lumen-Msg-Id": "mut-do-evict-01" },
+      body: cipher,
+    });
+    expect(post.status).toBe(201);
+
+    await evictDurableObject(env.ROOM.get(env.ROOM.idFromName(room)));
+
+    const pull = await h.http(`/v1/mailbox/${room}/messages?for=phone&after=0`, "GET", {
+      headers: { Authorization: `Bearer ${ACCESS}`, "X-Lumen-Join": proof },
+    });
+    expect(pull.status).toBe(200);
+    const parsed = JSON.parse(pull.text);
+    expect(parsed.messages).toHaveLength(1);
+    expect(Uint8Array.from(Buffer.from(parsed.messages[0].payloadB64, "base64"))).toEqual(cipher);
+
+    const stats = await h.http(`/v1/mailbox/${room}/stats`, "GET", {
+      headers: { Authorization: `Bearer ${ACCESS}`, "X-Lumen-Join": proof },
+    });
+    expect(stats.status).toBe(200);
+    expect(JSON.parse(stats.text).storedBytes).toBe(cipher.byteLength);
+  });
+
+  it("costs zero SQLite tables/writes on idle GET /messages before anything was posted", async () => {
+    const h = await harness();
+    const room = randomRoom();
+    const pull = await h.http(`/v1/mailbox/${room}/messages?for=pc&after=0`, "GET", {
+      headers: { Authorization: `Bearer ${ACCESS}`, "X-Lumen-Join": proofOf(7) },
+    });
+    expect(pull.status).toBe(200);
+    expect(JSON.parse(pull.text).messages).toEqual([]);
+    const stub = env.ROOM.get(env.ROOM.idFromName(room));
+    const tableCount = await runInDurableObject(
+      stub,
+      (_instance, state) => state.storage.sql.exec<{ c: number }>("SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' AND name LIKE 'mailbox_%'").one().c,
+    );
+    expect(tableCount).toBe(0);
   });
 });

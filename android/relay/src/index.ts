@@ -7,7 +7,13 @@
 // This file answers the HTTP side and refuses everything that is not a well-formed, authorised room request BEFORE a room
 // (a Durable Object) is created or contacted.
 
-import { accessKeyOk, parseJoinProof, parseRoomRequest } from "./protocol";
+import {
+  accessKeyOk,
+  parseJoinProof,
+  parseMailboxJoinHeader,
+  parseMailboxRequest,
+  parseRoomRequest,
+} from "./protocol";
 export { Room } from "./room";
 
 export interface Env {
@@ -26,15 +32,25 @@ export default {
     if (url.pathname === "/") {
       return request.method === "GET" ? new Response("Coucou link relay", { status: 200, headers: { "content-type": "text/plain" } }) : empty(405);
     }
-    const target = request.method === "GET" ? parseRoomRequest(url) : null;
-    if (!target) return empty(404); // bad path, bad room id, bad role, wrong method: nothing is created
+
+    const mailbox = url.pathname.startsWith("/v1/mailbox/") ? parseMailboxRequest(url, request.method) : null;
+    if (mailbox === "method") return empty(405);
+    const roomTarget = !mailbox && request.method === "GET" ? parseRoomRequest(url) : null;
+    if (!mailbox && !roomTarget) return empty(404); // bad path, bad room id, bad role, wrong method: nothing is created
+
     if (env.CONNECT_LIMIT) {
       const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
       if (!(await env.CONNECT_LIMIT.limit({ key: ip })).success) return empty(429);
     }
     if (!(await accessKeyOk(env.ACCESS_KEY, request.headers.get("Authorization")))) return empty(401);
+
+    if (mailbox) {
+      if (!parseMailboxJoinHeader(request.headers.get("X-Lumen-Join"))) return empty(400);
+      return env.ROOM.get(env.ROOM.idFromName(mailbox.room)).fetch(request);
+    }
+
     if (!parseJoinProof(request.headers.get("Sec-WebSocket-Protocol"))) return empty(400);
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return empty(426);
-    return env.ROOM.get(env.ROOM.idFromName(target.room)).fetch(request);
+    return env.ROOM.get(env.ROOM.idFromName(roomTarget!.room)).fetch(request);
   },
 };

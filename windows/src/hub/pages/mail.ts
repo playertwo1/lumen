@@ -6,7 +6,7 @@ import { h, clear } from "../../views/dom";
 import { t } from "../../i18n/i18n";
 import {
   MAIL_BLUE, MAIL_FIELDS, MailBridge, fieldTitle, journalLine, nameOf, reasonLine, ruleLine, ruleName,
-  type MailAction, type MailField, type MailSettings, type TriageView,
+  type MailAction, type MailBackend, type MailCraftConfig, type MailCraftMode, type MailField, type MailSettings, type TriageView,
 } from "../../core/mail";
 import type { HubContext } from "../shell";
 import { emptyState } from "../hero";
@@ -55,10 +55,119 @@ function autoSortHint(view: TriageView, redraw: () => void): HTMLElement | null 
 // ── Overview ─────────────────────────────────────────────────────────────────
 
 export async function mailOverviewPage(page: HTMLElement, ctx: HubContext) {
-  const view = await load();
-  page.append(ctx.hero("mailOverview", t("Overview"),
-    t("Coucou sorts your Outlook inboxes: VIPs first, then banned words, then your rules. It never deletes a message.")));
+  const [view, cfgRaw] = await Promise.all([load(), MailBridge.configGet()]);
+  let cfg: MailCraftConfig = cfgRaw ?? {
+    backend: "mailcraft",
+    mode: "control",
+    host: "127.0.0.1",
+    port: 7991,
+    mcpCommand: "",
+  };
+  page.append(ctx.hero("mailOverview", "E-mail pessoal",
+    "MailCraft é o provedor principal (leitura, resumo e rascunhos, nunca envia e-mails). O Outlook clássico fica como opção secundária no Windows."));
   const redraw = () => ctx.navigate("mailOverview");
+
+  // ── MailCraft (principal) + provedor secundário ────────────────────────────
+  const statusLine = h("div", { class: "hub-note", text: "Clique em Testar conexão para validar a comunicação com o MailCraft." });
+  const portInput = input("Porta de controle (padrão 7991)");
+  portInput.type = "number";
+  portInput.value = String(cfg.port);
+  const mcpInput = input("Ex.: mailcraft-cli mcp --connect 127.0.0.1:7991");
+  mcpInput.value = cfg.mcpCommand;
+  const mcpRow = h("div", { class: "hub-row" }, mcpInput);
+  mcpRow.style.display = cfg.mode === "mcp" ? "" : "none";
+
+  const persistCfg = async (next: MailCraftConfig) => {
+    cfg = (await MailBridge.configSet(next)) ?? next;
+  };
+
+  const backendSel = select<MailBackend>([
+    ["mailcraft", "MailCraft (principal)"],
+    ["outlook", "Outlook clássico (secundário — Windows)"],
+  ], cfg.backend, (b) => void persistCfg({ ...cfg, backend: b }));
+
+  const modeSel = select<MailCraftMode>([
+    ["control", "Canal de controle loopback (127.0.0.1)"],
+    ["mcp", "Servidor MCP stdio (mailcraft-cli)"],
+  ], cfg.mode, (m) => {
+    mcpRow.style.display = m === "mcp" ? "" : "none";
+    void persistCfg({ ...cfg, mode: m });
+  });
+
+  const testBtn = button("Testar conexão", () => {
+    const portNum = Math.max(1, Math.min(65535, Number.parseInt(portInput.value, 10) || 7991));
+    const draftCfg: MailCraftConfig = { ...cfg, port: portNum, mcpCommand: mcpInput.value.trim() };
+    statusLine.textContent = "Verificando conexão segura com MailCraft…";
+    void persistCfg(draftCfg).then(() => MailBridge.testConnection(draftCfg)).then((st) => {
+      if (!st) {
+        statusLine.textContent = "Teste disponível apenas no aplicativo desktop.";
+        return;
+      }
+      if (st.connected) {
+        statusLine.textContent = `Conectado (${st.mode}: ${st.endpoint}) — ${st.accounts} conta(s), caixa: ${st.mailboxState}. Somente leitura/rascunho.`;
+      } else {
+        statusLine.textContent = st.error ?? `Offline em ${st.endpoint}.`;
+      }
+    }).catch((err) => {
+      statusLine.textContent = String(err);
+    });
+  }, "primary");
+
+  const summaryBox = h("div", { class: "hub-note", text: "" });
+  const summarizeBtn = button("Resumir caixa agora", () => {
+    summaryBox.textContent = "Lendo mensagens recentes e preparando resumo…";
+    void MailBridge.summarizeInbox(12).then((res) => {
+      summaryBox.textContent = `(${res.count} mensagens, ${res.unread} não lidas — ${res.backend})\n${res.summary}`;
+    }).catch((err) => {
+      summaryBox.textContent = String(err);
+    });
+  });
+
+  const draftTo = input("Para (ex.: contato@exemplo.com)");
+  const draftSubject = input("Assunto do rascunho");
+  const draftBody = h("textarea", {
+    class: "hub-input",
+    placeholder: "Corpo do rascunho — o Lumen salva como rascunho para você revisar e nunca envia sozinho.",
+    rows: "3",
+  }) as HTMLTextAreaElement;
+  draftBody.style.width = "100%";
+  const draftStatus = h("div", { class: "hub-note", text: "" });
+  const draftBtn = button("Salvar rascunho (sem enviar)", () => {
+    draftStatus.textContent = "Salvando rascunho…";
+    void MailBridge.prepareDraft({
+      to: draftTo.value.trim(),
+      subject: draftSubject.value.trim(),
+      body: draftBody.value,
+    }).then((res) => {
+      draftStatus.textContent = res.note;
+    }).catch((err) => {
+      draftStatus.textContent = String(err);
+    });
+  });
+
+  page.append(
+    label("MailCraft (principal) & Ações rápidas"),
+    card(
+      row("Provedor ativo de e-mail", "Escolha MailCraft como padrão ou use o Outlook clássico como secundário no Windows.", backendSel),
+      divider(),
+      row("Transporte local do MailCraft", "Canal de controle autenticado via HMAC ou servidor MCP sem permissão de envio.", modeSel),
+      divider(),
+      h("div", { class: "hub-row" }, portInput, testBtn),
+      mcpRow,
+      statusLine,
+      divider(),
+      h("div", { class: "hub-row" }, summarizeBtn),
+      summaryBox,
+      divider(),
+      label("Preparar rascunho (nunca envia)"),
+      h("div", { class: "hub-row" }, draftTo, draftSubject),
+      draftBody,
+      h("div", { class: "hub-row" }, draftBtn, h("span", { class: "grow" })),
+      draftStatus,
+    ),
+    label("Outlook clássico (secundário)"),
+    h("div", { class: "hub-note", text: t("Coucou sorts your Outlook inboxes: VIPs first, then banned words, then your rules. It never deletes a message.") }),
+  );
 
   const sortCard = card(row(t("Sort new messages automatically"),
     t("Only messages that arrive from now on, in every Outlook account. The classic Outlook must be open."),

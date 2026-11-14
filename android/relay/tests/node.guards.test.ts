@@ -6,11 +6,15 @@ describe("source guards", () => {
   const dir = new URL("../src/", import.meta.url);
   const sources = readdirSync(dir).filter((f) => f.endsWith(".ts")).map((f) => [f, readFileSync(new URL(f, dir), "utf8")] as const);
 
-  it("the relay never logs, stores or calls out", () => {
+  it("the relay never logs or calls out, and only Room SQLite stores opaque mailbox bytes", () => {
     for (const [file, text] of sources) {
       const code = text.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-      for (const forbidden of ["console.", "storage.put", "storage.set", "storage.delete", ".sql", "KVNamespace", "R2Bucket", "D1Database", "fetch(\"http", "fetch(`http", "Queue", "waitUntil", "setAlarm"]) {
+      const commonForbidden = ["console.", "KVNamespace", "R2Bucket", "D1Database", "fetch(\"http", "fetch(`http", "Queue", "waitUntil", "setAlarm"];
+      for (const forbidden of commonForbidden) {
         expect(code.includes(forbidden), `${file} uses ${forbidden}`).toBe(false);
+      }
+      if (file !== "room.ts") {
+        expect(code.includes(".sql"), `${file} uses .sql`).toBe(false);
       }
     }
   });

@@ -47,8 +47,13 @@ const harness = async (): Promise<Harness> => {
   relay = await startRelay({ accessKey: ACCESS });
   const base = `127.0.0.1:${relay.port}`;
   return {
-    async http(path, method = "GET") {
-      const r = await fetch(`http://${base}${path}`, { method });
+    async http(path, method = "GET", init) {
+      const body = init?.body instanceof Uint8Array ? Buffer.from(init.body) : init?.body;
+      const r = await fetch(`http://${base}${path}`, {
+        method,
+        headers: init?.headers,
+        body,
+      });
       return { status: r.status, text: await r.text() };
     },
     connect(room, role, o: Options = {}) {

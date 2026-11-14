@@ -144,8 +144,7 @@ export const PILL_CATALOG: readonly PillDefinition[] = [
   // (installed from Chrome or Edge) or a desktop client. Shares Spotify's card.
   { id: "integration_youtubemusic", name: "YouTube Music", color: "#FF0033", category: "service",
     subtitle: N_("Integration"), source: "n8n", support: "windows", connect: none },
-  // Mail: classic Outlook on Windows, driven on this computer through its COM objects
-  // (src-tauri/src/mail). The new Outlook has none, and Linux has no Outlook.
+  // Mail: MailCraft (principal via canal local/MCP) e Outlook clássico no Windows (secundário).
   { id: "integration_mail", name: "Mail", color: "#2F8CFF", category: "service",
     subtitle: N_("Integration"), source: "n8n", support: "windows", connect: none },
   // WhatsApp (experimental) through a gateway on this computer (src-tauri/src/whatsapp): set up,

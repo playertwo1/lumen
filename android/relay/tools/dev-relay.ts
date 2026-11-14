@@ -7,14 +7,15 @@
 // It listens on plain ws:// (put a TLS terminator in front of it for the internet). Like the Worker it stores nothing,
 // logs nothing and fails closed without an access key.
 
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { pathToFileURL } from "node:url";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
+import { MemoryMailboxStorage, handleMailboxHttp } from "../src/mailbox.ts";
 import {
   Bucket, MAX_FRAME, PEER_OFFLINE, PEER_ONLINE, RATE_BURST, RATE_PER_SECOND, SUBPROTOCOL,
-  accessGeneration, accessKeyOk, joinVerifier, otherRole, parseJoinProof, parseRoomRequest,
-  type Role,
+  accessGeneration, accessKeyOk, joinVerifier, otherRole, parseJoinProof, parseMailboxJoinHeader,
+  parseMailboxRequest, parseRoomRequest, type Role,
 } from "../src/protocol.ts";
 
 interface Peer {
@@ -38,6 +39,7 @@ export interface Relay {
 export async function startRelay(options: { port?: number; host?: string; accessKey?: string; connectsPerMinute?: number } = {}): Promise<Relay> {
   let accessKey = options.accessKey;
   const rooms = new Map<string, Partial<Record<Role, Peer>> & { verifier?: string }>();
+  const mailboxes = new Map<string, MemoryMailboxStorage>();
   const connects = new Map<string, number[]>();
   const wss = new WebSocketServer({
     noServer: true,
@@ -50,12 +52,113 @@ export async function startRelay(options: { port?: number; host?: string; access
     socket.destroy();
   };
 
-  const server = createServer((req, res) => {
-    if (req.url === "/" && req.method === "GET") {
-      res.writeHead(200, { "content-type": "text/plain" }).end("Coucou link relay");
-    } else {
-      res.writeHead(req.url === "/" ? 405 : 404).end();
+  const readReqBody = (req: IncomingMessage, limit: number): Promise<Uint8Array | "too_large"> =>
+    new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      req.on("data", (chunk: Buffer) => {
+        total += chunk.length;
+        if (total > limit) {
+          resolve("too_large");
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on("end", () => resolve(new Uint8Array(Buffer.concat(chunks))));
+      req.on("error", reject);
+    });
+
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://relay.invalid");
+    const method = req.method ?? "GET";
+    if (url.pathname === "/") {
+      if (method === "GET") {
+        res.writeHead(200, { "content-type": "text/plain" }).end("Coucou link relay");
+      } else {
+        res.writeHead(405).end();
+      }
+      return;
     }
+
+    const action = url.pathname.startsWith("/v1/mailbox/") ? parseMailboxRequest(url, method) : null;
+    if (action === "method") {
+      res.writeHead(405).end();
+      return;
+    }
+    if (!action) {
+      res.writeHead(404).end();
+      return;
+    }
+    if (options.connectsPerMinute) {
+      const ip = req.socket.remoteAddress ?? "unknown";
+      const now = Date.now();
+      const recent = (connects.get(ip) ?? []).filter((t) => now - t < 60_000);
+      if (recent.length >= options.connectsPerMinute) {
+        res.writeHead(429).end();
+        return;
+      }
+      connects.set(ip, [...recent, now]);
+    }
+    if (!(await accessKeyOk(accessKey, req.headers.authorization ?? null))) {
+      res.writeHead(401).end();
+      return;
+    }
+    const joinHeader = parseMailboxJoinHeader((req.headers["x-lumen-join"] as string | undefined) ?? null);
+    if (!joinHeader) {
+      res.writeHead(400).end();
+      return;
+    }
+
+    let rawBody: Uint8Array | undefined;
+    if (method === "POST") {
+      const read = await readReqBody(req, MAX_FRAME + 1024);
+      if (read === "too_large") {
+        res.writeHead(413).end();
+        return;
+      }
+      rawBody = read;
+    }
+
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (typeof v === "string") headers.set(k, v);
+      else if (Array.isArray(v)) headers.set(k, v.join(", "));
+    }
+    const webReq = new Request(url.toString(), {
+      method,
+      headers,
+      body: method === "POST" ? Buffer.from(rawBody ?? []) : undefined,
+    });
+
+    const verifier = await joinVerifier(joinHeader);
+    const shouldCreate = action.kind === "revoke" || (action.kind === "messages" && action.method === "POST");
+    let store = mailboxes.get(action.room);
+    if (!store) {
+      const temp = new MemoryMailboxStorage();
+      if (shouldCreate) mailboxes.set(action.room, temp);
+      store = temp;
+    }
+
+    const response = await handleMailboxHttp(webReq, action, verifier, store, () => {
+      const r = rooms.get(action.room);
+      if (!r) return;
+      for (const peer of [r.pc, r.phone]) {
+        if (peer && !peer.replaced) {
+          try {
+            peer.ws.close(1008, "revoked");
+          } catch {
+            /* already closed */
+          }
+        }
+      }
+    });
+
+    const outHeaders: Record<string, string> = {};
+    response.headers.forEach((v, k) => {
+      outHeaders[k] = v;
+    });
+    res.writeHead(response.status, outHeaders).end(Buffer.from(await response.arrayBuffer()));
   });
 
   server.on("upgrade", async (req, socket, head) => {
@@ -76,6 +179,15 @@ export async function startRelay(options: { port?: number; host?: string; access
     const gen = await accessGeneration(accessKey);
 
     wss.handleUpgrade(req, socket, head, (ws) => {
+      const persisted = mailboxes.get(target.room)?.loadMeta();
+      if (persisted?.revoked) {
+        ws.close(1008, "revoked");
+        return;
+      }
+      if (persisted && persisted.joinVerifier !== verifier) {
+        ws.close(1008, "join proof");
+        return;
+      }
       const room = rooms.get(target.room) ?? {};
       const live = (Object.values(room).filter((v) => typeof v === "object") as Peer[]).filter((p) => !p.replaced);
       if (live.length > 0 && live[0].verifier !== verifier) {
