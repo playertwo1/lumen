@@ -306,6 +306,8 @@ export class CompassEngine {
   private hopAmp = 0;
   private waveStart = -1;
   private waveDuration = 0;
+  private noteWriteStart = -1;
+  private noteWriteDuration = 0;
   private badgePopStart = -1;
   private gulpStart = -1;
   private gulpChewStarted = false;
@@ -480,6 +482,20 @@ export class CompassEngine {
     }
   }
   setDancing(dancing: boolean) { this.isDancing = dancing; }
+  /** P3: gesto curto de anotar numa caderneta quando uma nota ou ideia é criada. */
+  triggerNoteWrite(duration = 1.45) {
+    if (reducedMotion()) {
+      this.noteWriteStart = -1;
+      this.noteWriteDuration = 0;
+      return;
+    }
+    const dur = Math.max(0.4, duration);
+    this.noteWriteStart = this.elapsed;
+    this.noteWriteDuration = dur;
+    this.squash();
+    this.blink();
+    this.markBusyFor(dur);
+  }
   get busy() {
     if (reducedMotion()) return false;
     const moodActive = !this.isMini && (
@@ -502,6 +518,7 @@ export class CompassEngine {
       outfitChanging ||
       this.isDancing ||
       this.dancingLevel > 0.001 ||
+      this.noteWriteStart >= 0 ||
       this.rollDuration > 0 ||
       this.elapsed < this.busyUntil ||
       this.pendingSparkAt >= 0 ||
@@ -710,6 +727,10 @@ export class CompassEngine {
       const age = this.elapsed - this.badgePopStart;
       this.badgeS = evalEnvelope(age, 0.05, BADGE_POP);
       if (age >= envelopeDuration(BADGE_POP)) { this.badgePopStart = -1; this.badgeS = this.badge ? 1 : 0; }
+    }
+    if (this.noteWriteStart >= 0 && this.elapsed >= this.noteWriteStart + this.noteWriteDuration) {
+      this.noteWriteStart = -1;
+      this.noteWriteDuration = 0;
     }
 
     // Continuous active-state P1 motion
@@ -989,6 +1010,9 @@ export class CompassEngine {
     this.drawEyes(ctx, eyes, gaze, sleepingEyes, face, spiralPhase, eyeOpen, compact);
     this.drawMouth(ctx, mouth, face, compact);
     this.drawStateAccent(ctx, motionTime, compact);
+    if (!reduced && this.noteWriteStart >= 0 && this.elapsed < this.noteWriteStart + this.noteWriteDuration) {
+      this.drawNoteWriteGesture(ctx, compact);
+    }
     if (!reduced && this.particles.length > 0) this.drawParticles(ctx);
     ctx.restore();
 
@@ -1849,6 +1873,64 @@ export class CompassEngine {
       else this.drawSleepZ(ctx, p.x, p.y, size, alpha);
       ctx.restore();
     }
+  }
+
+  private drawNoteWriteGesture(ctx: CanvasRenderingContext2D, compact: boolean) {
+    const dur = Math.max(0.2, this.noteWriteDuration);
+    const p = Math.min(1, Math.max(0, (this.elapsed - this.noteWriteStart) / dur));
+    const pop = Math.min(1, p / 0.14);
+    const fade = p > 0.84 ? Math.max(0, (1 - p) / 0.16) : 1;
+    const x = compact ? 63 : 66;
+    const y = compact ? 24 : 56;
+    const w = compact ? 20 : 21;
+    const h = compact ? 24 : 25;
+
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    this.drawScaledAccent(ctx, x + w / 2, y + h / 2, 0.72 + pop * 0.28, () => {
+      roundedRect(ctx, x, y, w, h, 3.5);
+      ctx.fillStyle = rgbCss(CLAUDE_WHITE);
+      ctx.fill();
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = compact ? 2.4 : 2.1;
+      ctx.stroke();
+
+      roundedRect(ctx, x + 2.5, y + 2.2, w - 5, 4.2, 1.5);
+      ctx.fillStyle = rgbCss(TEAL);
+      ctx.fill();
+
+      const linesDone = Math.min(3, Math.floor(p * 3.4));
+      const partial = (p * 3.4) - linesDone;
+      let penX = x + 6;
+      let penY = y + 10.5;
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      for (let i = 0; i < 3; i++) {
+        const frac = i < linesDone ? 1 : i === linesDone ? Math.min(1, Math.max(0.15, partial)) : 0;
+        if (frac <= 0) continue;
+        const ly = y + 10.5 + i * 4.5;
+        const lx1 = x + 4.5;
+        const lx2 = lx1 + (w - 9) * frac;
+        ctx.beginPath();
+        ctx.moveTo(lx1, ly);
+        ctx.lineTo(lx2, ly);
+        ctx.stroke();
+        penX = lx2;
+        penY = ly;
+      }
+
+      // Caneta animada acompanhando a linha em escrita.
+      const wiggle = Math.sin(p * Math.PI * 10) * 1.1;
+      ctx.beginPath();
+      ctx.moveTo(penX + wiggle, penY - 0.5);
+      ctx.lineTo(penX + 8 + wiggle, penY - 8.5);
+      ctx.strokeStyle = rgbCss(CLAUDE_DESKTOP_TERRACOTTA);
+      ctx.lineWidth = compact ? 3.2 : 2.8;
+      ctx.lineCap = "round";
+      ctx.stroke();
+    });
+    ctx.restore();
   }
 }
 

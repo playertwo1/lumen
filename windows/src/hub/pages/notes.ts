@@ -1,10 +1,19 @@
-// The Notetaker: your calls, transcribed person by person, with a summary,
-// the key points and the to-dos. Port of FlowHubNotes.swift.
+// Anotador: captura de ideias e pensamentos por voz (microfone) ou texto rápido,
+// com resumo pelo provedor ativo e comentários das personas configuradas.
 
 import { h, clear } from "../../views/dom";
-import { t } from "../../i18n/i18n";
+import { t, LUMEN_WINDOWS } from "../../i18n/i18n";
 import { onEvent } from "../../core/bridge";
-import { FlowBridge, clock, noteMatches, speakerColor, type Note, type NotesState } from "../../core/flow";
+import {
+  FlowBridge,
+  clock,
+  noteMatches,
+  speakerColor,
+  type CommentSettings,
+  type Note,
+  type NotesState,
+  type PersonasState,
+} from "../../core/flow";
 import type { HubContext } from "../shell";
 import { emptyState, glowCard } from "../hero";
 import { button, iconButton, segmented } from "../ui";
@@ -12,25 +21,61 @@ import { modelsControl } from "./flowsettings";
 
 const lang = () => document.documentElement.lang || undefined;
 
-function minutes(note: Note): number {
-  const end = note.end ?? Date.now();
-  return Math.max(1, Math.round((end - note.start) / 60_000));
+const SYNTHETIC_PERSONA_SAMPLE = JSON.stringify(
+  [
+    {
+      id: "clara",
+      name: "Clara",
+      role: "Estrategista",
+      identity: "Direta, prática e gentil. Vai direto ao ponto sem enrolação.",
+      userProfile: "Pessoa organizando projetos, prioridades e ideias do dia.",
+      rules: "Destaque o próximo passo concreto ou risco ignorado em até 2 frases.",
+      tags: ["projeto", "produto", "foco"],
+      interestFilter: "foco, prioridades, arquitetura",
+      isPrimaryCompanion: true,
+    },
+  ],
+  null,
+  2,
+);
+
+function defaultPersonasState(): PersonasState {
+  return {
+    personas: [],
+    settings: { enableCharacterComment: true, maxCommentCharacters: 2 },
+  };
 }
 
 export async function notesPage(page: HTMLElement, ctx: HubContext) {
   let state: NotesState = (await FlowBridge.notes()) ?? { notes: [], recording: null, working: [] };
+  let personasState: PersonasState = (await FlowBridge.personasState()) ?? defaultPersonasState();
   let selected: string | null = state.recording ?? state.notes[0]?.id ?? null;
   let tab: "summary" | "transcript" = "summary";
+  let showPersonas = false;
   let startError = "";
-  let left = false, exporting = false;
+  let quickError = "";
+  let commentError = "";
+  let personaFeedback = "";
+  let personaError = "";
+  let replyToId: string | null = null;
+  let left = false, exporting = false, savingText = false;
   let exportResult: { id: string; path?: string; error?: string } | null = null;
 
-  page.append(ctx.hero("notes", t("Notetaker"), t("Your calls transcribed person by person, with a summary and the to-dos. No bot in the meeting."), [], true));
+  const heroTitle = LUMEN_WINDOWS ? "Anotador" : t("Notetaker");
+  const heroSubtitle = "Dite ideias no microfone ou salve pensamentos em texto, com resumo e comentários das suas personas.";
+  page.append(ctx.hero("notes", heroTitle, heroSubtitle, [], true));
+
   if (ctx.status.models.parakeet.state !== "ready") {
     page.append(glowCard(
       "#3B9EFF",
-      h("div", { style: "font:700 15px var(--font)", text: t("One download, then offline") }),
-      h("div", { class: "hub-note", style: "color:#b7bbc2", text: t("Coucou writes your calls on this computer with Parakeet, and tells the voices apart with a second small model. Both are downloaded once (about {0} MB), then everything works offline.", { 0: ctx.status.models.downloadMb }) }),
+      h("div", { style: "font:700 15px var(--font)", text: "Modelo de voz opcional para ditado" }),
+      h("div", {
+        class: "hub-note",
+        style: "color:#b7bbc2",
+        text: LUMEN_WINDOWS
+          ? `Notas em texto já funcionam agora. Para ditar ideias por voz offline, baixe o Parakeet (${ctx.status.models.downloadMb ?? 0} MB).`
+          : t("Coucou writes your calls on this computer with Parakeet, and tells the voices apart with a second small model. Both are downloaded once (about {0} MB), then everything works offline.", { 0: ctx.status.models.downloadMb }),
+      }),
       modelsControl(ctx, () => ctx.navigate("notes")),
     ));
   }
@@ -41,6 +86,19 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
     query = search.value;
     drawList(true);
   });
+
+  const quickTitle = h("input", {
+    class: "hub-input",
+    placeholder: "Título opcional",
+    style: "width:100%",
+  }) as HTMLInputElement;
+  const quickText = h("textarea", {
+    class: "hub-input",
+    rows: "3",
+    placeholder: "Escreva uma ideia ou pensamento rápido… (Ctrl+Enter)",
+    style: "width:100%;resize:vertical;min-height:66px;font-family:var(--font)",
+  }) as HTMLTextAreaElement;
+
   const listEl = h("div", { class: "hub-notes-list" });
   const detail = h("div", { class: "hub-note-detail" });
   const notesContainer = h("div", { class: "hub-notes" }, listEl, detail);
@@ -49,10 +107,43 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
 
   const reload = async () => {
     state = (await FlowBridge.notes()) ?? state;
+    personasState = (await FlowBridge.personasState()) ?? personasState;
     if (selected && !state.notes.some((n) => n.id === selected)) selected = state.notes[0]?.id ?? null;
     drawList();
     drawDetail();
   };
+
+  async function saveQuickIdea() {
+    if (savingText) return;
+    const text = (quickText.value ?? "").trim();
+    if (!text) {
+      quickError = "Escreva uma ideia antes de salvar.";
+      drawList();
+      return;
+    }
+    savingText = true;
+    quickError = "";
+    try {
+      const created = await FlowBridge.createTextNote((quickTitle.value ?? "").trim() || null, text);
+      quickTitle.value = "";
+      quickText.value = "";
+      if (created?.id) selected = created.id;
+      showPersonas = false;
+      await reload();
+    } catch (err) {
+      quickError = String(err).replace(/^Error:\s*/, "");
+      drawList();
+    } finally {
+      savingText = false;
+    }
+  }
+
+  quickText.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      void saveQuickIdea();
+    }
+  });
 
   function recordButton(): HTMLElement {
     if (state.recording) {
@@ -61,13 +152,14 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
       b.dataset.ticking = "1";
       return b;
     }
-    const b = button(t("Record a call"), () => {
+    const b = button("Ditar ideia", () => {
       startError = "";
       FlowBridge.startNote().then((id) => {
         selected = id;
+        showPersonas = false;
         void reload();
       }, (err) => {
-        startError = String(err);
+        startError = String(err).replace(/^Error:\s*/, "");
         drawList();
       });
     }, "primary");
@@ -75,52 +167,353 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
     return b;
   }
 
-  // `typing`: the search field keeps its place (and the keyboard) while the list under it is redrawn.
   function drawList(typing = false) {
     clear(listEl);
     const rb = recordButton();
     rb.style.width = "100%";
     listEl.append(rb);
+
+    const activePersonasCount = personasState.personas.filter((p) => p.enabled).length;
+    const personasBtn = button(
+      showPersonas ? "← Voltar às notas" : `Personas (${activePersonasCount} ativa${activePersonasCount === 1 ? "" : "s"})`,
+      () => {
+        showPersonas = !showPersonas;
+        drawList();
+        drawDetail();
+      },
+      showPersonas ? "primary" : "",
+      true,
+    );
+    personasBtn.style.width = "100%";
+    listEl.append(personasBtn);
+
+    const saveBtn = button(savingText ? "Salvando…" : "Salvar ideia em texto", () => void saveQuickIdea(), "", true);
+    saveBtn.style.width = "100%";
+    listEl.append(
+      h("div", { class: "hub-card", style: "padding:10px;display:flex;flex-direction:column;gap:6px" },
+        h("div", { class: "hub-group", style: "margin:0", text: "Nova nota rápida" }),
+        quickTitle,
+        quickText,
+        quickError ? h("div", { class: "hub-warn", text: quickError }) : null,
+        saveBtn,
+      ),
+    );
+
     if (state.notes.length > 0) listEl.append(search);
     if (typing) search.focus();
     if (startError) listEl.append(h("div", { class: "hub-warn", text: startError }));
     if (state.notes.length === 0) {
-      listEl.append(h("div", { class: "hub-note", style: "padding:14px 4px", text: t("Your calls will show here. Click Record a call when one starts.") }));
+      listEl.append(h("div", { class: "hub-note", style: "padding:10px 4px", text: "Suas ideias e anotações aparecem aqui. Dite no microfone ou salve em texto." }));
     }
+
     let day = "";
     for (const n of state.notes.filter((x) => noteMatches(x, query))) {
       const d = new Date(n.start).toDateString();
       if (d !== day) {
         day = d;
         const isToday = d === new Date().toDateString();
-        listEl.append(h("div", { class: "hub-group", style: "padding:10px 6px 2px", text: isToday ? t("Today") : new Date(n.start).toLocaleDateString(lang(), { day: "numeric", month: "long" }) }));
+        listEl.append(h("div", {
+          class: "hub-group",
+          style: "padding:10px 6px 2px",
+          text: isToday ? t("Today") : new Date(n.start).toLocaleDateString(lang(), { day: "numeric", month: "long" }),
+        }));
       }
+      const commentCount = n.comments?.length ?? 0;
       const meta = n.status === "recording"
         ? t("Recording…")
         : state.working.includes(n.id) || n.status === "processing"
           ? t("writing…")
           : n.status === "failed"
             ? t("failed")
-            : `${new Date(n.start).toLocaleTimeString(lang(), { hour: "2-digit", minute: "2-digit" })} · ${t("{0} min", { 0: minutes(n) })}`;
-      const item = h("button", { class: n.id === selected ? "hub-note-item on" : "hub-note-item", onclick: () => {
-        selected = n.id;
-        drawList();
-        drawDetail();
-      } }, h("span", { class: "t", text: n.title }), h("span", { class: "m", text: meta }));
+            : `${new Date(n.start).toLocaleTimeString(lang(), { hour: "2-digit", minute: "2-digit" })} · ${commentCount} coment.`;
+      const item = h("button", {
+        class: n.id === selected && !showPersonas ? "hub-note-item on" : "hub-note-item",
+        onclick: () => {
+          selected = n.id;
+          showPersonas = false;
+          replyToId = null;
+          commentError = "";
+          drawList();
+          drawDetail();
+        },
+      }, h("span", { class: "t", text: n.title }), h("span", { class: "m", text: meta }));
       if (n.status === "recording") item.querySelector(".m")!.prepend(h("span", { class: "hub-rec", style: "margin-inline-end:6px" }));
       listEl.append(item);
     }
-    listEl.append(h("div", { style: "flex:1" }), h("div", { class: "hub-note", style: "padding:10px;border-radius:10px;background:rgba(255,255,255,0.04)", text: t("Everything stays on this computer. Tell the people in the call that you are recording.") }));
+
+    listEl.append(
+      h("div", { style: "flex:1" }),
+      h("div", {
+        class: "hub-note",
+        style: "padding:10px;border-radius:10px;background:rgba(255,255,255,0.04)",
+        text: "Tudo fica salvo localmente. Notas por voz usam apenas o microfone e seu provedor ativo.",
+      }),
+    );
+  }
+
+  function renderPersonasManager() {
+    clear(detail);
+    const settings: CommentSettings = personasState.settings;
+    const enableBox = h("input", { type: "checkbox" }) as HTMLInputElement;
+    enableBox.checked = settings.enableCharacterComment;
+    const maxInput = h("input", {
+      class: "hub-input",
+      type: "number",
+      min: "1",
+      max: "6",
+      value: String(settings.maxCommentCharacters),
+      style: "width:76px",
+    }) as HTMLInputElement;
+
+    const updateSettings = async () => {
+      personaError = "";
+      personaFeedback = "";
+      const maxChars = Math.min(6, Math.max(1, Number(maxInput.value) || 2));
+      try {
+        personasState = await FlowBridge.setCommentSettings(enableBox.checked, maxChars);
+        personaFeedback = "Regras de comentário atualizadas.";
+        drawList();
+        renderPersonasManager();
+      } catch (err) {
+        personaError = String(err).replace(/^Error:\s*/, "");
+        renderPersonasManager();
+      }
+    };
+    enableBox.addEventListener("change", () => void updateSettings());
+    maxInput.addEventListener("change", () => void updateSettings());
+
+    const jsonBox = h("textarea", {
+      class: "hub-input",
+      rows: "7",
+      placeholder: 'Cole um JSON de persona (3 partes QwenPaw: identity, userProfile, rules) ou lista do Segunda Mente…',
+      style: "width:100%;resize:vertical;font:12.5px/1.45 var(--mono, monospace)",
+    }) as HTMLTextAreaElement;
+
+    const fileInput = h("input", { type: "file", accept: ".json,application/json", style: "display:none" }) as HTMLInputElement;
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      void file.text().then((content) => {
+        jsonBox.value = content;
+      });
+    });
+
+    const importAction = async () => {
+      personaError = "";
+      personaFeedback = "";
+      try {
+        personasState = await FlowBridge.importPersonas(jsonBox.value);
+        jsonBox.value = "";
+        personaFeedback = `Personas salvas (${personasState.personas.length} no total).`;
+        drawList();
+        renderPersonasManager();
+      } catch (err) {
+        personaError = String(err).replace(/^Error:\s*/, "");
+        renderPersonasManager();
+      }
+    };
+
+    detail.append(
+      h("div", { style: "display:flex;align-items:center;gap:10px;justify-content:space-between" },
+        h("h2", { style: "margin:0", text: "Personas e regras de comentário" }),
+        button("← Voltar à nota", () => {
+          showPersonas = false;
+          drawList();
+          drawDetail();
+        }, "", true),
+      ),
+      h("div", { class: "hub-card", style: "display:flex;flex-direction:column;gap:10px" },
+        h("label", { class: "hub-row", style: "gap:8px;cursor:pointer" },
+          enableBox,
+          h("span", { text: "Permitir comentários automáticos após criar ou ditar uma nota" }),
+        ),
+        h("div", { class: "hub-row", style: "gap:10px;align-items:center" },
+          h("span", { class: "hub-note", text: "Máximo de personas por nota (roteamento inteligente):" }),
+          maxInput,
+          h("span", { class: "hub-note", text: "Dica: @nome sempre responde mesmo se o automático estiver desligado." }),
+        ),
+      ),
+      h("div", { class: "hub-card", style: "display:flex;flex-direction:column;gap:10px" },
+        h("div", { style: "font:600 14px var(--font)", text: "Importar persona manual (temporário até a etapa L6 de sync)" }),
+        fileInput,
+        jsonBox,
+        h("div", { class: "hub-row", style: "gap:8px;flex-wrap:wrap" },
+          button("Importar JSON", () => void importAction(), "primary", true),
+          button("Escolher arquivo .json", () => fileInput.click(), "", true),
+          button("Preencher exemplo sintético", () => { jsonBox.value = SYNTHETIC_PERSONA_SAMPLE; }, "", true),
+        ),
+        personaFeedback ? h("div", { class: "hub-note", style: "color:#34D399", text: personaFeedback }) : null,
+        personaError ? h("div", { class: "hub-warn", text: personaError }) : null,
+      ),
+    );
+
+    if (personasState.personas.length === 0) {
+      detail.append(h("div", { class: "hub-note", text: "Nenhuma persona importada ainda." }));
+      return;
+    }
+
+    for (const p of personasState.personas) {
+      detail.append(
+        h("div", { class: "hub-card", style: "display:flex;flex-direction:column;gap:8px" },
+          h("div", { class: "hub-row", style: "justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap" },
+            h("div", { class: "hub-row", style: "gap:8px;align-items:center" },
+              h("span", {
+                class: "av",
+                style: `background:${p.color};width:24px;height:24px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font:700 12px var(--font);color:#fff`,
+                text: p.name.slice(0, 1).toUpperCase(),
+              }),
+              h("strong", { text: `${p.name} (@${p.id})` }),
+              p.role ? h("span", { class: "hub-note", text: p.role }) : null,
+              p.isPrimaryCompanion ? h("span", { class: "hub-note", style: "color:#34D399", text: "Principal" }) : null,
+            ),
+            h("div", { class: "hub-row", style: "gap:6px" },
+              button(p.enabled ? "Desativar" : "Ativar", async () => {
+                personasState = await FlowBridge.togglePersona(p.id, !p.enabled);
+                drawList();
+                renderPersonasManager();
+              }, "", true),
+              !p.isPrimaryCompanion ? button("Definir principal", async () => {
+                personasState = await FlowBridge.setPrimaryPersona(p.id);
+                renderPersonasManager();
+              }, "", true) : null,
+              button(t("Delete"), async () => {
+                personasState = await FlowBridge.deletePersona(p.id);
+                drawList();
+                renderPersonasManager();
+              }, "danger", true),
+            ),
+          ),
+          p.tags.length ? h("div", { class: "hub-note", text: `Tags: ${p.tags.join(", ")}` }) : null,
+          p.interestFilter ? h("div", { class: "hub-note", text: `Foco: ${p.interestFilter}` }) : null,
+          p.identity ? h("div", { class: "hub-note", text: `Identidade: ${p.identity}` }) : null,
+          p.rules ? h("div", { class: "hub-note", text: `Regras: ${p.rules}` }) : null,
+        ),
+      );
+    }
+  }
+
+  function renderComments(note: Note): HTMLElement {
+    const section = h("div", { class: "hub-card", style: "display:flex;flex-direction:column;gap:12px;align-self:stretch" });
+    const comments = note.comments ?? [];
+    const busy = state.working.includes(note.id);
+    const activeCount = personasState.personas.filter((p) => p.enabled).length;
+
+    const header = h("div", { class: "hub-row", style: "justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap" },
+      h("div", { style: "font:700 14px var(--font)", text: `Comentários das personas (${comments.length})` }),
+      h("div", { class: "hub-row", style: "gap:8px" },
+        button(busy ? "Gerando…" : "Gerar comentários", async () => {
+          commentError = "";
+          try {
+            await FlowBridge.generateNoteComments(note.id);
+            await reload();
+          } catch (err) {
+            commentError = String(err).replace(/^Error:\s*/, "");
+            drawDetail();
+          }
+        }, "", true),
+        button("Gerenciar personas", () => {
+          showPersonas = true;
+          drawList();
+          drawDetail();
+        }, "", true),
+      ),
+    );
+    section.append(header);
+
+    if (commentError) {
+      section.append(h("div", { class: "hub-warn", text: commentError }));
+    }
+
+    if (comments.length === 0) {
+      const hint = activeCount === 0
+        ? "Importe e ative uma persona para receber comentários automáticos nas suas notas."
+        : "Nenhum comentário ainda. Clique em Gerar comentários ou mencione @persona abaixo.";
+      section.append(h("div", { class: "hub-note", text: hint }));
+    } else {
+      const byId = new Map(comments.map((c) => [c.id, c]));
+      for (const c of comments) {
+        const persona = personasState.personas.find((p) => p.id === c.characterId);
+        const color = c.authorKind === "user" ? "#3B9EFF" : (persona?.color ?? "#6C5CE7");
+        const parent = c.replyToId ? byId.get(c.replyToId) : undefined;
+        section.append(
+          h("div", {
+            style: `border-inline-start:3px solid ${color};padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:8px;display:flex;flex-direction:column;gap:4px`,
+          },
+            h("div", { class: "hub-row", style: "justify-content:space-between;align-items:center;gap:8px" },
+              h("div", { class: "hub-row", style: "gap:6px;align-items:center" },
+                h("strong", { style: `color:${color};font-size:13px`, text: c.characterName }),
+                parent ? h("span", { class: "hub-note", text: `↳ em resposta a ${parent.characterName}` }) : null,
+              ),
+              c.authorKind !== "user" ? button("Responder", () => {
+                replyToId = c.id;
+                drawDetail();
+              }, "", true) : null,
+            ),
+            h("div", { style: "font-size:13.5px;line-height:1.45;color:var(--hub-body)", text: c.content }),
+          ),
+        );
+      }
+    }
+
+    const replyTarget = replyToId ? comments.find((c) => c.id === replyToId) : undefined;
+    if (replyTarget) {
+      section.append(
+        h("div", { class: "hub-row", style: "gap:8px;align-items:center" },
+          h("span", { class: "hub-note", text: `Respondendo a ${replyTarget.characterName}` }),
+          button("Cancelar resposta", () => {
+            replyToId = null;
+            drawDetail();
+          }, "", true),
+        ),
+      );
+    }
+
+    const replyInput = h("input", {
+      class: "hub-input",
+      placeholder: activeCount > 0 ? "Comentar ou mencionar @persona…" : "Adicionar observação nesta nota…",
+      style: "flex:1",
+    }) as HTMLInputElement;
+    const sendReply = async () => {
+      const content = (replyInput.value ?? "").trim();
+      if (!content) return;
+      commentError = "";
+      try {
+        await FlowBridge.addNoteComment(note.id, content, replyToId);
+        replyInput.value = "";
+        replyToId = null;
+        await reload();
+      } catch (err) {
+        commentError = String(err).replace(/^Error:\s*/, "");
+        drawDetail();
+      }
+    };
+    replyInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void sendReply();
+      }
+    });
+    section.append(
+      h("div", { class: "hub-row", style: "gap:8px;align-items:center" },
+        replyInput,
+        button("Enviar", () => void sendReply(), "primary", true),
+      ),
+    );
+    return section;
   }
 
   function drawDetail() {
+    if (showPersonas) {
+      renderPersonasManager();
+      return;
+    }
     clear(detail);
     const note = state.notes.find((n) => n.id === selected);
     if (!note) {
-      detail.append(emptyState(t("Your calls will show here. Click Record a call when one starts."), "sleeping", "#3B9EFF"));
+      detail.append(emptyState("Suas ideias e pensamentos aparecerão aqui. Dite pelo microfone ou registre em texto.", "sleeping", "#3B9EFF"));
       return;
     }
-    // Title, renamed in place.
+
     const title = h("h2", { text: note.title, title: t("Edit"), style: "cursor:text" });
     title.addEventListener("click", () => {
       const input = h("input", { class: "hub-input", style: "font:700 20px var(--font);width:100%" }) as HTMLInputElement;
@@ -171,7 +564,7 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
       tools.append(iconButton("trash", t("Delete"), () => {
         clear(confirm);
         confirm.append(h("div", { class: "hub-warn", style: "display:flex;align-items:center;gap:10px" },
-          h("span", { style: "flex:1", text: t("Delete this call and its notes?") }),
+          h("span", { style: "flex:1", text: "Excluir esta anotação e seus comentários?" }),
           button(t("Delete"), () => void FlowBridge.deleteNote(note.id), "danger", true),
           button(t("Cancel"), () => clear(confirm), "", true),
         ));
@@ -192,7 +585,6 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
       }));
     }
 
-    // The people, renamed with a click.
     if (note.speakers.length) {
       const people = h("div", { class: "hub-speakers" });
       for (const s of note.speakers) {
@@ -220,43 +612,55 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
       detail.append(transcript(note, t("The words show up here as people speak.")));
       return;
     }
-    if (note.status === "processing" || state.working.includes(note.id) && note.lines.length === 0) {
-      detail.append(emptyState(t("Coucou is writing the transcript, person by person…"), "working", "#3B9EFF"));
+    if (note.status === "processing" || (state.working.includes(note.id) && note.lines.length === 0)) {
+      detail.append(emptyState("Transcrevendo e organizando sua ideia…", "working", "#3B9EFF"));
       return;
     }
     if (note.status === "failed") {
-      detail.append(h("div", { class: "hub-warn", text: `${t("The transcript could not be written.")} ${note.error ?? ""}` }));
+      detail.append(h("div", { class: "hub-warn", text: `Não foi possível processar esta gravação. ${note.error ?? ""}` }));
       detail.append(button(t("Retry"), () => void FlowBridge.retryNote(note.id)));
       return;
     }
     if (note.lines.length === 0) {
-      detail.append(emptyState(t("Nobody was heard in this recording."), "idle", "#3B9EFF"));
+      detail.append(emptyState("Nenhuma fala foi captada nesta gravação.", "idle", "#3B9EFF"));
       return;
     }
-    const tabs = segmented<"summary" | "transcript">([["summary", t("Summary")], ["transcript", t("Transcript")]], tab, (next) => {
+
+    const tabs = segmented<"summary" | "transcript">([["summary", "Resumo & Personas"], ["transcript", "Texto / Transcrição"]], tab, (next) => {
       tab = next;
       drawDetail();
     });
     detail.append(h("div", {}, tabs));
-    detail.append(tab === "summary" ? summary(note) : transcript(note, ""));
+    if (tab === "summary") {
+      detail.append(summary(note));
+      detail.append(renderComments(note));
+    } else {
+      detail.append(transcript(note, ""));
+      detail.append(renderComments(note));
+    }
   }
 
   function summary(note: Note): HTMLElement {
     const el = h("div", { style: "display:flex;flex-direction:column;gap:14px;align-items:flex-start" });
     const busy = state.working.includes(note.id);
     if (!note.summary && note.keyPoints.length === 0 && note.todos.length === 0) {
-      el.append(h("div", { class: "hub-note", text: busy ? t("Writing the summary…") : t("No summary yet.") }));
-      if (!busy) el.append(button(t("Write the summary"), () => void FlowBridge.summarize(note.id), "primary", true));
+      const rawText = note.lines.map((l) => l.text).join("\n");
+      if (rawText) {
+        el.append(h("div", { class: "hub-card", style: "font-size:14px;line-height:1.55;color:var(--hub-body);align-self:stretch;white-space:pre-wrap", text: rawText }));
+      } else {
+        el.append(h("div", { class: "hub-note", text: busy ? "Gerando resumo…" : "Ainda sem resumo automático." }));
+      }
+      if (!busy) el.append(button("Gerar resumo", () => void FlowBridge.summarize(note.id), "primary", true));
       return el;
     }
     if (note.summary) el.append(h("div", { class: "hub-card", style: "font-size:14px;line-height:1.55;color:var(--hub-body);align-self:stretch", text: note.summary }));
     if (note.keyPoints.length) {
       const ul = h("ul", { style: "margin:0;padding-inline-start:20px;display:flex;flex-direction:column;gap:6px;font-size:13.5px" });
       for (const p of note.keyPoints) ul.append(h("li", { text: p }));
-      el.append(h("div", { class: "hub-label", text: t("Key points") }), ul);
+      el.append(h("div", { class: "hub-label", text: "Pontos principais" }), ul);
     }
     if (note.todos.length) {
-      el.append(h("div", { class: "hub-label", text: t("To do") }));
+      el.append(h("div", { class: "hub-label", text: "Ações / To-do" }));
       for (const todo of note.todos) {
         const box = h("input", { type: "checkbox" }) as HTMLInputElement;
         box.checked = todo.done;
@@ -265,7 +669,7 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
         el.append(h("label", { class: "hub-todo" }, box, h("span", {}, h("span", { text: todo.text, style: todo.done ? "text-decoration:line-through;opacity:.6" : "" }), extra ? h("div", { class: "who", text: extra }) : null)));
       }
     }
-    el.append(button(busy ? t("Writing the summary…") : t("Write the summary again"), () => void FlowBridge.summarize(note.id), "", true));
+    el.append(button(busy ? "Gerando resumo…" : "Regerar resumo", () => void FlowBridge.summarize(note.id), "", true));
     return el;
   }
 
@@ -286,8 +690,8 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
 
   drawList();
   drawDetail();
-  const unlisten = await onEvent<string>("notes-changed", () => void reload());
-  // The recording's clock in the list.
+  const unlistenNotes = await onEvent<string>("notes-changed", () => void reload());
+  const unlistenPersonas = await onEvent<unknown>("personas-changed", () => void reload());
   const timer = window.setInterval(() => {
     if (!state.recording) return;
     const b = listEl.querySelector<HTMLElement>("[data-ticking]");
@@ -298,7 +702,8 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
   }, 1000);
   ctx.onLeave = () => {
     left = true;
-    unlisten();
+    unlistenNotes();
+    unlistenPersonas();
     window.clearInterval(timer);
   };
 }

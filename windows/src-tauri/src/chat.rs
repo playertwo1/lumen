@@ -199,6 +199,34 @@ fn checked_context(context: ChatContext) -> Result<ChatContext, String> {
     }
 }
 
+/// Executa um prompt único no provedor de chat configurado atualmente (incluindo ChatGPT OAuth).
+pub async fn complete_oneshot(
+    settings: &Settings,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    let provider = settings.chat_provider.as_str();
+    let model = model_for(settings, provider);
+    if cli_relay::uses_subscription(settings, provider) {
+        return cli_relay::complete(provider, &model, system, user).await;
+    }
+    if provider == "chatgpt" {
+        return crate::chatgpt::complete_oneshot(&model, system, user, timeout).await;
+    }
+    if provider == ANTHROPIC || provider.is_empty() {
+        return claude::complete(&model, system, user, max_tokens, timeout).await;
+    }
+    if let Some(p) = openai_compat::provider(provider) {
+        return openai_compat::complete(p, &model, system, user, max_tokens, timeout).await;
+    }
+    if let Some(server) = local_chat::server(settings, provider) {
+        return local_chat::complete(&server, &model, system, user, max_tokens, timeout).await;
+    }
+    Err(format!("Unknown chat provider: {provider}"))
+}
+
 /// One chat turn with the provider chosen in the settings.
 pub async fn send(
     app: &AppHandle,

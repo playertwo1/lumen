@@ -200,6 +200,7 @@ async function main() {
   window.setTimeout(whatsNew, 8000);
   island.onWake = checkRecap;
   await onEvent<null>("recap-check", checkRecap);
+  await onEvent<string>("note-created", () => island.noteCreated());
 
   island.launch();
 

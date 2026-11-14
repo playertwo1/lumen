@@ -150,6 +150,44 @@ export interface Todo {
   done: boolean;
 }
 
+export interface NoteComment {
+  id: string;
+  characterId: string;
+  characterName: string;
+  authorKind: "persona" | "user" | string;
+  content: string;
+  replyToId?: string | null;
+  createdAt: number;
+}
+
+export interface PersonaProfile {
+  id: string;
+  name: string;
+  role?: string | null;
+  identity: string;
+  userProfile: string;
+  rules: string;
+  persona: string;
+  systemPromptOverride?: string | null;
+  postHistoryInstructions?: string | null;
+  mesExample?: string | null;
+  tags: string[];
+  interestFilter?: string | null;
+  isPrimaryCompanion: boolean;
+  enabled: boolean;
+  color: string;
+}
+
+export interface CommentSettings {
+  enableCharacterComment: boolean;
+  maxCommentCharacters: number;
+}
+
+export interface PersonasState {
+  personas: PersonaProfile[];
+  settings: CommentSettings;
+}
+
 export interface Note {
   id: string;
   title: string;
@@ -165,10 +203,12 @@ export interface Note {
   todos: Todo[];
   error?: string | null;
   startLocal: string;
+  comments?: NoteComment[];
+  commentHash?: string | null;
 }
 
 /** Every word of `query` (case and accents ignored) is in the note: its title, summary, key points,
- *  to-dos, speakers' names or what was said. An empty query matches every note. */
+ *  to-dos, speakers' names, comments or what was said. An empty query matches every note. */
 export function noteMatches(note: Note, query: string): boolean {
   const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const words = fold(query).split(/\s+/).filter(Boolean);
@@ -176,6 +216,7 @@ export function noteMatches(note: Note, query: string): boolean {
   const text = fold([
     note.title, note.summary ?? "", ...note.keyPoints, ...note.todos.map((x) => x.text),
     ...note.speakers.map((s) => s.name), ...note.lines.map((l) => l.text),
+    ...(note.comments ?? []).map((c) => `${c.characterName} ${c.content}`),
   ].join("\n"));
   return words.every((w) => text.includes(w));
 }
@@ -239,6 +280,17 @@ export const FlowBridge = {
   notes: () => call<NotesState>("notes_state"),
   startNote: () => callOrThrow<string>("notes_start"),
   stopNote: () => call<void>("notes_stop"),
+  createTextNote: (title: string | null, text: string) => callOrThrow<Note>("notes_create_text", { title, text }),
+  addNoteComment: (id: string, content: string, replyToId?: string | null) =>
+    callOrThrow<Note>("notes_add_comment", { id, content, replyToId: replyToId ?? null }),
+  generateNoteComments: (id: string) => callOrThrow<void>("notes_generate_comments", { id }),
+  personasState: () => call<PersonasState>("personas_state"),
+  importPersonas: (raw: string) => callOrThrow<PersonasState>("personas_import", { raw }),
+  togglePersona: (id: string, enabled: boolean) => callOrThrow<PersonasState>("personas_toggle", { id, enabled }),
+  deletePersona: (id: string) => callOrThrow<PersonasState>("personas_delete", { id }),
+  setPrimaryPersona: (id: string) => callOrThrow<PersonasState>("personas_set_primary", { id }),
+  setCommentSettings: (enableCharacterComment: boolean, maxCommentCharacters: number) =>
+    callOrThrow<PersonasState>("personas_set_comment_settings", { enableCharacterComment, maxCommentCharacters }),
   renameNote: (id: string, title: string) => call<void>("notes_rename", { id, title }),
   renameSpeaker: (id: string, speaker: string, name: string) => call<void>("notes_rename_speaker", { id, speaker, name }),
   toggleTodo: (id: string, todo: string) => call<void>("notes_toggle_todo", { id, todo }),

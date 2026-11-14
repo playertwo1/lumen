@@ -5,7 +5,7 @@
 
 import "./hub.css";
 import { h, clear } from "../views/dom";
-import { PRODUCT_NAME, t, onLanguageChange } from "../i18n/i18n";
+import { LUMEN_WINDOWS, PRODUCT_NAME, t, onLanguageChange } from "../i18n/i18n";
 import { onEvent } from "../core/bridge";
 import { FlowBridge, type FlowPrefs, type FlowStatus, type ModelsStatus, flowKeyId } from "../core/flow";
 import { hero, liveMochi, setVoiceLevel, setWindowShown } from "./hero";
@@ -27,7 +27,7 @@ interface PageDef {
 
 export const FLOW_PAGES: PageDef[] = [
   { id: "dictation", icon: "mic", title: () => t("Dictation") },
-  { id: "notes", icon: "record", title: () => t("Notetaker") },
+  { id: "notes", icon: "record", title: () => (LUMEN_WINDOWS ? "Anotador" : t("Notetaker")) },
   { id: "insights", icon: "chart", title: () => t("Statistics") },
   { id: "dictionary", icon: "book", title: () => t("Dictionary") },
   { id: "snippets", icon: "bolt", title: () => t("Snippets") },

@@ -243,6 +243,31 @@ pub async fn send_with(
     .await
 }
 
+/// Completa um prompt único via OAuth do ChatGPT sem gravar histórico no chat principal.
+pub async fn complete_oneshot(
+    model: &str,
+    system: &str,
+    user: &str,
+    timeout: Duration,
+) -> Result<String, String> {
+    let endpoint = reqwest::Url::parse(RESPONSES_URL).map_err(|_| "Endereço do ChatGPT inválido.")?;
+    let stream_client = net::client(&endpoint, timeout)
+        .map_err(|_| "Não foi possível preparar a conexão segura.".to_string())?;
+    let meta_client = http_client()?;
+    complete_oneshot_with_endpoints(
+        &SystemCredentialStore,
+        &meta_client,
+        &stream_client,
+        TOKEN_URL,
+        MODELS_URL,
+        RESPONSES_URL,
+        model,
+        system,
+        user,
+    )
+    .await
+}
+
 pub async fn sign_in(profile_id: Option<String>) -> Result<AccountStatus, String> {
     let _auth = AUTH_LOCK.lock().await;
     let store = SystemCredentialStore;
@@ -1607,19 +1632,50 @@ fn parse_sse_line(line: &str) -> Option<Result<SseEvent, String>> {
     None
 }
 
-async fn send_with_endpoints(
+async fn complete_oneshot_with_endpoints(
     store: &impl CredentialStore,
     meta_client: &reqwest::Client,
     stream_client: &reqwest::Client,
     token_url: &str,
     models_url: &str,
     responses_url: &str,
-    chat: &Chat,
     model: &str,
-    query: String,
-    context: Option<ChatContext>,
+    system: &str,
+    user: &str,
+) -> Result<String, String> {
+    let user_val = json!({
+        "role": "user",
+        "content": [{ "type": "input_text", "text": user }],
+    });
+    request_responses_text(
+        store,
+        meta_client,
+        stream_client,
+        token_url,
+        models_url,
+        responses_url,
+        model,
+        system,
+        &[],
+        &user_val,
+        |_| {},
+    )
+    .await
+}
+
+async fn request_responses_text(
+    store: &impl CredentialStore,
+    meta_client: &reqwest::Client,
+    stream_client: &reqwest::Client,
+    token_url: &str,
+    models_url: &str,
+    responses_url: &str,
+    model: &str,
+    system: &str,
+    history: &[Value],
+    user: &Value,
     mut on_delta: impl FnMut(String),
-) -> Result<ChatReply, String> {
+) -> Result<String, String> {
     let resolved_model = if model.trim().is_empty() {
         models_with(store, meta_client, token_url, models_url)
             .await?
@@ -1633,14 +1689,7 @@ async fn send_with_endpoints(
 
     let (mut access, mut generation) =
         ensure_access_token_with(store, meta_client, token_url, None).await?;
-    let turn = chat.begin("chatgpt");
-    let user = user_message(turn.first, context.as_ref(), &query);
-    let body = build_responses_body(
-        &resolved_model,
-        &chat::system_prompt(false),
-        &turn.history,
-        &user,
-    );
+    let body = build_responses_body(&resolved_model, system, history, user);
 
     let mut reply = None;
     for attempt in 0..2 {
@@ -1720,6 +1769,38 @@ async fn send_with_endpoints(
         return Err("O ChatGPT não retornou texto na resposta.".into());
     }
     on_delta(answer.clone());
+    Ok(answer)
+}
+
+async fn send_with_endpoints(
+    store: &impl CredentialStore,
+    meta_client: &reqwest::Client,
+    stream_client: &reqwest::Client,
+    token_url: &str,
+    models_url: &str,
+    responses_url: &str,
+    chat: &Chat,
+    model: &str,
+    query: String,
+    context: Option<ChatContext>,
+    on_delta: impl FnMut(String),
+) -> Result<ChatReply, String> {
+    let turn = chat.begin("chatgpt");
+    let user = user_message(turn.first, context.as_ref(), &query);
+    let answer = request_responses_text(
+        store,
+        meta_client,
+        stream_client,
+        token_url,
+        models_url,
+        responses_url,
+        model,
+        &chat::system_prompt(false),
+        &turn.history,
+        &user,
+        on_delta,
+    )
+    .await?;
 
     let plain = chat::plain_question(turn.first, context.as_ref(), &query);
     chat.commit(
@@ -2317,6 +2398,21 @@ mod tests {
         assert_eq!(sent_json["store"], false);
         assert_eq!(sent_json["stream"], true);
         assert!(!chat.begin("chatgpt").first);
+
+        let oneshot = complete_oneshot_with_endpoints(
+            &store,
+            &client,
+            &client,
+            &token_url,
+            &models_url,
+            &responses_url,
+            "",
+            "Resuma a nota.",
+            "Ideia curta.",
+        )
+        .await
+        .unwrap();
+        assert_eq!(oneshot, "Olá Lumen!");
 
         server.abort();
     }
