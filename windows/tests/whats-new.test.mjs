@@ -157,6 +157,7 @@ test("All changes and the coffee", () => {
   assert.equal(releasePage("windows", "0.5.2"), "https://github.com/Louis-CFM/coucou/releases/tag/windows-v0.5.2");
   assert.equal(releasePage("windows", "0.7.0", true), "https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.0");
   assert.equal(releasePage("windows", "0.7.1", true), "https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.1");
+  assert.equal(releasePage("windows", "0.7.2", true), "https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.2");
   assert.equal(releasePage("linux", "0.5.2"), "https://github.com/Louis-CFM/coucou/releases/tag/linux-v0.5.2");
   const site = readFileSync(new URL("../../docs/index.html", import.meta.url), "utf8");
   assert.ok(site.includes(COFFEE_URL), "the same link as the Coucou page");

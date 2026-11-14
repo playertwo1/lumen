@@ -12,6 +12,19 @@
 - [x] Comparar os SHA-256 dos instaladores publicados com o preflight. Os hashes diferiram; os assets finais foram baixados, conferidos com os digests do GitHub e examinados diretamente pelo Defender sem detecções (evento 1001, exame `{9AD2DD74-E9E4-4DCE-8E77-D2954870AA9F}`).
 - Nunca executar esta lista de publicação sem o proprietário pedir release.
 
+## Windows 0.7.2 — L4 Tarefas, L5 MailCraft/Outlook, L6.1 Relay DO SQLite e heróis Lumen (publicação local)
+
+- [x] Pedido explícito do proprietário em 2026-11-14 para criar e publicar a release `0.7.2` localmente (`no-github-actions`).
+- [x] Validações locais: `python.exe scripts/test-whats-new.py windows` (`0.7.2: 3 items in 1 languages`), `npx tsc --noEmit`, `npm test` (`692/692`), `npm run build` (`tsc --noEmit && vite build`), `cargo test --lib` (`701` passaram, `9` ignorados), `cargo test` em `windows/hook/` (`37/37`), `npm test` em `android/relay/` (`26` worker + `37` node) e `npm run pack`.
+- [x] Microsoft Defender (`MpCmdRun.exe -Scan -ScanType 3 -File <arquivo> -DisableRemediation`) examinou individualmente os quatro artefatos gerados: código 0 e `found no threats`.
+- [x] SHA-256 dos artefatos:
+  - MSI `Lumen-Windows-0.7.2.msi`: `8F64D8D37E3162F8D3912F44C52A27645BB3FDCE123D0DA098B0852FAE594DCB`.
+  - Setup `Lumen-Windows-0.7.2-setup.exe`: `09A2FB08F1C9ECA30DB5DB07112D06895924CA14FA9A40D094790EB4805C8EED`.
+  - App portátil `lumen.exe`: `EE76731F8E9C84C184B46407FA296003ECFEBEED5F9D99CA555EBF252334309C`.
+  - Hook `lumen-hook.exe`: `E6FFA12AB1B94BE9A64859C8C789467136D74A414DCE3C1794AC2F5DFB59FD97`.
+- [x] Publicação local via `gh release create windows-v0.7.2` em `playertwo1/lumen` e atualização da release móvel `windows-latest` (`Lumen-Windows.msi` e `Lumen-Windows-setup.exe`).
+- [ ] Proprietário instalar a `0.7.2` (ou atualizar da `0.7.1` via `playertwo1/lumen`) e validar no uso real L3 (ditado e comentário sem duplicar), L4 (captura `Ctrl+Alt+K` e Toast nativo) e L5 (MailCraft resumo seguro e rascunho sem envio). Continua **NOT_RUN**.
+
 ## Windows 0.7.1 — 15 Personas da Segunda Mente, Sync via ADB e novos companheiros Canvas (publicação local)
 
 - [x] Pedido explícito do proprietário em 2026-11-14 para versionar como `0.7.1`, incorporar catálogo oficial das 15 personas da Segunda Mente com suporte YAML/Tavern, sync via celular Android (ADB) e novos companheiros Canvas (Grok, Hermes Desktop, ajustes no Antigravity e Genérico), empacotar e publicar localmente (`no-github-actions`).

@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows 0.7.2 — 14 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Tarefas no Lumen (`L4`)** — painel de tarefas no Hub (`Atrasadas`, `Hoje`, `Próximas`, `Sem data`, `Concluídas`), captura global com `Ctrl+Alt+K` (voz/texto), atalhos de dia/hora, notificações nativas WinRT Toast (`Adiar +10m`, `Concluir`, `Abrir`) e animações P3 no `CompassEngine`. Validação sintética passou; uso real no notebook pendente.
+- **E-mail pessoal com MailCraft e Outlook (`L5`)** — MailCraft como cliente principal (leitura, resumo seguro com isolamento `<mail_data untrusted="true">` via `chat::complete_oneshot` e preparo de rascunho sem jamais enviar), suporte secundário ao Outlook clássico (`backend: "outlook"`) e animação P3 da carta pousando na mão. Validação sintética passou; uso real com MailCraft pendente.
+- **Caixa de correio persistente E2EE no relay (`L6.1`) e heróis do Hub** — fila persistente em Durable Objects SQLite no `android/relay/` com contrato inicial da Segunda Mente (`L6`) e cartões de apresentação do Hub atualizados com o elenco e capturas do Lumen.
+
 ## Windows 0.7.1 — 14 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **15 personas oficiais da Segunda Mente** — catálogo oficial com avatares vetoriais no Canvas, diretrizes de comentários e compatibilidade com importação nos formatos YAML e Tavern Card.

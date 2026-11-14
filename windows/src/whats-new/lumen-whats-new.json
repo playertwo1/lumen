@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.2",
+      "items": [
+        {
+          "icon": "checklist",
+          "title": { "pt-BR": "Tarefas com voz, atalhos e Toast no Windows" },
+          "detail": { "pt-BR": "Capture tarefas com Ctrl+Alt+K ou no Hub, adie em +10m pelo Toast e acompanhe prazos na ilha." }
+        },
+        {
+          "icon": "shield",
+          "title": { "pt-BR": "E-mail pessoal com MailCraft e Outlook" },
+          "detail": { "pt-BR": "Resumos da caixa de entrada e rascunhos sem envio automático, integrando MailCraft e Outlook." }
+        },
+        {
+          "icon": "update",
+          "title": { "pt-BR": "Relay persistente E2EE e heróis Lumen" },
+          "detail": { "pt-BR": "Caixa de correio em SQLite no relay para a Segunda Mente (L6.1) e heróis do Hub com elenco Lumen." }
+        }
+      ]
+    },
+    {
       "version": "0.7.1",
       "items": [
         {
