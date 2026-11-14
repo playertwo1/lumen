@@ -33,6 +33,16 @@ const agents = [
   ["gemini", "gemini"],
   ["agent_opencode", "opencode"],
   ["opencode", "opencode"],
+  ["grok", "grok"],
+  ["ai_grok", "grok"],
+  ["integration_grok", "grok"],
+  ["agent_grok", "grok"],
+  ["grok-desktop", "grok"],
+  ["agent_grok-desktop", "grok"],
+  ["hermes", "hermes"],
+  ["agent_hermes", "hermes"],
+  ["hermes-desktop", "hermes"],
+  ["agent_hermes-desktop", "hermes"],
   ["integration_youtubemusic", "youtube-music"],
   ["youtubemusic", "youtube-music"],
   ["youtube-music", "youtube-music"],
@@ -70,15 +80,15 @@ test("mapeia todos os personagens pelos IDs reais e usa genérico como fallback"
 test("desenha todos os estados para todos os personagens a 22/96 px e DPR 1/1,5/2", () => {
   const canonicalIds = [
     "integration_claude", "agent_claude-desktop", "agent_codex", "ai_openai",
-    "agent_antigravity", "agent_gemini", "agent_opencode", "integration_youtubemusic",
-    "integration_mail", "unknown-agent",
+    "agent_antigravity", "agent_gemini", "agent_opencode", "grok", "agent_hermes",
+    "agent_hermes-desktop", "integration_youtubemusic", "integration_mail", "unknown-agent",
   ];
   for (const id of canonicalIds) {
     const engine = new BotEngine();
     assert.equal(engine.setAgent(id), characterForAgent(id));
     for (const state of states) {
       engine.setState(state, true);
-      for (const size of [22, 96]) for (const dpr of [1, 1.5, 2]) {
+      for (const size of [22, 28, 96]) for (const dpr of [1, 1.5, 2]) {
         const { ctx, calls } = canvasProbe();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         engine.draw(ctx, size, size);
@@ -91,8 +101,8 @@ test("desenha todos os estados para todos os personagens a 22/96 px e DPR 1/1,5/
 test("desenha cada emote nos dois tamanhos sem erro para todos os personagens", () => {
   for (const id of [
     "integration_claude", "agent_claude-desktop", "agent_codex", "ai_openai",
-    "agent_antigravity", "agent_gemini", "agent_opencode", "integration_youtubemusic",
-    "integration_mail", "unknown-agent",
+    "agent_antigravity", "agent_gemini", "agent_opencode", "grok", "agent_hermes",
+    "agent_hermes-desktop", "integration_youtubemusic", "integration_mail", "unknown-agent",
   ]) {
     const engine = new BotEngine();
     engine.setAgent(id);
@@ -101,7 +111,7 @@ test("desenha cada emote nos dois tamanhos sem erro para todos os personagens", 
     engine.draw(canvasProbe().ctx, 96, 96);
     for (const emote of emotes) {
       engine.triggerEmote(emote);
-      for (const size of [22, 96]) engine.draw(canvasProbe().ctx, size, size);
+      for (const size of [22, 28, 96]) engine.draw(canvasProbe().ctx, size, size);
     }
   }
 });
@@ -414,7 +424,11 @@ test("particleOverhang centraliza verticalmente e versão mini/compacta desenha 
   assert.deepEqual(firstTranslate?.args, [0, 40], "originY deve somar particleOverhang ao centro vertical");
 
   // Em barra compacta/fechada e mini grid, eyes e accent compacto mantêm proporção legível sem chamar o monitor alto (y=4).
-  for (const agent of ["agent_codex", "integration_claude", "agent_claude-desktop", "integration_youtubemusic", "integration_mail"]) {
+  for (const agent of [
+    "agent_codex", "integration_claude", "agent_claude-desktop",
+    "grok", "agent_hermes", "agent_hermes-desktop",
+    "integration_youtubemusic", "integration_mail",
+  ]) {
     for (const state of ["idle", "working", "thinking", "searching", "approval", "question", "error", "finished", "ratelimit", "sleeping", "dizzy"]) {
       const e = new BotEngine();
       e.setAgent(agent);
@@ -470,5 +484,50 @@ test("animação P3 (triggerNoteWrite) desenha caderneta animada, respeita reduc
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;
+  }
+});
+
+test("Grok e Hermes Desktop desenham silhuetas distintas com inércia secundária, modo mini/DPR e gesto P3", () => {
+  for (const id of ["grok", "agent_hermes-desktop"]) {
+    const mini = new BotEngine();
+    mini.isMini = true;
+    mini.setAgent(id);
+    for (const state of states) {
+      mini.setState(state, true);
+      for (const size of [22, 28]) for (const dpr of [1, 1.5, 2]) {
+        const probe = canvasProbe();
+        probe.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        mini.draw(probe.ctx, size, size);
+        assert.ok(probe.calls() > 0, `${id}/mini/${state}/${size}/${dpr} não desenhou`);
+      }
+    }
+    for (const emote of emotes) {
+      mini.triggerEmote(emote);
+      for (const size of [22, 28]) {
+        const probe = canvasProbe();
+        mini.draw(probe.ctx, size, size);
+        assert.ok(probe.calls() > 0, `${id}/mini/emote/${emote}/${size} não desenhou`);
+      }
+    }
+
+    const full = new BotEngine();
+    full.setAgent(id);
+    full.setState("idle", true);
+    full.slap();
+    full.update(0.05);
+    full.update(0.05);
+    const moved = canvasProbe();
+    full.draw(moved.ctx, 96, 96);
+    assert.ok(Math.abs(full.physDx) > 0.001 || Math.abs(full.physDy) > 0.001, `${id} deve excitar physDx/physDy`);
+    assert.ok(moved.calls() > 0);
+
+    full.triggerNoteWrite(1.4);
+    full.update(0.35);
+    const noteProbe = canvasProbe();
+    full.draw(noteProbe.ctx, 96, 96);
+    assert.ok(
+      noteProbe.ops.some((o) => o.op === "moveTo" && o.args[0] === 70.5),
+      `${id} deve desenhar o gesto P3 da caderneta`,
+    );
   }
 });

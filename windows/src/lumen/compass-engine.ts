@@ -29,6 +29,8 @@ export type LumenCharacter =
   | "antigravity"
   | "gemini"
   | "opencode"
+  | "grok"
+  | "hermes"
   | "youtube-music"
   | "mail"
   | "generic";
@@ -47,6 +49,8 @@ const ANTIGRAVITY_MAGENTA: RGB = [0.91, 0.475, 0.976];
 const LIGHT_BLUE: RGB = [0.541, 0.706, 0.973];
 const GLASS_TINT: RGB = [0.859, 0.925, 0.996];
 const OPENCODE_GREEN: RGB = [0.29, 0.871, 0.502];
+const GROK_SILVER: RGB = [0.722, 0.773, 0.839];
+const HERMES_PURPLE: RGB = [0.753, 0.518, 0.988];
 const YTM_CRIMSON: RGB = [1, 0, 0.2];
 const MAIL_BLUE: RGB = [0.184, 0.549, 1];
 const BLUSH: RGB = [0.91, 0.57, 0.63];
@@ -70,6 +74,16 @@ const AGENT_CHARACTER_MAP: Record<string, LumenCharacter> = {
   gemini: "gemini",
   agent_opencode: "opencode",
   opencode: "opencode",
+  grok: "grok",
+  ai_grok: "grok",
+  integration_grok: "grok",
+  agent_grok: "grok",
+  "grok-desktop": "grok",
+  "agent_grok-desktop": "grok",
+  hermes: "hermes",
+  agent_hermes: "hermes",
+  "hermes-desktop": "hermes",
+  "agent_hermes-desktop": "hermes",
   integration_youtubemusic: "youtube-music",
   youtubemusic: "youtube-music",
   "youtube-music": "youtube-music",
@@ -85,6 +99,8 @@ const CHARACTER_COLOR: Record<LumenCharacter, RGB> = {
   antigravity: ANTIGRAVITY_MAGENTA,
   gemini: LIGHT_BLUE,
   opencode: OPENCODE_GREEN,
+  grok: GROK_SILVER,
+  hermes: HERMES_PURPLE,
   "youtube-music": YTM_CRIMSON,
   mail: MAIL_BLUE,
   generic: SAND,
@@ -95,12 +111,14 @@ const CHARACTER_FACE: Record<LumenCharacter, FaceLayout> = {
   "claude-desktop": { eyeLeftX: 37, eyeRightX: 59, eyeY: 45, mouthX: 48, mouthY: 58 },
   codex: { eyeLeftX: 34, eyeRightX: 56, eyeY: 43, mouthX: 48, mouthY: 62 },
   chatgpt: { eyeLeftX: 36, eyeRightX: 58, eyeY: 44, mouthX: 47, mouthY: 57 },
-  antigravity: { eyeLeftX: 37, eyeRightX: 59, eyeY: 43, mouthX: 48, mouthY: 55 },
+  antigravity: { eyeLeftX: 38, eyeRightX: 58, eyeY: 39, mouthX: 48, mouthY: 50 },
   gemini: { eyeLeftX: 37, eyeRightX: 59, eyeY: 34, mouthX: 48, mouthY: 46 },
   opencode: { eyeLeftX: 37, eyeRightX: 59, eyeY: 41, mouthX: 48, mouthY: 52 },
+  grok: { eyeLeftX: 37, eyeRightX: 59, eyeY: 46, mouthX: 48, mouthY: 59 },
+  hermes: { eyeLeftX: 37, eyeRightX: 59, eyeY: 46, mouthX: 48, mouthY: 59 },
   "youtube-music": { eyeLeftX: 38, eyeRightX: 58, eyeY: 46, mouthX: 48, mouthY: 59 },
   mail: { eyeLeftX: 37, eyeRightX: 59, eyeY: 54, mouthX: 48, mouthY: 66 },
-  generic: { eyeLeftX: 37, eyeRightX: 59, eyeY: 39, mouthX: 48, mouthY: 52 },
+  generic: { eyeLeftX: 38, eyeRightX: 58, eyeY: 44, mouthX: 48, mouthY: 57 },
 };
 
 const rgbCss = (color: RGB, alpha = 1) => `rgba(${Math.round(color[0] * 255)},${Math.round(color[1] * 255)},${Math.round(color[2] * 255)},${alpha})`;
@@ -1117,6 +1135,12 @@ export class CompassEngine {
       case "opencode":
         this.drawOpenCode(ctx, fill);
         break;
+      case "grok":
+        this.drawGrok(ctx, fill, lagX, lagY);
+        break;
+      case "hermes":
+        this.drawHermes(ctx, fill, lagX, lagY);
+        break;
       case "youtube-music":
         this.drawYouTubeMusic(ctx, fill, lagX, lagY);
         break;
@@ -1195,21 +1219,66 @@ export class CompassEngine {
   }
 
   private drawAntigravity(ctx: CanvasRenderingContext2D, fill: RGB, lagX = 0, lagY = 0, elapsed = 0) {
+    // Arco em "A" fluido inspirado no ícone do Antigravity com pernas abertas e vão inferior
     ctx.beginPath();
-    ctx.moveTo(48, 13);
-    ctx.bezierCurveTo(60, 13, 75, 36, 75, 48);
-    ctx.bezierCurveTo(75, 61, 59, 83, 48, 83);
-    ctx.bezierCurveTo(37, 83, 21, 61, 21, 48);
-    ctx.bezierCurveTo(21, 36, 36, 13, 48, 13);
+    ctx.moveTo(48, 12);
+    ctx.bezierCurveTo(64, 12, 72, 30, 75, 52);
+    ctx.bezierCurveTo(77, 65, 81, 74, 83, 79);
+    ctx.bezierCurveTo(84.5, 82.5, 76, 84, 71, 80);
+    ctx.bezierCurveTo(63, 73, 57, 63, 48, 63);
+    ctx.bezierCurveTo(39, 63, 33, 73, 25, 80);
+    ctx.bezierCurveTo(20, 84, 11.5, 82.5, 13, 79);
+    ctx.bezierCurveTo(15, 74, 19, 65, 21, 52);
+    ctx.bezierCurveTo(24, 30, 32, 12, 48, 12);
     ctx.closePath();
-    paintOutlinedShape(ctx, fill);
+
+    if (this.showsUpdateHint) {
+      paintOutlinedShape(ctx, fill);
+    } else {
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.shadowColor = "rgba(0,0,0,0.32)";
+      ctx.shadowBlur = 2;
+      ctx.shadowOffsetY = 2;
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.clip();
+      const baseGrad = ctx.createLinearGradient(48, 12, 48, 82);
+      baseGrad.addColorStop(0, "rgb(255,140,72)");
+      baseGrad.addColorStop(0.24, "rgb(255,194,88)");
+      baseGrad.addColorStop(0.5, "rgb(78,182,255)");
+      baseGrad.addColorStop(1, "rgb(42,132,255)");
+      ctx.fillStyle = baseGrad;
+      ctx.fillRect(10, 10, 76, 76);
+
+      const leftGreen = ctx.createRadialGradient(30, 33, 2, 30, 33, 20);
+      leftGreen.addColorStop(0, "rgba(74,222,128,0.95)");
+      leftGreen.addColorStop(1, "rgba(74,222,128,0)");
+      ctx.fillStyle = leftGreen;
+      ctx.fillRect(10, 10, 76, 76);
+
+      const apexCoral = ctx.createRadialGradient(54, 19, 2, 54, 19, 17);
+      apexCoral.addColorStop(0, "rgba(255,92,76,0.92)");
+      apexCoral.addColorStop(1, "rgba(255,92,76,0)");
+      ctx.fillStyle = apexCoral;
+      ctx.fillRect(10, 10, 76, 76);
+      ctx.restore();
+
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = 3;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+    }
 
     const floatAmp = elapsed > 0 ? 1.5 : 0;
-    [12.5, 83.5].forEach((bx, idx) => {
+    const orbColor: RGB = this.showsUpdateHint ? fill : [0.306, 0.714, 1];
+    [11.5, 84.5].forEach((bx, idx) => {
       const floatDy = Math.sin(elapsed * 2.8 + idx * Math.PI) * floatAmp;
       ctx.beginPath();
-      ctx.arc(bx + lagX * 2.2, 61 + lagY * 2.4 + floatDy, 5.5, 0, Math.PI * 2);
-      paintOutlinedShape(ctx, fill);
+      ctx.arc(bx + lagX * 2.2, 46 + lagY * 2.4 + floatDy, 4.3, 0, Math.PI * 2);
+      paintOutlinedShape(ctx, orbColor);
     });
   }
 
@@ -1248,6 +1317,79 @@ export class CompassEngine {
     ctx.stroke();
   }
 
+  private drawGrok(ctx: CanvasRenderingContext2D, fill: RGB, lagX = 0, lagY = 0) {
+    // Anel orbital diagonal ao fundo (lê em 22 px sem invadir a área do crachá no topo direito)
+    ctx.save();
+    ctx.translate(48 + lagX * 0.7, 49 + lagY * 0.7);
+    ctx.rotate(0.48);
+    roundedRect(ctx, -40, -7, 80, 14, 7);
+    paintOutlinedShape(ctx, SAND);
+    ctx.restore();
+
+    // Cápsula chanfrada com corte diagonal característico no topo direito e base esquerda
+    ctx.beginPath();
+    ctx.moveTo(35, 16);
+    ctx.lineTo(57, 16);
+    ctx.lineTo(75, 34);
+    ctx.lineTo(75, 68);
+    ctx.arcTo(75, 82, 61, 82, 14);
+    ctx.lineTo(39, 82);
+    ctx.lineTo(21, 64);
+    ctx.lineTo(21, 30);
+    ctx.arcTo(21, 16, 35, 16, 14);
+    ctx.closePath();
+    paintOutlinedShape(ctx, fill);
+
+    // Faixa chanfrada de visor acima dos olhos (mantém a região facial limpa para contraste do INK)
+    ctx.beginPath();
+    ctx.moveTo(35, 20);
+    ctx.lineTo(54, 20);
+    ctx.lineTo(65, 31);
+    ctx.lineTo(27, 31);
+    ctx.arcTo(27, 20, 35, 20, 7);
+    ctx.closePath();
+    ctx.fillStyle = rgbCss(GLASS_TINT);
+    ctx.fill();
+    ctx.strokeStyle = rgbCss(INK);
+    ctx.lineWidth = 2.6;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+
+    // Satélite orbital com inércia secundária
+    ctx.beginPath();
+    ctx.arc(14 + lagX * 1.9, 27 + lagY * 1.9, 4.8, 0, Math.PI * 2);
+    paintOutlinedShape(ctx, GLASS_TINT);
+  }
+
+  private drawHermes(ctx: CanvasRenderingContext2D, fill: RGB, lagX = 0, lagY = 0) {
+    // Asas laterais estilizadas ancoradas atrás do corpo, com leve inércia secundária
+    for (const side of [-1, 1] as const) {
+      const rootX = side < 0 ? 26 : 70;
+      const tipLagX = lagX * 1.6;
+      const tipLagY = lagY * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(rootX, 40);
+      ctx.quadraticCurveTo(48 + side * 33 + tipLagX, 31 + tipLagY, 48 + side * 40 + tipLagX, 40 + tipLagY);
+      ctx.quadraticCurveTo(48 + side * 35 + tipLagX * 0.85, 45.5 + tipLagY * 0.85, 48 + side * 31 + tipLagX * 0.75, 48 + tipLagY * 0.75);
+      ctx.quadraticCurveTo(48 + side * 36 + tipLagX * 0.8, 52 + tipLagY * 0.8, 48 + side * 28 + tipLagX * 0.6, 57 + tipLagY * 0.6);
+      ctx.quadraticCurveTo(48 + side * 30 + tipLagX * 0.5, 61 + tipLagY * 0.5, rootX, 61);
+      ctx.closePath();
+      paintOutlinedShape(ctx, SAND);
+    }
+
+    // Corpo arredondado estilo capacete/caderno mensageiro
+    roundedRect(ctx, 22, 17, 52, 65, 22);
+    paintOutlinedShape(ctx, fill);
+
+    // Crista frontal de mensageiro em areia com leve inércia
+    ctx.beginPath();
+    ctx.moveTo(35 + lagX * 0.6, 21 + lagY * 0.4);
+    ctx.quadraticCurveTo(48 + lagX * 0.8, 9 + lagY * 0.6, 61 + lagX * 0.6, 21 + lagY * 0.4);
+    ctx.quadraticCurveTo(48 + lagX * 0.5, 25 + lagY * 0.4, 35 + lagX * 0.6, 21 + lagY * 0.4);
+    ctx.closePath();
+    paintOutlinedShape(ctx, SAND);
+  }
+
   private drawYouTubeMusic(ctx: CanvasRenderingContext2D, fill: RGB, lagX = 0, lagY = 0) {
     ctx.beginPath();
     ctx.arc(48, 43, 30, Math.PI, 0, false);
@@ -1280,11 +1422,46 @@ export class CompassEngine {
   }
 
   private drawGeneric(ctx: CanvasRenderingContext2D, fill: RGB) {
-    roundedRect(ctx, 16, 12, 64, 72, 21);
+    // Folha de papel A4 em proporção vertical (~1:1,4) com canto superior direito dobrado
+    ctx.beginPath();
+    ctx.moveTo(26, 12);
+    ctx.lineTo(61, 12);
+    ctx.lineTo(74, 25);
+    ctx.lineTo(74, 80);
+    ctx.arcTo(74, 84, 70, 84, 4);
+    ctx.lineTo(26, 84);
+    ctx.arcTo(22, 84, 22, 80, 4);
+    ctx.lineTo(22, 16);
+    ctx.arcTo(22, 12, 26, 12, 4);
+    ctx.closePath();
     paintOutlinedShape(ctx, fill);
-    roundedRect(ctx, 25, 60, 46, 17, 8.5);
-    ctx.fillStyle = rgbCss(INK);
+
+    // Dobra nítida do canto da folha A4
+    ctx.beginPath();
+    ctx.moveTo(61, 12);
+    ctx.lineTo(61, 22.5);
+    ctx.arcTo(61, 25, 63.5, 25, 2.5);
+    ctx.lineTo(74, 25);
+    ctx.closePath();
+    ctx.fillStyle = rgbCss(this.showsUpdateHint ? fill : CLAUDE_WHITE);
     ctx.fill();
+    ctx.strokeStyle = rgbCss(INK);
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+
+    // Linhas discretas de documento A4 no topo e rodapé sem tocar o rosto
+    ctx.save();
+    ctx.strokeStyle = rgbCss(INK, 0.3);
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = "round";
+    for (const [x1, y, x2] of [[28.5, 19.5, 51], [28.5, 24.5, 44], [28.5, 69.5, 67.5]] as const) {
+      ctx.beginPath();
+      ctx.moveTo(x1, y);
+      ctx.lineTo(x2, y);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   private drawEyes(
