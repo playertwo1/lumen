@@ -117,10 +117,50 @@ export interface PlanRun {
   stepCount: number;
 }
 
+export type MailBackend = "mailcraft" | "outlook";
+export type MailCraftMode = "control" | "mcp";
+
+export interface MailCraftConfig {
+  backend: MailBackend;
+  mode: MailCraftMode;
+  host: string;
+  port: number;
+  mcpCommand: string;
+}
+
+export interface MailCraftStatus {
+  connected: boolean;
+  mode: string;
+  endpoint: string;
+  keyFound: boolean;
+  keyPath: string | null;
+  accounts: number;
+  mailboxState: string;
+  error: string | null;
+}
+
+export interface InboxSummaryResult {
+  summary: string;
+  count: number;
+  unread: number;
+  backend: string;
+  warnings: string[];
+}
+
+export interface DraftResult {
+  saved: boolean;
+  provider: string;
+  composeId: number | null;
+  openedWindow: boolean;
+  note: string;
+}
+
 /** What the card shows, as Rust sends it in the pill's `integration` data. */
 export interface MailCardData {
   running: boolean;
   windows: boolean;
+  backend?: MailBackend;
+  mode?: MailCraftMode;
   unread: number;
   messages: MailMessage[];
   shown: number;
@@ -145,6 +185,18 @@ export const MailBridge = {
   open: (message: MailMessage, reply: boolean) => call<void>("mail_open", { message, reply }),
   act: (message: MailMessage, kind: "read" | "flag" | "unflag" | "junk" | "ignore" | "vip") =>
     call<void>("mail_act", { message, kind }),
+  configGet: () => call<MailCraftConfig>("mail_config_get"),
+  configSet: (config: MailCraftConfig) => call<MailCraftConfig>("mail_config_set", { config }),
+  testConnection: async (config?: MailCraftConfig): Promise<MailCraftStatus | null> =>
+    IS_TAURI ? invoke<MailCraftStatus>("mail_test_connection", config ? { config } : {}) : null,
+  summarizeInbox: async (limit?: number): Promise<InboxSummaryResult> => {
+    if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
+    return invoke<InboxSummaryResult>("mail_summarize_inbox", { limit });
+  },
+  prepareDraft: async (payload: { replyToId?: string | null; to: string; subject: string; body: string }): Promise<DraftResult> => {
+    if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
+    return invoke<DraftResult>("mail_prepare_draft", payload);
+  },
   triage: () => call<TriageView>("mail_triage"),
   setTriage: (settings: MailSettings) => call<void>("mail_triage_set", { settings }),
   clearJournal: () => call<void>("mail_journal_clear"),

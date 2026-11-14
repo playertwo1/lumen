@@ -689,6 +689,13 @@ export class Island {
     this.ensureRunning();
   }
 
+  mailInboxSummarized() {
+    const compass = this.engine as BotEngine & { triggerMailInboxSummary?: (duration?: number) => void };
+    if (compass.triggerMailInboxSummary) compass.triggerMailInboxSummary();
+    else this.engine.triggerEmote("happy", 1.4);
+    this.ensureRunning();
+  }
+
   /** Ctrl+P: keep the open island from folding away, or let it fold again. */
   setPinned(on: boolean) {
     State.isPinned = on;

@@ -205,6 +205,7 @@ async function main() {
   await onEvent<TaskReminderPayload>("task-reminder", (payload) => island.taskReminder(payload));
   await onEvent<string>("task-snoozed", () => island.taskSnoozed());
   await onEvent<string>("task-completed", () => island.taskCompleted());
+  await onEvent<{ count?: number; unread?: number }>("mail-inbox-summarized", () => island.mailInboxSummarized());
 
   island.launch();
 

@@ -34,6 +34,8 @@ function data(): MailCardData {
   return {
     running: d.running ?? false,
     windows: d.windows ?? true,
+    backend: d.backend ?? "mailcraft",
+    mode: d.mode ?? "control",
     unread: d.unread ?? 0,
     messages: Array.isArray(d.messages) ? d.messages : [],
     shown: d.shown ?? 12,
@@ -171,9 +173,10 @@ export function buildMailCard(host: MailCardHost): MailCard {
 
   function syncList() {
     const d = data();
+    const isMailCraft = (d.backend ?? "mailcraft") === "mailcraft";
     const list = displayed();
     const key = [
-      language(), d.running, d.windows, d.unread, searchOpen, filter, searching, results === null, d.shown,
+      language(), d.running, d.windows, d.backend, d.unread, searchOpen, filter, searching, results === null, d.shown,
       Math.floor(Date.now() / 60_000),
       ...list.map((m) => `${messageId(m)}|${m.unread}|${m.flagged}`),
     ].join("~");
@@ -182,7 +185,7 @@ export function buildMailCard(host: MailCardHost): MailCard {
 
     // The head: the unread count and the magnifier, or the search field.
     clear(head);
-    head.append(dot(MAIL_BLUE, 7), h("b", { text: "Outlook" }));
+    head.append(dot(MAIL_BLUE, 7), h("b", { text: isMailCraft ? "MailCraft" : "Outlook (secundário)" }));
     if (searchOpen) {
       head.append(field);
       if (searching) head.append(h("span", { class: "mail-spinner" }));
@@ -193,7 +196,76 @@ export function buildMailCard(host: MailCardHost): MailCard {
       unreadTag.textContent = d.unread > 9999 ? "9999+" : String(d.unread);
       unreadTag.title = t("{0} unread", { 0: d.unread });
       unreadTag.style.display = d.unread > 0 ? "" : "none";
-      head.append(unreadTag, h("span", { class: "mail-spacer" }));
+      const summarizeBtn = h("button", {
+        class: "link-btn accent",
+        title: "Resumir caixa de entrada sem enviar nada",
+        text: "Resumir",
+        onclick: () => {
+          summarizeBtn.disabled = true;
+          summarizeBtn.textContent = "Resumindo…";
+          void MailBridge.summarizeInbox(10)
+            .then((res) => {
+              summarizeBtn.textContent = "Resumir";
+              summarizeBtn.disabled = false;
+              clear(listBody);
+              listBody.append(
+                h("div", { class: "mail-summary-box" },
+                  h("b", { text: `Resumo da caixa (${res.count} lidas / ${res.unread} não lidas)` }),
+                  h("div", { class: "mail-detail-text", text: res.summary }),
+                  h("button", { class: "link-btn", text: "Voltar à lista", onclick: () => { listKey = ""; syncList(); } }),
+                ),
+              );
+            })
+            .catch((err) => {
+              summarizeBtn.textContent = "Resumir";
+              summarizeBtn.disabled = false;
+              clear(listBody);
+              listBody.append(h("div", { class: "mail-empty", text: String(err) }));
+            });
+        },
+      }) as HTMLButtonElement;
+      const draftBtn = h("button", {
+        class: "link-btn",
+        title: "Preparar rascunho sem enviar",
+        text: "Rascunho",
+        onclick: () => {
+          const toInput = h("input", { class: "mail-search-input", placeholder: "Para (ex.: pessoa@exemplo.com)" }) as HTMLInputElement;
+          const subjInput = h("input", { class: "mail-search-input", placeholder: "Assunto" }) as HTMLInputElement;
+          const bodyInput = h("textarea", { class: "mail-search-input", placeholder: "Texto do rascunho (nunca envia sozinho)", rows: "3" }) as HTMLTextAreaElement;
+          const noteEl = h("div", { class: "mail-empty", text: "" });
+          const saveBtn = h("button", {
+            class: "link-btn accent",
+            text: "Salvar rascunho (sem enviar)",
+            onclick: () => {
+              saveBtn.disabled = true;
+              void MailBridge.prepareDraft({ to: toInput.value, subject: subjInput.value, body: bodyInput.value })
+                .then((res) => {
+                  noteEl.textContent = res.note;
+                  saveBtn.disabled = false;
+                })
+                .catch((err) => {
+                  noteEl.textContent = String(err);
+                  saveBtn.disabled = false;
+                });
+            },
+          }) as HTMLButtonElement;
+          host.keyboard(true);
+          clear(listBody);
+          listBody.append(
+            h("div", { class: "mail-draft-box" },
+              toInput,
+              subjInput,
+              bodyInput,
+              h("div", { class: "mail-actions" },
+                saveBtn,
+                h("button", { class: "link-btn dim", text: "Cancelar", onclick: () => { host.keyboard(false); listKey = ""; syncList(); } }),
+              ),
+              noteEl,
+            ),
+          );
+        },
+      }) as HTMLButtonElement;
+      head.append(unreadTag, h("span", { class: "mail-spacer" }), summarizeBtn, draftBtn);
       if (searching) head.append(h("span", { class: "mail-spinner" }));
       head.append(searchBtn);
     }
@@ -212,12 +284,15 @@ export function buildMailCard(host: MailCardHost): MailCard {
     filters.style.display = d.running ? "" : "none";
 
     clear(listBody);
-    if (!d.windows) {
+    if (!isMailCraft && !d.windows) {
       listBody.append(h("div", { class: "mail-empty", text: t("Outlook is only reached on Windows.") }));
       return;
     }
     if (!d.running) {
-      listBody.append(h("div", { class: "mail-empty", text: t("Open Outlook (the classic one) to see your mail here.") }));
+      const msg = isMailCraft
+        ? "Conecte o MailCraft (--control 7991 ou MCP) em Central → E-mail."
+        : t("Open Outlook (the classic one) to see your mail here.");
+      listBody.append(h("div", { class: "mail-empty", text: msg }));
       return;
     }
     if (list.length === 0) {
@@ -238,9 +313,17 @@ export function buildMailCard(host: MailCardHost): MailCard {
     back.addEventListener("click", closeMessage);
     const preview = previews.get(messageId(m));
     const text = preview === undefined || preview === null ? t("Loading…") : preview.text.trim() || " ";
-    const actions = h("div", { class: "mail-actions" },
-      h("button", { class: "link-btn accent", text: t("Open in Outlook"), onclick: () => void MailBridge.open(m, false) }),
-      h("button", { class: "link-btn", text: t("Reply"), onclick: () => void MailBridge.open(m, true) }),
+    const isMc = m.storeId === "mailcraft";
+    const actions = h("div", { class: "mail-actions" });
+    if (!isMc) {
+      actions.append(h("button", { class: "link-btn accent", text: t("Open in Outlook"), onclick: () => void MailBridge.open(m, false) }));
+    }
+    actions.append(
+      h("button", {
+        class: isMc ? "link-btn accent" : "link-btn",
+        text: isMc ? "Rascunho de resposta (sem enviar)" : t("Reply"),
+        onclick: () => void MailBridge.open(m, true),
+      }),
     );
     if (m.unread) actions.append(h("button", { class: "link-btn dim", text: t("Mark as read"), onclick: () => void act(m, "read") }));
     actions.append(
@@ -249,17 +332,19 @@ export function buildMailCard(host: MailCardHost): MailCard {
         text: m.flagged ? t("Not important") : t("Important"),
         onclick: () => void act(m, m.flagged ? "unflag" : "flag"),
       }),
-      h("button", { class: "link-btn dim", text: t("Junk"), onclick: () => void act(m, "junk") }),
     );
-    // ⋯: Always important (VIP), Always ignore this sender.
-    const more = h("div", { class: "mail-more-menu" });
-    const dots = h("button", { class: "link-btn dim mail-dots", text: "⋯" });
-    dots.addEventListener("click", () => more.classList.toggle("on"));
-    more.append(
-      h("button", { text: t("Always important (VIP)"), onclick: () => void act(m, "vip") }),
-      h("button", { text: t("Always ignore this sender"), onclick: () => void act(m, "ignore") }),
-    );
-    actions.append(h("span", { class: "mail-dots-wrap" }, dots, more));
+    if (!isMc) {
+      actions.append(h("button", { class: "link-btn dim", text: t("Junk"), onclick: () => void act(m, "junk") }));
+      // ⋯: Always important (VIP), Always ignore this sender.
+      const more = h("div", { class: "mail-more-menu" });
+      const dots = h("button", { class: "link-btn dim mail-dots", text: "⋯" });
+      dots.addEventListener("click", () => more.classList.toggle("on"));
+      more.append(
+        h("button", { text: t("Always important (VIP)"), onclick: () => void act(m, "vip") }),
+        h("button", { text: t("Always ignore this sender"), onclick: () => void act(m, "ignore") }),
+      );
+      actions.append(h("span", { class: "mail-dots-wrap" }, dots, more));
+    }
     detailView.append(
       h("div", { class: "mail-detail-head" },
         back,

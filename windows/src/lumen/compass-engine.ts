@@ -332,6 +332,8 @@ export class CompassEngine {
   private taskSnoozeDuration = 0;
   private taskCheckStart = -1;
   private taskCheckDuration = 0;
+  private mailInHandStart = -1;
+  private mailInHandDuration = 0;
   private badgePopStart = -1;
   private gulpStart = -1;
   private gulpChewStarted = false;
@@ -561,6 +563,20 @@ export class CompassEngine {
     this.blink();
     this.markBusyFor(dur);
   }
+  /** P3 (L5): uma carta desce e pousa na mão aberta ao resumir a caixa (nunca sugere envio). */
+  triggerMailInboxSummary(duration = 1.65) {
+    if (reducedMotion()) {
+      this.mailInHandStart = -1;
+      this.mailInHandDuration = 0;
+      return;
+    }
+    const dur = Math.max(0.5, duration);
+    this.mailInHandStart = this.elapsed;
+    this.mailInHandDuration = dur;
+    this.squash();
+    this.blink();
+    this.markBusyFor(dur);
+  }
   get busy() {
     if (reducedMotion()) return false;
     const moodActive = !this.isMini && (
@@ -587,6 +603,7 @@ export class CompassEngine {
       this.taskBellStart >= 0 ||
       this.taskSnoozeStart >= 0 ||
       this.taskCheckStart >= 0 ||
+      this.mailInHandStart >= 0 ||
       this.rollDuration > 0 ||
       this.elapsed < this.busyUntil ||
       this.pendingSparkAt >= 0 ||
@@ -811,6 +828,10 @@ export class CompassEngine {
     if (this.taskCheckStart >= 0 && this.elapsed >= this.taskCheckStart + this.taskCheckDuration) {
       this.taskCheckStart = -1;
       this.taskCheckDuration = 0;
+    }
+    if (this.mailInHandStart >= 0 && this.elapsed >= this.mailInHandStart + this.mailInHandDuration) {
+      this.mailInHandStart = -1;
+      this.mailInHandDuration = 0;
     }
 
     // Continuous active-state P1 motion
@@ -1101,6 +1122,9 @@ export class CompassEngine {
     }
     if (!reduced && this.taskCheckStart >= 0 && this.elapsed < this.taskCheckStart + this.taskCheckDuration) {
       this.drawTaskCheckGesture(ctx, compact);
+    }
+    if (!reduced && this.mailInHandStart >= 0 && this.elapsed < this.mailInHandStart + this.mailInHandDuration) {
+      this.drawMailInHandGesture(ctx, compact);
     }
     if (!reduced && this.particles.length > 0) this.drawParticles(ctx);
     ctx.restore();
@@ -2302,6 +2326,63 @@ export class CompassEngine {
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  /** Desenha uma carta pousando de cima para a mão aberta (somente recebimento/resumo). */
+  private drawMailInHandGesture(ctx: CanvasRenderingContext2D, compact: boolean) {
+    const dur = Math.max(0.3, this.mailInHandDuration);
+    const p = Math.min(1, Math.max(0, (this.elapsed - this.mailInHandStart) / dur));
+    const pop = Math.min(1, p / 0.14);
+    const fade = p > 0.84 ? Math.max(0, (1 - p) / 0.16) : 1;
+    // Trajetória exclusivamente descendente até repousar na palma da mão (0 -> 0.58), sem impulso de saída.
+    const dropK = Math.min(1, p / 0.58);
+    const ease = 1 - Math.pow(1 - dropK, 3);
+    const settle = p > 0.58 && p < 0.78 ? Math.sin(((p - 0.58) / 0.2) * Math.PI) * 1.1 : 0;
+
+    const hx = compact ? 74 : 74;
+    const hy = compact ? 33 : 66;
+    const letterStartY = hy - 22;
+    const letterRestY = hy - 7;
+    const ly = letterStartY + (letterRestY - letterStartY) * ease + settle;
+    const tilt = (1 - ease) * -0.14;
+
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    this.drawScaledAccent(ctx, hx, hy - 6, 0.78 + pop * 0.22, () => {
+      // Palma aberta acolhendo o envelope por baixo.
+      ctx.beginPath();
+      ctx.ellipse(hx, hy, compact ? 10 : 12, compact ? 4.2 : 4.8, -0.08, 0, Math.PI * 2);
+      ctx.fillStyle = rgbCss(SAND);
+      ctx.fill();
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Envelope azul suave descendo e pousando na mão.
+      ctx.save();
+      ctx.translate(hx, ly);
+      ctx.rotate(tilt);
+      const w = compact ? 16 : 20;
+      const h = compact ? 11 : 13.5;
+      roundedRect(ctx, -w / 2, -h / 2, w, h, 2.4);
+      ctx.fillStyle = rgbCss(CLAUDE_WHITE);
+      ctx.fill();
+      ctx.strokeStyle = rgbCss(LIGHT_BLUE);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(-w * 0.42, -h * 0.28);
+      ctx.lineTo(0, h * 0.12);
+      ctx.lineTo(w * 0.42, -h * 0.28);
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.stroke();
+      ctx.restore();
     });
     ctx.restore();
   }

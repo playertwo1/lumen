@@ -3476,6 +3476,31 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   }
 }
 
+.mail-summary-box,
+.mail-draft-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: #e8e9ec;
+}
+
+.mail-draft-box input,
+.mail-draft-box textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #e8e9ec;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-family: inherit;
+}
+
 .mail-rows {
   display: flex;
   flex-direction: column;

@@ -573,9 +573,34 @@ test("animações P3 de tarefas (lembrete, soneca e conclusão) animam, respeita
     engine.triggerTaskReminder(1.0);
     engine.triggerTaskSnooze(1.0);
     engine.triggerTaskCheck(1.0);
+    engine.triggerMailInboxSummary(1.0);
     assert.equal(engine.busy, false);
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;
   }
+});
+
+test("animação P3 de e-mail (carta na mão ao resumir) pousa na palma, nunca sugere envio e retorna ao repouso", () => {
+  const engine = new BotEngine();
+  engine.setAgent("agent_claude");
+
+  engine.triggerMailInboxSummary(1.2);
+  assert.equal(engine.busy, true);
+
+  engine.update(0.12);
+  const midStart = canvasProbe();
+  engine.draw(midStart.ctx, 96, 96);
+  const tEarly = midStart.ops.filter((o) => o.op === "translate" && o.args[0] === 74).at(-1);
+  assert.ok(tEarly, "envelope deve ser desenhado sobre a mão em x=74");
+
+  engine.update(0.58);
+  const midRest = canvasProbe();
+  engine.draw(midRest.ctx, 96, 96);
+  const tRest = midRest.ops.filter((o) => o.op === "translate" && o.args[0] === 74).at(-1);
+  assert.ok(tRest && tRest.args[1] > tEarly.args[1], "carta apenas desce até a mão (nunca sobe/sai sugerindo envio)");
+  assert.ok(midRest.ops.some((o) => o.op === "ellipse" && o.args[0] === 74 && o.args[1] === 66), "mão aberta acolhe a carta");
+
+  for (let i = 0; i < 20; i++) engine.update(0.06);
+  assert.equal(engine.busy, false);
 });

@@ -88,10 +88,10 @@ Depende de: F11-01 da Segunda Mente (modelo de tarefa fixado).
 - [x] Animação P3 da L4 (código e testes sintéticos em 2026-11-14): eventos `"task-reminder"`, `"task-snoozed"` e `"task-completed"` acionam `triggerTaskReminder()` (sino oscilante), `triggerTaskSnooze()` (empurrão suave do sino) e `triggerTaskCheck()` (visto esmeralda) em `CompassEngine`, respeitando `prefers-reduced-motion` e voltando a `busy = false`.
 
 ### L5 — E-mail pessoal (M)
-- [ ] L5.1 MailCraft como e-mail principal, ligado pelo servidor MCP ou pelo canal de controle (`UCS-Care-Group/mailcraft`). Escopo: ler, resumir e preparar rascunho. Nunca enviar.
-- [ ] L5.2 O Outlook clássico (`mail/`) fica como secundário.
-- Checkpoint L5: o Lumen resume a caixa de entrada pessoal e prepara um rascunho sem enviar.
-- Animação P3 (adiada até a L5): uma carta cai na mão ao resumir a caixa; a pose nunca sugere que algo foi enviado.
+- [x] L5.1 (código e testes sintéticos em 2026-11-14; uso real pendente) **MailCraft** (`UCS-Care-Group/mailcraft`) ligado como provedor principal em `windows/src-tauri/src/mail/mailcraft.rs`, suportando canal de controle loopback (`127.0.0.1:<port>` com verificação mútua `auth.challenge` HMAC-SHA256 e chave lida somente sob demanda em `MAILCRAFT_CONTROL_KEY` ou `control-key.local-<port>`) e servidor MCP stdio (`mailcraft-cli mcp` sem `--allow`). Escopo estrito de leitura, marcação local, resumo da caixa (`mail_summarize_inbox` com `<mail_data untrusted="true">`) e preparo de rascunho (`mail_prepare_draft` / `compose.saveDraft`). **Nunca envia e-mail** (`compose.send` e `send_message` bloqueados em código). Spec e plano: `docs/superpowers/specs/2026-11-14-l5-email-mailcraft.md` e `docs/superpowers/plans/2026-11-14-l5-email-mailcraft.md`.
+- [x] L5.2 (código e testes sintéticos em 2026-11-14; uso real pendente) O **Outlook clássico** (`outlook.rs`) permanece preservado como opção secundária no Windows (`backend: "outlook"` no Hub/Ilha), mantendo a pill `"integration_mail"` e seus fluxos existentes sem restyling fora de escopo.
+- [ ] Checkpoint L5: o Lumen resume a caixa de entrada pessoal e prepara um rascunho sem enviar. (Verificação sintética em 2026-11-14: `npx tsc --noEmit`, 691 testes Node (`pass 691`, `fail 0`, `skipped 0`), `npm run build` (`vite build`) e 701 testes Rust (`9 ignored`, `0 failed`, incluindo mock TCP loopback do MailCraft e bloqueio de `auth.challenge` inválido e envio) passaram; falta testar contra MailCraft real no notebook.)
+- [x] Animação P3 da L5 (código e testes sintéticos em 2026-11-14): evento `"mail-inbox-summarized"` aciona `triggerMailInboxSummary()` em `CompassEngine`, fazendo um envelope descer suavemente até pousar na palma aberta sem trajetória de saída nem sugestão de envio, respeitando `prefers-reduced-motion` e voltando a `busy = false`.
 
 ### L6 — Sync com a Segunda Mente (G)
 Depende de: F12-01 da Segunda Mente (contrato de sync).
