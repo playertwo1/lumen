@@ -8,7 +8,7 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest run -c vitest.config.ts && vitest run -c vitest.node.config.ts",
-    "vectors": "node tools/gen-vectors.mjs --check"
+    "vectors": "node tools/gen-vectors.mjs --check && node tools/gen-mailbox-vectors.ts --check"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261010.1",
