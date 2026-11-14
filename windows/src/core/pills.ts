@@ -201,6 +201,9 @@ export function sessionSubtitle(id: string): string {
     case "agent_cursor": return "Cursor";
     case "agent_codex": return "Codex";
     case "agent_hermes": return "Hermes";
+    case "agent_hermes-desktop": return "Hermes Desktop";
+    case "agent_grok":
+    case "agent_grok-desktop": return "Grok";
     case "agent_claude-desktop": return "Claude Desktop";
     default: return N_("Agent");
   }

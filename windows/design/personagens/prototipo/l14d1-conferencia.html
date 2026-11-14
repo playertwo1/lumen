@@ -41,6 +41,7 @@
       display: inline-grid; place-items: center; width: 22px; height: 22px;
       border-radius: 6px; background: #14121b; border: 1px solid #2b2740;
     }
+    .mini-slot.size-28 { width: 28px; height: 28px; border-radius: 8px; }
     .mini-slot canvas { background: transparent; }
     #status { margin-top: 16px; color: #aaa5c0; }
     @media (max-width: 620px) {
@@ -54,7 +55,7 @@
 <body>
   <main>
     <h1>L1.4d-4 · conferência da família Canvas e animações P1/P2</h1>
-    <p>Matriz completa: sete personagens × 11 estados em Canvas ao lado das pranchas PNG aprovadas. Os controles de prévia P1/P2 ficam desativados em repouso (0% de CPU) e animam os quadros sob demanda só nesta página de desenvolvimento.</p>
+    <p>Matriz completa: 12 personagens × (11 estados + 7 emotes) em Canvas ao lado das pranchas PNG aprovadas, mais faixa mini/compacta (22–28 px e barra fechada 24 px). Os controles de prévia P1/P2 ficam desativados em repouso (0% de CPU) e animam os quadros sob demanda só nesta página de desenvolvimento.</p>
     <div class="controls">
       <label for="dpr">DPR do bitmap
         <select id="dpr">
@@ -94,6 +95,15 @@
       ["error", "Erro"], ["finished", "Concluído"], ["ratelimit", "Limite temporário"],
       ["sleeping", "Dormindo"], ["dizzy", "Tonto"],
     ];
+    const emotes = [
+      ["love", "Emote · Carinho (love)"],
+      ["surprised", "Emote · Surpreso (surprised)"],
+      ["proud", "Emote · Orgulho (proud)"],
+      ["wink", "Emote · Piscadinha (wink)"],
+      ["yawn", "Emote · Bocejo (yawn)"],
+      ["happy", "Emote · Feliz (happy)"],
+      ["annoyed", "Emote · Irritado (annoyed)"],
+    ];
     const referenceStates = ["idle", "thinking", "working", "sleeping", "approval", "question", "error", "finished"];
     const agents = [
       { id: "integration_claude", name: "Claude Code", color: "#F5F6F8", sheet: "claude-code-estados-transparente.png", stage: "d2" },
@@ -103,6 +113,8 @@
       { id: "agent_antigravity", name: "Antigravity", color: "#E879F9", sheet: "antigravity-estados-transparente.png", stage: "d2" },
       { id: "agent_gemini", name: "Gemini CLI", color: "#8AB4F8", sheet: "gemini-cli-estados-transparente.png", stage: "d2" },
       { id: "agent_opencode", name: "OpenCode", color: "#4ADE80", sheet: "opencode-estados-transparente.png", stage: "d2" },
+      { id: "grok", name: "Grok", color: "#B8C5D6", sheet: null, stage: "novo" },
+      { id: "agent_hermes-desktop", name: "Hermes Desktop", color: "#C084FC", sheet: null, stage: "novo" },
       { id: "integration_youtubemusic", name: "YouTube Music", color: "#FF0033", sheet: null, stage: "novo" },
       { id: "integration_mail", name: "Email", color: "#2F8CFF", sheet: null, stage: "novo" },
       { id: "generic", name: "Genérico", color: "#F4E8C9", sheet: "generico-estados-transparente.png", stage: "d2" },
@@ -263,46 +275,56 @@
         ["agent_antigravity", "question"],
         ["agent_gemini", "error"],
         ["agent_opencode", "finished"],
+        ["grok", "idle"],
+        ["grok", "working"],
+        ["agent_hermes-desktop", "idle"],
+        ["agent_hermes-desktop", "working"],
         ["integration_youtubemusic", "ratelimit"],
         ["integration_mail", "sleeping"],
         ["generic", "dizzy"],
         ["agent_codex", "idle"],
       ];
       grid.append(
-        makeBarPreview("Fechada 24 px (diameter 18 · BOT_OVERHANG=40 · Codex working primeiro):", 24, 18, 56, previewStates),
+        makeBarPreview("Fechada 24 px (diameter 18 · BOT_OVERHANG=40 · Codex, Grok e Hermes Desktop):", 24, 18, 56, previewStates),
         makeBarPreview("Compacta 32 px (diameter 20 · BOT_OVERHANG=40):", 32, 20, 64, previewStates),
       );
 
-      const miniWrap = document.createElement("div");
-      const miniLabel = document.createElement("figcaption");
-      miniLabel.textContent = "Mini grid expandido (13 px · isMini=true):";
-      const miniRow = document.createElement("div");
-      miniRow.className = "strip-row";
-      for (const [agentId, state] of previewStates) {
-        const slot = document.createElement("div");
-        slot.className = "mini-slot";
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(22 * dpr);
-        canvas.height = Math.round(22 * dpr);
-        canvas.style.width = "22px";
-        canvas.style.height = "22px";
-        const ctx = canvas.getContext("2d");
-        const eng = new BotEngine();
-        eng.isMini = true;
-        eng.setAgent(agentId);
-        eng.setState(state, true);
-        const paint = () => {
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          ctx.clearRect(0, 0, 22, 22);
-          eng.draw(ctx, 22, 22);
-        };
-        paint();
-        liveSlots.push({ state, engine: eng, paints: [paint] });
-        slot.append(canvas);
-        miniRow.append(slot);
-      }
-      miniWrap.append(miniLabel, miniRow);
-      grid.append(miniWrap);
+      const makeMiniRow = (title, pxSize, slotClass = "") => {
+        const miniWrap = document.createElement("div");
+        const miniLabel = document.createElement("figcaption");
+        miniLabel.textContent = title;
+        const miniRow = document.createElement("div");
+        miniRow.className = "strip-row";
+        for (const [agentId, state] of previewStates) {
+          const slot = document.createElement("div");
+          slot.className = slotClass ? `mini-slot ${slotClass}` : "mini-slot";
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(pxSize * dpr);
+          canvas.height = Math.round(pxSize * dpr);
+          canvas.style.width = `${pxSize}px`;
+          canvas.style.height = `${pxSize}px`;
+          const ctx = canvas.getContext("2d");
+          const eng = new BotEngine();
+          eng.isMini = true;
+          eng.setAgent(agentId);
+          eng.setState(state, true);
+          const paint = () => {
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, pxSize, pxSize);
+            eng.draw(ctx, pxSize, pxSize);
+          };
+          paint();
+          liveSlots.push({ state, engine: eng, paints: [paint] });
+          slot.append(canvas);
+          miniRow.append(slot);
+        }
+        miniWrap.append(miniLabel, miniRow);
+        return miniWrap;
+      };
+      grid.append(
+        makeMiniRow("Mini grid 22 px (isMini=true):", 22),
+        makeMiniRow("Mini pílula 28 px (isMini=true):", 28, "size-28"),
+      );
       card.append(heading, grid);
       return card;
     }
@@ -347,11 +369,33 @@
           row.append(stateCell, canvasCell, refCell);
           body.append(row);
         }
+        for (const [emote, label] of emotes) {
+          const row = document.createElement("tr");
+          const stateCell = document.createElement("th");
+          const canvasCell = document.createElement("td");
+          const refCell = document.createElement("td");
+          stateCell.scope = "row";
+          stateCell.textContent = label;
+          const engine = new BotEngine();
+          engine.setAgent(agent.id);
+          engine.setState("idle", true);
+          engine.triggerEmote(emote);
+          engine.update(0.16);
+          const paints = [];
+          canvasCell.append(samples(`${agent.name} · ${label} · Canvas`, (ctx, size) => engine.draw(ctx, size, size), dpr, (fn) => paints.push(fn)));
+          liveSlots.push({ state: "idle", engine, paints });
+          const note = document.createElement("span");
+          note.className = "missing";
+          note.textContent = "Emote P1 (sem prancha PNG).";
+          refCell.append(note);
+          row.append(stateCell, canvasCell, refCell);
+          body.append(row);
+        }
         table.append(body);
         section.append(heading, table);
         matrix.append(section);
       }
-      status.textContent = `Matriz completa · ${agents.length} agentes × 11 estados em Canvas · 22/96 px · DPR ${dpr}. Prévia P1 ${playing ? "ativa" : "pausada em t=0"}.`;
+      status.textContent = `Matriz completa · ${agents.length} agentes × (${states.length} estados + ${emotes.length} emotes) em Canvas · 22/96 px · DPR ${dpr}. Prévia P1 ${playing ? "ativa" : "pausada em t=0"}.`;
     }
 
     function triggerGesture(kind) {
