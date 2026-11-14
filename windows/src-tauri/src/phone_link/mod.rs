@@ -352,11 +352,7 @@ fn pairing_of(link: &PhoneLink, r: &Running) -> Result<Pairing, String> {
     Ok(Pairing { link: link_text, qr_svg, host, port: r.port, name, relay: relay_host })
 }
 
-/// Cuts every connected phone off, then makes a new token and a new relay room and key. The phones go first and unconditionally: if a
-/// secret cannot be stored (a locked keystore), the user must still see "Pair again" take effect on the connections, and the error is
-/// reported afterwards instead of leaving the phones connected.
-fn renew_pairing(hub: &Hub, token: &Mutex<String>, store: &dyn SecretStore) -> Result<(), String> {
-    hub.kick_all("auth", "unpaired");
+fn rotate_pairing_secrets(token: &Mutex<String>, store: &dyn SecretStore) -> Result<(), String> {
     *token.lock().unwrap() = pairing::new_token(store)?;
     // "Pair again" also makes a new room and a new K: a phone that held the old ones can no longer reach this computer
     // through the relay, whatever it still remembers.
@@ -364,17 +360,54 @@ fn renew_pairing(hub: &Hub, token: &Mutex<String>, store: &dyn SecretStore) -> R
     Ok(())
 }
 
+/// Cuts every connected phone off, then makes a new token and a new relay room and key. The phones go first and unconditionally: if a
+/// secret cannot be stored (a locked keystore), the user must still see "Pair again" take effect on the connections, and the error is
+/// reported afterwards instead of leaving the phones connected.
+#[cfg(test)]
+fn renew_pairing(hub: &Hub, token: &Mutex<String>, store: &dyn SecretStore) -> Result<(), String> {
+    hub.kick_all("auth", "unpaired");
+    rotate_pairing_secrets(token, store)
+}
+
+async fn renew_pairing_with_revoke(
+    hub: &Hub,
+    token: &Mutex<String>,
+    store: &dyn SecretStore,
+    relay_url: Option<&str>,
+) -> Result<(), String> {
+    hub.kick_all("auth", "unpaired");
+    if let Some((target, old_creds)) = relay_url
+        .and_then(|u| relay_client::Target::parse(u).ok())
+        .zip(relay_client::existing_credentials(store))
+    {
+        if let Err(err) = relay_client::revoke_mailbox(&target, &old_creds).await {
+            log::line(format!("phone link: relay mailbox revoke skipped: {err}"));
+        }
+    }
+    rotate_pairing_secrets(token, store)
+}
+
 /// A new pairing code: the phone that had the old one is disconnected and must
-/// pair again.
+/// pair again. Revokes the prior mailbox room on the relay before generating new keys.
 #[tauri::command]
 pub fn phone_link_new_pairing(window: WebviewWindow, link: State<PhoneLink>) -> Result<Pairing, String> {
     only_settings(&window)?;
-    let running = link.running.lock().unwrap();
-    let r = running.as_ref().ok_or("the phone link is off")?;
-    renew_pairing(&link.hub, &r.shared.token, &*link.store)?;
+    let shared = {
+        let running = link.running.lock().unwrap();
+        let r = running.as_ref().ok_or("the phone link is off")?;
+        r.shared.clone()
+    };
+    if let Some(old) = link.relay.lock().unwrap().take() {
+        old.stop();
+    }
+    let relay_url = link.app.state::<Shared>().settings.lock().unwrap().phone_relay_url.clone();
+    tauri::async_runtime::block_on(renew_pairing_with_revoke(&link.hub, &shared.token, &*link.store, Some(&relay_url)))?;
     log::line("phone link: new pairing code, phones disconnected");
-    let result = pairing_of(&link, r);
-    drop(running);
+    let result = {
+        let running = link.running.lock().unwrap();
+        let r = running.as_ref().ok_or("the phone link is off")?;
+        pairing_of(&link, r)
+    };
     link.sync_relay();
     result
 }
@@ -390,14 +423,9 @@ pub struct RelayStatus {
     /// An access key is stored. The key itself is never sent back to the window.
     pub has_access: bool,
     pub state: relay_client::State,
-    /// The "Away from home Wi-Fi" block is shown in Settings. It stays hidden until a relay is ready to use, except for
-    /// testers who start Coucou with `COUCOU_RELAY_SETTINGS=1`, and for a relay that is already turned on.
+    /// The "Away from home Wi-Fi" block is shown in Settings by default so Lumen users can configure
+    /// their relay URL and access key for pairing with Segunda Mente without env vars.
     pub shown: bool,
-}
-
-/// Testers start Coucou with `COUCOU_RELAY_SETTINGS=1` to see the relay settings (docs/RELAY_DEPLOY.md).
-fn relay_settings_for_testers() -> bool {
-    std::env::var("COUCOU_RELAY_SETTINGS").map(|v| v == "1").unwrap_or(false)
 }
 
 fn relay_status_of(link: &PhoneLink, shared: &Shared) -> RelayStatus {
@@ -407,7 +435,7 @@ fn relay_status_of(link: &PhoneLink, shared: &Shared) -> RelayStatus {
         url: s.phone_relay_url.clone(),
         has_access: relay_client::access_key(&*link.store).is_some(),
         state: link.relay.lock().unwrap().as_ref().map_or(relay_client::State::Off, |h| h.state()),
-        shown: relay_settings_for_testers() || s.phone_relay,
+        shown: true,
     }
 }
 

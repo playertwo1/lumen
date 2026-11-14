@@ -100,6 +100,17 @@ impl Target {
             format!("{scheme}://{}:{}", self.host, self.port)
         }
     }
+
+    /// The HTTP(S) base URL for mailbox endpoints (`/v1/mailbox/...`) on this relay.
+    pub fn http_base_url(&self) -> String {
+        let scheme = if self.tls { "https" } else { "http" };
+        let default = if self.tls { 443 } else { 80 };
+        if self.port == default {
+            format!("{scheme}://{}", self.host)
+        } else {
+            format!("{scheme}://{}:{}", self.host, self.port)
+        }
+    }
 }
 
 // ── The secrets (OS keystore only) ───────────────────────────────────────────────────────────────
@@ -169,6 +180,37 @@ pub fn credentials(store: &dyn SecretStore) -> Result<Credentials, String> {
     let access = access_key(store).ok_or("no access key")?;
     let (room, key) = pairing(store)?;
     Ok(Credentials { room, key, access })
+}
+
+/// Reads existing relay credentials without generating a new room or pairing key when absent.
+pub fn existing_credentials(store: &dyn SecretStore) -> Option<Credentials> {
+    let access = access_key(store)?;
+    let room = store.get(ROOM_KEY).filter(|r| is_room(r))?;
+    let key = store.get(PAIRING_KEY).and_then(|k| PairingKey::from_base64url(&k))?;
+    Some(Credentials { room, key, access })
+}
+
+/// Revokes the persistent mailbox room on the relay before local rotation. Returns the HTTP status
+/// (`200` or `410`) or an error without ever including secrets or addresses.
+pub async fn revoke_mailbox(target: &Target, creds: &Credentials) -> Result<u16, String> {
+    let url = format!("{}/v1/mailbox/{}/revoke", target.http_base_url(), creds.room);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|_| "http client error".to_string())?;
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", creds.access))
+        .header("X-Lumen-Join", crypto::join_proof(&creds.key))
+        .send()
+        .await
+        .map_err(|_| "relay unreachable".to_string())?;
+    let code = resp.status().as_u16();
+    if code == 200 || code == 410 {
+        Ok(code)
+    } else {
+        Err(format!("relay revoke status {code}"))
+    }
 }
 
 // ── Status ───────────────────────────────────────────────────────────────────────────────────────

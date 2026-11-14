@@ -144,6 +144,12 @@ pub fn k_join(k: &PairingKey) -> Secret32 {
     derive32(k, &[], "join")
 }
 
+/// `K_mailbox`: seals and opens messages in the persistent mailbox (`coucou-mailbox/v1`); one-way from K.
+#[allow(dead_code)] // Consumed in L6.3 by the mailbox cipher.
+pub fn k_mailbox(k: &PairingKey) -> Secret32 {
+    derive32(k, &[], "mailbox")
+}
+
 /// The join proof for the `coucou.join.<…>` sub-protocol.
 pub fn join_proof(k: &PairingKey) -> String {
     base64url_encode(k_join(k).as_bytes())
@@ -504,6 +510,16 @@ mod tests {
         assert_eq!(hexs(h2p.as_bytes()), text(&v, &["derived", "kH2P"]));
         assert_eq!(join_proof(&k), base64url_encode(k_join(&k).as_bytes()));
         assert_eq!(join_proof(&k).len(), 43);
+    }
+
+    #[test]
+    fn k_mailbox_matches_the_mailbox_test_vectors() {
+        let v: Value = serde_json::from_str(include_str!("../../../../android/relay/test-vectors-mailbox.json")).unwrap();
+        let k = key(&v);
+        let km = k_mailbox(&k);
+        assert_eq!(hexs(km.as_bytes()), text(&v, &["kMailbox"]));
+        assert_ne!(km.as_bytes(), k_auth(&k).as_bytes());
+        assert_ne!(km.as_bytes(), k_join(&k).as_bytes());
     }
 
     #[test]
