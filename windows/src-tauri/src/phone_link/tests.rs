@@ -1960,3 +1960,147 @@ fn every_command_that_changes_something_checks_the_calling_window() {
     }
     assert!(seen >= 25, "the test must see the commands (saw {seen})");
 }
+
+#[test]
+fn renew_pairing_revokes_the_old_mailbox_before_rotating_room_and_key() {
+    use pairing::tests::StrictStore;
+    use super::{relay_client as relay, relay_crypto};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    block_on(async {
+        let store = StrictStore::default();
+        let access = relay_crypto::base64url_encode(&[7u8; 32]);
+        relay::set_access_key(&store, &access).unwrap();
+        let old_token = pairing::token(&store).unwrap();
+        let (old_room, old_key) = relay::pairing(&store).unwrap();
+        let expected_join = relay_crypto::join_proof(&old_key);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let n = sock.read(&mut buf).await.unwrap();
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            let _ = tx.send(req);
+            let body = r#"{"revoked":true}"#;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = sock.write_all(resp.as_bytes()).await;
+        });
+
+        let hub = Hub::new(Arc::new(Recorder::default()));
+        let token = Mutex::new(old_token.clone());
+        let relay_url = format!("ws://127.0.0.1:{port}");
+        super::renew_pairing_with_revoke(&hub, &token, &store, Some(&relay_url)).await.unwrap();
+        server.await.unwrap();
+
+        let captured = rx.await.unwrap();
+        let first_line = captured.lines().next().unwrap_or_default();
+        assert_eq!(first_line, format!("POST /v1/mailbox/{old_room}/revoke HTTP/1.1"));
+        let lower = captured.to_ascii_lowercase();
+        assert!(lower.contains(&format!("authorization: bearer {}", access.to_ascii_lowercase())));
+        assert!(lower.contains(&format!("x-lumen-join: {}", expected_join.to_ascii_lowercase())));
+
+        let (new_room, new_key) = relay::pairing(&store).unwrap();
+        assert_ne!(new_room, old_room);
+        assert_ne!(new_key.to_base64url(), old_key.to_base64url());
+        assert_ne!(*token.lock().unwrap(), old_token);
+    });
+}
+
+#[test]
+fn renew_pairing_rotates_locally_when_relay_returns_410_or_is_unreachable() {
+    use pairing::tests::StrictStore;
+    use super::{relay_client as relay, relay_crypto};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    block_on(async {
+        let store = StrictStore::default();
+        relay::set_access_key(&store, &relay_crypto::base64url_encode(&[9u8; 32])).unwrap();
+        let old_token = pairing::token(&store).unwrap();
+        let (old_room, old_key) = relay::pairing(&store).unwrap();
+
+        // Case 1: relay reports 410 Gone (already revoked).
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = sock.read(&mut buf).await;
+            let _ = sock.write_all(b"HTTP/1.1 410 Gone\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+        });
+
+        let hub = Hub::new(Arc::new(Recorder::default()));
+        let token = Mutex::new(old_token.clone());
+        super::renew_pairing_with_revoke(&hub, &token, &store, Some(&format!("ws://127.0.0.1:{port}"))).await.unwrap();
+        server.await.unwrap();
+
+        let (room_after_410, key_after_410) = relay::pairing(&store).unwrap();
+        let token_after_410 = token.lock().unwrap().clone();
+        assert_ne!(room_after_410, old_room);
+        assert_ne!(key_after_410.to_base64url(), old_key.to_base64url());
+        assert_ne!(token_after_410, old_token);
+
+        // Case 2: relay is unreachable (closed loopback port).
+        let closed_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let closed_port = closed_listener.local_addr().unwrap().port();
+        drop(closed_listener);
+
+        super::renew_pairing_with_revoke(&hub, &token, &store, Some(&format!("ws://127.0.0.1:{closed_port}"))).await.unwrap();
+        let (room_after_offline, key_after_offline) = relay::pairing(&store).unwrap();
+        assert_ne!(room_after_offline, room_after_410);
+        assert_ne!(key_after_offline.to_base64url(), key_after_410.to_base64url());
+        assert_ne!(*token.lock().unwrap(), token_after_410);
+    });
+}
+
+#[test]
+fn pairing_link_and_qr_include_relay_room_key_and_access_and_redact_debug() {
+    use pairing::tests::StrictStore;
+    use super::{relay_client as relay, relay_crypto};
+
+    let t_wss = relay::Target::parse("wss://relay.example.com").unwrap();
+    assert_eq!(t_wss.http_base_url(), "https://relay.example.com");
+    let t_wss_port = relay::Target::parse("wss://relay.example.com:8443").unwrap();
+    assert_eq!(t_wss_port.http_base_url(), "https://relay.example.com:8443");
+    let t_ws = relay::Target::parse("ws://127.0.0.1:8787").unwrap();
+    assert_eq!(t_ws.http_base_url(), "http://127.0.0.1:8787");
+
+    let store = StrictStore::default();
+    assert!(relay::existing_credentials(&store).is_none());
+    let access = relay_crypto::base64url_encode(&[5u8; 32]);
+    relay::set_access_key(&store, &access).unwrap();
+    let (room, key) = relay::pairing(&store).unwrap();
+    let creds = relay::existing_credentials(&store).unwrap();
+    assert_eq!(format!("{creds:?}"), "Credentials(..)");
+    let key_b64 = key.to_base64url();
+    assert_eq!(room.len(), 22);
+    assert_eq!(key_b64.len(), 43);
+    assert_eq!(access.len(), 43);
+
+    let link = pairing::pairing_link_with_relay(
+        "192.168.1.50",
+        47821,
+        "00".repeat(32).as_str(),
+        "tok_0123456789abcdef",
+        "Lumen PC",
+        &pairing::RelayLink {
+            url: &t_wss.display(),
+            room: &room,
+            key: &key_b64,
+            access: &access,
+        },
+    );
+    assert!(link.starts_with("coucou://pair?v=1&"));
+    assert!(link.contains("&relay=wss:%2F%2Frelay.example.com"));
+    assert!(link.contains(&format!("&room={room}")));
+    assert!(link.contains(&format!("&key={key_b64}")));
+    assert!(link.contains(&format!("&access={access}")));
+    let svg = pairing::qr_svg(&link).expect("qr svg");
+    assert!(svg.contains("<svg"));
+}
