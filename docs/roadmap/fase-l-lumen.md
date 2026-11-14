@@ -73,10 +73,10 @@ Os relatos gerais do proprietário nas fases 0 e 2 ficam registrados como relato
 - [x] Checkpoint L2: **fechado em 2026-11-14**. O proprietário relatou login real e chat no notebook funcionando (L2.1 + L2.2). O relato foi geral; os resultados por cenário (negação de consentimento, duas contas, expiração do token) não foram registrados um a um. O item "(QwenPaw)" acima é só consulta de referência e não bloqueia o checkpoint.
 
 ### L3 — Anotador de pensamentos e ideias (M)
-- [ ] L3.1 O Notetaker deixa de ser gravador de reunião e passa a ser **anotador**: ditado ou captura rápida vira nota.
-- [ ] L3.2 Comentários das personas com as mesmas regras do celular. Até o sync existir (L6), os comentários usam as personas importadas manualmente. (QwenPaw) Formato de referência para a persona importada: identidade e estilo, perfil do usuário e regras em partes separadas.
-- Checkpoint L3: uma nota ditada gera um comentário de persona, sem duplicar.
-- Animação P3 (adiada até a L3): quando uma ideia virar nota, o personagem escreve uma notinha com uma caneta.
+- [x] L3.1 (código e testes sintéticos em 2026-11-14; uso real pendente) O Notetaker vira **Anotador** (`notes_start` / `notes_idea` em modo voz só no microfone sem gravação de áudio de sistema, mais criação rápida em texto via `notes_create_text`), mantendo leitura retrocompatível de `note.json` antigos e usando `chat::complete_oneshot` com o provedor ativo do chat (incluindo ChatGPT OAuth) para resumo e comentários.
+- [x] L3.2 (código e testes sintéticos em 2026-11-14; uso real pendente) Comentários das personas (`windows/src-tauri/src/notes/personas.rs`) seguindo as regras do celular (afinidade determinística, roteamento multi-persona por LLM até `maxCommentCharacters = 2`, menção `@persona` com override de `enableCharacterComment`, fio de resposta com limite de 4 turnos seguidos, `[SKIP]`, trava em memória + `commentHash` + dedup por `characterId`), alimentados por importação manual de personas no formato de 3 partes (`identity`, `userProfile`, `rules`) e `CharacterModel` JSON até o sync L6.
+- [ ] Checkpoint L3: uma nota ditada gera um comentário de persona, sem duplicar. (Verificação sintética em 2026-11-14: `npx tsc --noEmit`, 676 testes Node (`fail 0`, `skipped 0`), `npm run build` (`vite build`) e 671 testes Rust (8 ignorados) passando; resta confirmar ditado real no notebook.)
+- [x] Animação P3 da L3 (código e testes sintéticos em 2026-11-14): evento `"note-created"` aciona `triggerNoteWrite()` em `CompassEngine`, desenhando caderneta e caneta animadas respeitando `prefers-reduced-motion` e voltando a `busy = false`. Spec e plano: `docs/superpowers/specs/2026-11-14-l3-anotador-personas.md` e `docs/superpowers/plans/2026-11-14-l3-anotador-personas.md`.
 
 ### L4 — Tarefas no Lumen (M)
 Depende de: F11-01 da Segunda Mente (modelo de tarefa fixado).

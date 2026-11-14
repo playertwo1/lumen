@@ -631,6 +631,30 @@ fn needs_sign_in(text: &str) -> bool {
 
 // ── The chat ──────────────────────────────────────────────────────────────────
 
+/// Executa um prompt único na assinatura CLI ativa sem registrar no histórico de chat.
+pub async fn complete(provider: &str, model: &str, system: &str, prompt: &str) -> Result<String, String> {
+    let Some((cli, exe)) = installed(provider) else {
+        let tool = clis_for(provider).first().map(|c| c.name()).unwrap_or(provider);
+        return Err(tf(
+            "{tool} is not installed. Install it from Settings → Chat, sign in once in a terminal, then ask again.",
+            &[("tool", tool)],
+        ));
+    };
+    if cli == Cli::Claude {
+        return claude_code::ask(&claude_code::Request {
+            model,
+            system,
+            prompt,
+            tools: &[],
+            read_dir: None,
+            timeout: CHAT_TIMEOUT,
+        })
+        .await;
+    }
+    let request = Request { model: None, system, prompt, web: false, no_web_policy: None };
+    ask(cli, &exe, &request).await
+}
+
 /// One chat turn with `provider` answered through the user's subscription.
 pub async fn send(
     chat: &Chat,

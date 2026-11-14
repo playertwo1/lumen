@@ -439,3 +439,36 @@ test("particleOverhang centraliza verticalmente e versão mini/compacta desenha 
   const firstMiniTranslate = miniProbe.ops.find((o) => o.op === "translate");
   assert.deepEqual(firstMiniTranslate?.args, [0, 0], "mini grid sem overhang mantém origem em (0, 0)");
 });
+
+test("animação P3 (triggerNoteWrite) desenha caderneta animada, respeita reduced-motion e volta a busy=false", () => {
+  const previousWindow = globalThis.window;
+  try {
+    globalThis.window = { matchMedia: () => ({ matches: false }) };
+    const engine = new BotEngine();
+    engine.setAgent("agent_antigravity");
+    engine.setState("idle", true);
+    engine.triggerNoteWrite(1.4);
+    assert.equal(engine.busy, true, "triggerNoteWrite deve ativar busy enquanto escreve");
+
+    engine.update(0.35);
+    const probe = canvasProbe();
+    engine.draw(probe.ctx, 96, 96);
+    assert.ok(
+      probe.ops.some((o) => o.op === "moveTo" && o.args[0] === 70.5),
+      "P3 deve desenhar linhas escritas na caderneta",
+    );
+
+    for (let i = 0; i < 30; i++) engine.update(0.1);
+    assert.equal(engine.busy, false, "P3 deve assentar para busy=false ao terminar");
+
+    globalThis.window = { matchMedia: () => ({ matches: true }) };
+    const reduced = new BotEngine();
+    reduced.setAgent("agent_antigravity");
+    reduced.setState("idle", true);
+    reduced.triggerNoteWrite(1.4);
+    assert.equal(reduced.busy, false, "prefers-reduced-motion deve suprimir a animação P3");
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});

@@ -651,6 +651,13 @@ export class Island {
     this.ensureRunning();
   }
 
+  noteCreated() {
+    const compass = this.engine as BotEngine & { triggerNoteWrite?: (duration?: number) => void };
+    if (compass.triggerNoteWrite) compass.triggerNoteWrite();
+    else this.engine.triggerEmote("happy", 1.2);
+    this.ensureRunning();
+  }
+
   /** Ctrl+P: keep the open island from folding away, or let it fold again. */
   setPinned(on: boolean) {
     State.isPinned = on;

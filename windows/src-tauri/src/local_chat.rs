@@ -246,11 +246,11 @@ fn user_text(first: bool, context: Option<&ChatContext>, query: &str) -> String 
     }
 }
 
-fn request_body(model: &str, system: &str, history: &[Value], user: &Value) -> Value {
+fn request_body(model: &str, system: &str, history: &[Value], user: &Value, max_tokens: u32) -> Value {
     let mut messages = vec![json!({ "role": "system", "content": system })];
     messages.extend(history.iter().cloned());
     messages.push(user.clone());
-    json!({ "model": model, "messages": messages, "stream": true, "max_tokens": MAX_TOKENS })
+    json!({ "model": model, "messages": messages, "stream": true, "max_tokens": max_tokens })
 }
 
 /// One chat turn with a model server; the island gets the streamed text as `chat-delta` events.
@@ -268,6 +268,28 @@ pub async fn send(
     .await
 }
 
+/// Completa um prompt único em servidor local sem registrar no histórico de chat.
+pub async fn complete(
+    server: &Server,
+    model: &str,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+    _timeout: Duration,
+) -> Result<String, String> {
+    let base = base_url(server)?;
+    if model.is_empty() {
+        return Err(t("Pick a model above the chat box first."));
+    }
+    let user_val = json!({ "role": "user", "content": user });
+    let body = request_body(model, system, &[], &user_val, max_tokens);
+    let answer = stream(&base, server.key.as_deref(), model, &body, |_| {}).await?;
+    if answer.is_empty() {
+        return Err(t("No response text."));
+    }
+    Ok(answer)
+}
+
 /// The same turn, with the streamed text handed to `on_delta` instead (the phone link uses this).
 pub async fn send_with(
     chat: &Chat,
@@ -283,7 +305,7 @@ pub async fn send_with(
     }
     let turn = chat.begin(server.id);
     let user = json!({ "role": "user", "content": user_text(turn.first, context.as_ref(), &query) });
-    let body = request_body(model, &chat::system_prompt(false), &turn.history, &user);
+    let body = request_body(model, &chat::system_prompt(false), &turn.history, &user, MAX_TOKENS);
 
     let answer = stream(&base, server.key.as_deref(), model, &body, on_delta).await?;
     if answer.is_empty() {
@@ -446,7 +468,7 @@ mod tests {
     #[test]
     fn the_request_streams_with_system_history_and_the_new_turn() {
         let history = vec![json!({"role":"user","content":"a"}), json!({"role":"assistant","content":"b"})];
-        let body = request_body("llama3.2", "sys", &history, &json!({"role":"user","content":"c"}));
+        let body = request_body("llama3.2", "sys", &history, &json!({"role":"user","content":"c"}), MAX_TOKENS);
         assert_eq!(body["stream"], true);
         assert_eq!(body["model"], "llama3.2");
         assert_eq!(body["messages"].as_array().unwrap().len(), 4);

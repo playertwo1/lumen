@@ -98,7 +98,50 @@ test("the notes search: every word, case and accents ignored, in any part of the
     todos: [{ id: "1", text: "Enviar proposta", done: false }],
     speakers: [{ id: "a", name: "Marina", color: 0, isMe: false }],
     lines: [{ id: "l", speaker: "a", start: 0, end: 1, text: "Vamos fechar o contrato" }],
+    comments: [{ id: "c1", characterId: "clara", characterName: "Clara", authorKind: "persona", content: "Priorize o cronograma técnico.", createdAt: 1 }],
   };
-  for (const q of ["", "  ", "orcamento", "MARINA contrato", "dezembro proposta", "call 11-09"]) assert.ok(noteMatches(note, q), q);
+  for (const q of ["", "  ", "orcamento", "MARINA contrato", "dezembro proposta", "call 11-09", "clara cronograma"]) assert.ok(noteMatches(note, q), q);
   for (const q of ["marina budget", "zzz"]) assert.ok(!noteMatches(note, q), q);
+});
+
+test("Anotador permite criar nota em texto e enviar comentário para personas", async t => {
+  const fixture = await recordingPage(t);
+  let createdArgs = null;
+  let commentArgs = null;
+  t.mock.method(FlowBridge, "createTextNote", async (title, text) => {
+    createdArgs = { title, text };
+    return {
+      id: "n-text",
+      title: title || "Ideia sintética",
+      titleEdited: Boolean(title),
+      start: Date.now(),
+      status: "ready",
+      speakers: [],
+      lines: [{ id: "l1", speaker: "me", start: 0, end: 0, text }],
+      keyPoints: [],
+      todos: [],
+      comments: [],
+    };
+  });
+  t.mock.method(FlowBridge, "addNoteComment", async (id, content, replyToId) => {
+    commentArgs = { id, content, replyToId };
+    return {};
+  });
+
+  const textArea = fixture.page.find("textarea")[0];
+  textArea.value = "Ideia sintética de teste";
+  const saveBtn = fixture.page.find("button").find(b => b.textContent === "Salvar ideia em texto");
+  saveBtn.fire("click");
+  await flush();
+  assert.deepEqual(createdArgs, { title: null, text: "Ideia sintética de teste" });
+
+  const commentInput = fixture.page.find("input").find((i) => {
+    const ph = i.getAttribute("placeholder") ?? "";
+    return ph.includes("@persona") || ph.includes("observação");
+  });
+  commentInput.value = "@clara veja isso";
+  const sendBtn = fixture.page.find("button").find(b => b.textContent === "Enviar");
+  sendBtn.fire("click");
+  await flush();
+  assert.deepEqual(commentArgs, { id: "synthetic", content: "@clara veja isso", replyToId: null });
 });
