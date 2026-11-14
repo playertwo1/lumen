@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.1",
+      "items": [
+        {
+          "icon": "chat",
+          "title": { "pt-BR": "15 personas oficiais da Segunda Mente" },
+          "detail": { "pt-BR": "Avatares integrados, diretrizes próprias de comentários e compatibilidade com formatos YAML e Tavern Card." }
+        },
+        {
+          "icon": "phone",
+          "title": { "pt-BR": "Sincronização de personas via celular (ADB)" },
+          "detail": { "pt-BR": "Sincronize personas direto do celular Android via depuração USB e restaure os padrões quando quiser." }
+        },
+        {
+          "icon": "paint",
+          "title": { "pt-BR": "Novos personagens no Canvas do Lumen" },
+          "detail": { "pt-BR": "Grok e Hermes Desktop chegam à ilha com versões compactas e traços aprimorados no Antigravity e Genérico." }
+        }
+      ]
+    },
+    {
       "version": "0.7.0",
       "items": [
         {

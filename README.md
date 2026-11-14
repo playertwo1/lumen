@@ -182,6 +182,7 @@ No Windows, o fork passa a se chamar Lumen; no Linux e no macOS, o app continua 
 
 | Lumen (Windows) e Coucou (Linux) | Data | Destaques |
 |---------|------|------------|
+| 0.7.1 · [Windows](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.1) · validação real pendente | 14 nov. 2026 | 15 personas oficiais da Segunda Mente com avatares e Tavern (`L3.2`), sync via celular Android (ADB) e personagens Grok, Hermes Desktop e ajustes no Canvas |
 | 0.7.0 · [Windows](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.0) · validação real pendente | 14 nov. 2026 | Anotador só no microfone e texto rápido (`L3.1`), comentários locais de personas com `@menção` (`L3.2`), animação P3 e links completos para `playertwo1/lumen` |
 | 0.6.18 · [Windows](https://github.com/playertwo1/lumen/releases/tag/windows-v0.6.18) · validação real pendente | 14 nov. 2026 | Personagens sem corte vertical e com versão mini/compacta; o Lumen passa a ter repositório próprio (`playertwo1/lumen`), de onde vêm as atualizações |
 | 0.6.17 · [Windows](https://github.com/playertwo1/coucou/releases/tag/windows-v0.6.17) · validação real pendente | 14 nov. 2026 | O chat do Plano ChatGPT busca na web e sabe a data e a cidade que você salvar em Configurações → Chat |

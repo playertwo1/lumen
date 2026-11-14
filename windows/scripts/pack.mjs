@@ -49,13 +49,24 @@ if (!packages) {
 
 mkdirSync(outDir, { recursive: true });
 
+const written = [];
+
 if (process.platform === "win32") {
   const hook = join(root, "target", "release", "coucou-hook.exe");
   if (!existsSync(hook)) {
     console.error(`No hook relay at ${hook} — build it before packing.`);
     process.exit(1);
   }
-  copyFileSync(hook, join(outDir, "lumen-hook.exe"));
+  const hookDest = join(outDir, "lumen-hook.exe");
+  copyFileSync(hook, hookDest);
+  written.push(hookDest);
+
+  const app = join(root, "target", "release", "lumen.exe");
+  if (existsSync(app)) {
+    const appDest = join(outDir, "lumen.exe");
+    copyFileSync(app, appDest);
+    written.push(appDest);
+  }
 }
 
 /** The newest file in `dir` ending with `suffix`, in case an older build is still lying around. */
@@ -72,7 +83,6 @@ function newest(dir, suffix) {
     .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 }
 
-const written = [];
 for (const { dir, suffix, names } of packages) {
   const built = newest(join(bundleRoot, dir), suffix);
   if (!built) {

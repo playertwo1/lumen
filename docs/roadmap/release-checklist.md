@@ -12,6 +12,19 @@
 - [x] Comparar os SHA-256 dos instaladores publicados com o preflight. Os hashes diferiram; os assets finais foram baixados, conferidos com os digests do GitHub e examinados diretamente pelo Defender sem detecções (evento 1001, exame `{9AD2DD74-E9E4-4DCE-8E77-D2954870AA9F}`).
 - Nunca executar esta lista de publicação sem o proprietário pedir release.
 
+## Windows 0.7.1 — 15 Personas da Segunda Mente, Sync via ADB e novos companheiros Canvas (publicação local)
+
+- [x] Pedido explícito do proprietário em 2026-11-14 para versionar como `0.7.1`, incorporar catálogo oficial das 15 personas da Segunda Mente com suporte YAML/Tavern, sync via celular Android (ADB) e novos companheiros Canvas (Grok, Hermes Desktop, ajustes no Antigravity e Genérico), empacotar e publicar localmente (`no-github-actions`).
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.1: 3 items in 1 languages`), `npx tsc --noEmit`, `npm test` (`681/681`), `npm run build` (`tsc --noEmit && vite build`), `cargo test --lib` (`680` passaram, `9` ignorados), `cargo test` em `windows/hook/` (`37/37`) e `npm run pack`.
+- [x] Microsoft Defender (`MpCmdRun.exe -Scan -ScanType 3 -File <arquivo> -DisableRemediation`) examinou individualmente os quatro artefatos gerados: código 0 e `found no threats`.
+- [x] SHA-256 dos artefatos:
+  - MSI `Lumen-Windows-0.7.1.msi`: `00F47FDA309C2965671456D3C8BEA26196017C6798D046A1BD3B71E62EB559C9`.
+  - Setup `Lumen-Windows-0.7.1-setup.exe`: `AD18558C87CA5E138717C635EA9E6E132FED0CC1BBFE3DB52D7095D430514FA2`.
+  - App portátil `lumen.exe`: `EDBE3C95FEA5948B57747D020E653647DD0D29B9918A24D1CC3D83DCFDCAB15C`.
+  - Hook `lumen-hook.exe`: `B08BF0C549EFA0A19A4B10D72FD4FD97E3126E7ECEE7FDAC4E16715F78547CA0`.
+- [x] Publicação local via `gh release create windows-v0.7.1` em `playertwo1/lumen` e atualização da release móvel `windows-latest` (`Lumen-Windows.msi` e `Lumen-Windows-setup.exe`).
+- [ ] Proprietário instalar a `0.7.1` (ou atualizar da `0.7.0` via `playertwo1/lumen`), validar as 15 personas, sincronização ADB e novos companheiros no notebook. Continua **NOT_RUN**.
+
 ## Windows 0.7.0 — Etapa L3 (Anotador, personas e animação P3) e links completos para `playertwo1/lumen` (publicação local)
 
 - [x] Pedido explícito do proprietário em 2026-11-14 para versionar como `0.7.0`, apontar links/atualizador para o repositório próprio `playertwo1/lumen`, empacotar e publicar localmente (`no-github-actions`).

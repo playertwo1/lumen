@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows 0.7.1 — 14 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **15 personas oficiais da Segunda Mente** — catálogo oficial com avatares vetoriais no Canvas, diretrizes de comentários e compatibilidade com importação nos formatos YAML e Tavern Card.
+- **Sincronização de personas via celular (ADB)** — sincronize o acervo de personas diretamente do aparelho Android conectado por depuração USB e restaure as personas padrão do Lumen com um clique.
+- **Novos companheiros Grok e Hermes Desktop** — suporte aos novos personagens no Canvas, variantes compactas para a ilha e melhorias visuais no Antigravity e Genérico.
+
 ## Windows 0.7.0 — 14 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Anotador de pensamentos e ideias (`L3.1`)** — captura de voz apenas pelo microfone (`notes_start`/`notes_idea`, sem gravar áudio do sistema) e criação rápida de notas em texto (`notes_create_text`), resumidas pelo provedor ativo no chat (`chatgpt` OAuth, Anthropic, compatíveis, CLI ou servidor local).
