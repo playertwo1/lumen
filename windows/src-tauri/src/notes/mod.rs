@@ -8,6 +8,7 @@
 // people should be told it is recorded.
 
 pub mod builder;
+pub mod default_personas;
 #[cfg(windows)]
 mod export;
 pub mod personas;
@@ -1222,6 +1223,22 @@ pub fn personas_set_comment_settings(
     })?;
     let _ = app.emit_to(crate::HUB_LABEL, "personas-changed", ());
     Ok(personas::load_state())
+}
+
+#[tauri::command]
+pub fn personas_reset_defaults(app: AppHandle) -> Result<personas::PersonasState, String> {
+    let state = personas::reset_default_personas_in(&personas::store_dir())?;
+    let _ = app.emit_to(crate::HUB_LABEL, "personas-changed", ());
+    Ok(state)
+}
+
+#[tauri::command]
+pub async fn personas_sync_adb(app: AppHandle) -> Result<personas::PersonasState, String> {
+    let state = tauri::async_runtime::spawn_blocking(|| personas::sync_from_adb_in(&personas::store_dir()))
+        .await
+        .map_err(|e| format!("Falha ao sincronizar via ADB: {e}"))??;
+    let _ = app.emit_to(crate::HUB_LABEL, "personas-changed", ());
+    Ok(state)
 }
 
 #[tauri::command]

@@ -46,6 +46,60 @@ function defaultPersonasState(): PersonasState {
   };
 }
 
+/** Converts `asset://characters/<file>` to `/characters/<file>` and keeps safe avatar URLs. */
+export function resolvePersonaAvatar(avatar?: string | null): string | null {
+  const value = avatar?.trim();
+  if (!value) return null;
+  if (value.startsWith("asset://characters/")) {
+    const file = value.slice("asset://characters/".length);
+    return file ? `/characters/${file}` : null;
+  }
+  if (
+    (value.startsWith("/characters/") && value.length > "/characters/".length) ||
+    value.startsWith("https://") ||
+    value.startsWith("http://") ||
+    value.startsWith("data:image/")
+  ) {
+    return value;
+  }
+  return null;
+}
+
+/** Normalizes selected .json/.yaml files for `personas_import`, injecting `id: <basename>` into YAMLs without `id:`. */
+export function formatImportedPersonaFiles(files: { name: string; content: string }[]): string {
+  return files
+    .map(({ name, content }) => {
+      const trimmed = content.replace(/^\uFEFF/, "").trim();
+      if (!trimmed || !/\.(?:ya?ml)$/i.test(name)) return trimmed;
+      const body = trimmed.replace(/^---\r?\n/, "");
+      if (/^id\s*:/m.test(body)) return body;
+      const baseId = (name.split(/[\\/]/).pop() ?? name).replace(/\.(?:ya?ml)$/i, "").trim();
+      return baseId ? `id: ${baseId}\n${body}` : body;
+    })
+    .filter(Boolean)
+    .join("\n---\n");
+}
+
+function personaAvatar(name: string, color: string, avatar?: string | null, size = 28): HTMLElement {
+  const initial = (name.trim().slice(0, 1) || "?").toUpperCase();
+  const circleStyle = `background:${color};width:${size}px;height:${size}px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font:700 ${Math.max(11, Math.round(size * 0.45))}px var(--font);color:#fff;flex-shrink:0;overflow:hidden`;
+  const src = resolvePersonaAvatar(avatar);
+  if (!src) {
+    return h("span", { class: "av", style: circleStyle, text: initial });
+  }
+  const wrap = h("span", { class: "av-wrap", style: circleStyle });
+  const img = h("img", {
+    src,
+    alt: name,
+    style: "width:100%;height:100%;object-fit:cover;display:block;border-radius:999px",
+    onerror: () => {
+      wrap.replaceChildren(h("span", { class: "av", style: circleStyle, text: initial }));
+    },
+  });
+  wrap.append(img);
+  return wrap;
+}
+
 export async function notesPage(page: HTMLElement, ctx: HubContext) {
   let state: NotesState = (await FlowBridge.notes()) ?? { notes: [], recording: null, working: [] };
   let personasState: PersonasState = (await FlowBridge.personasState()) ?? defaultPersonasState();
@@ -57,6 +111,8 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
   let commentError = "";
   let personaFeedback = "";
   let personaError = "";
+  let personaBusy: "" | "import" | "adb" | "reset" = "";
+  let personaDraft = "";
   let replyToId: string | null = null;
   let left = false, exporting = false, savingText = false;
   let exportResult: { id: string; path?: string; error?: string } | null = null;
@@ -285,33 +341,92 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
     const jsonBox = h("textarea", {
       class: "hub-input",
       rows: "7",
-      placeholder: 'Cole um JSON de persona (3 partes QwenPaw: identity, userProfile, rules) ou lista do Segunda Mente…',
+      placeholder: "Cole JSON ou .yaml da Segunda Mente (junte vários docs com ---) ou 3 partes QwenPaw (identity, userProfile, rules)…",
       style: "width:100%;resize:vertical;font:12.5px/1.45 var(--mono, monospace)",
     }) as HTMLTextAreaElement;
-
-    const fileInput = h("input", { type: "file", accept: ".json,application/json", style: "display:none" }) as HTMLInputElement;
-    fileInput.addEventListener("change", () => {
-      const file = fileInput.files?.[0];
-      if (!file) return;
-      void file.text().then((content) => {
-        jsonBox.value = content;
-      });
+    jsonBox.value = personaDraft;
+    jsonBox.addEventListener("input", () => {
+      personaDraft = jsonBox.value;
     });
 
-    const importAction = async () => {
+    const fileInput = h("input", {
+      type: "file",
+      accept: ".json,.yaml,.yml,application/json,text/yaml",
+      multiple: true,
+      style: "display:none",
+    }) as HTMLInputElement;
+    fileInput.addEventListener("change", () => {
+      const files = Array.from(fileInput.files ?? []);
+      if (files.length === 0) return;
+      void Promise.all(files.map(async (file) => ({ name: file.name, content: await file.text() })))
+        .then((loaded) => {
+          personaDraft = formatImportedPersonaFiles(loaded);
+          jsonBox.value = personaDraft;
+          fileInput.value = "";
+        })
+        .catch((err) => {
+          personaError = String(err).replace(/^Error:\s*/, "");
+          renderPersonasManager();
+        });
+    });
+
+    async function runPersonaAction(
+      kind: "import" | "adb" | "reset",
+      task: () => Promise<PersonasState>,
+      onSuccess: (next: PersonasState) => string,
+    ) {
+      if (personaBusy) return;
+      personaBusy = kind;
       personaError = "";
       personaFeedback = "";
+      renderPersonasManager();
       try {
-        personasState = await FlowBridge.importPersonas(jsonBox.value);
-        jsonBox.value = "";
-        personaFeedback = `Personas salvas (${personasState.personas.length} no total).`;
+        personasState = await task();
+        personaFeedback = onSuccess(personasState);
         drawList();
-        renderPersonasManager();
       } catch (err) {
         personaError = String(err).replace(/^Error:\s*/, "");
-        renderPersonasManager();
+      } finally {
+        personaBusy = "";
+        if (!left) renderPersonasManager();
       }
+    }
+
+    const importAction = () => {
+      const raw = jsonBox.value;
+      personaDraft = raw;
+      return runPersonaAction(
+        "import",
+        () => FlowBridge.importPersonas(raw),
+        (next) => {
+          personaDraft = "";
+          return `Personas salvas (${next.personas.length} no total).`;
+        },
+      );
     };
+    const syncAdbAction = () =>
+      runPersonaAction(
+        "adb",
+        () => FlowBridge.syncPersonasAdb(),
+        (next) => `Personas sincronizadas do celular (${next.personas.length} no total).`,
+      );
+    const resetDefaultsAction = () =>
+      runPersonaAction(
+        "reset",
+        () => FlowBridge.resetDefaultPersonas(),
+        (next) => `${next.personas.length} personas padrão restauradas.`,
+      );
+
+    const busy = personaBusy !== "";
+    const importBtn = button(personaBusy === "import" ? "Importando…" : "Importar JSON/YAML", () => void importAction(), "primary", true);
+    const chooseBtn = button("Escolher arquivos (.json/.yaml)", () => fileInput.click(), "", true);
+    const syncAdbBtn = button(personaBusy === "adb" ? "Sincronizando…" : "Sincronizar do celular (ADB)", () => void syncAdbAction(), "", true);
+    const resetBtn = button(personaBusy === "reset" ? "Restaurando…" : "Restaurar 15 padrões", () => void resetDefaultsAction(), "", true);
+    const sampleBtn = button("Preencher exemplo sintético", () => {
+      personaDraft = SYNTHETIC_PERSONA_SAMPLE;
+      jsonBox.value = personaDraft;
+    }, "", true);
+    for (const b of [importBtn, chooseBtn, syncAdbBtn, resetBtn, sampleBtn]) b.disabled = busy;
 
     detail.append(
       h("div", { style: "display:flex;align-items:center;gap:10px;justify-content:space-between" },
@@ -334,13 +449,15 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
         ),
       ),
       h("div", { class: "hub-card", style: "display:flex;flex-direction:column;gap:10px" },
-        h("div", { style: "font:600 14px var(--font)", text: "Importar persona manual (temporário até a etapa L6 de sync)" }),
+        h("div", { style: "font:600 14px var(--font)", text: "Importar ou sincronizar personas (JSON ou .yaml da Segunda Mente)" }),
         fileInput,
         jsonBox,
         h("div", { class: "hub-row", style: "gap:8px;flex-wrap:wrap" },
-          button("Importar JSON", () => void importAction(), "primary", true),
-          button("Escolher arquivo .json", () => fileInput.click(), "", true),
-          button("Preencher exemplo sintético", () => { jsonBox.value = SYNTHETIC_PERSONA_SAMPLE; }, "", true),
+          importBtn,
+          chooseBtn,
+          syncAdbBtn,
+          resetBtn,
+          sampleBtn,
         ),
         personaFeedback ? h("div", { class: "hub-note", style: "color:#34D399", text: personaFeedback }) : null,
         personaError ? h("div", { class: "hub-warn", text: personaError }) : null,
@@ -356,29 +473,44 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
       detail.append(
         h("div", { class: "hub-card", style: "display:flex;flex-direction:column;gap:8px" },
           h("div", { class: "hub-row", style: "justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap" },
-            h("div", { class: "hub-row", style: "gap:8px;align-items:center" },
-              h("span", {
-                class: "av",
-                style: `background:${p.color};width:24px;height:24px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font:700 12px var(--font);color:#fff`,
-                text: p.name.slice(0, 1).toUpperCase(),
-              }),
-              h("strong", { text: `${p.name} (@${p.id})` }),
-              p.role ? h("span", { class: "hub-note", text: p.role }) : null,
-              p.isPrimaryCompanion ? h("span", { class: "hub-note", style: "color:#34D399", text: "Principal" }) : null,
+            h("div", { class: "hub-row", style: "gap:10px;align-items:center" },
+              personaAvatar(p.name, p.color, p.avatar, 36),
+              h("div", { style: "display:flex;flex-direction:column;gap:2px" },
+                h("div", { class: "hub-row", style: "gap:6px;align-items:center;flex-wrap:wrap" },
+                  h("strong", { text: `${p.name} (@${p.id})` }),
+                  p.isPrimaryCompanion ? h("span", { class: "hub-note", style: "color:#34D399", text: "Principal" }) : null,
+                ),
+                p.role ? h("div", { class: "hub-note", text: p.role }) : null,
+              ),
             ),
             h("div", { class: "hub-row", style: "gap:6px" },
               button(p.enabled ? "Desativar" : "Ativar", async () => {
-                personasState = await FlowBridge.togglePersona(p.id, !p.enabled);
-                drawList();
+                personaError = "";
+                try {
+                  personasState = await FlowBridge.togglePersona(p.id, !p.enabled);
+                  drawList();
+                } catch (err) {
+                  personaError = String(err).replace(/^Error:\s*/, "");
+                }
                 renderPersonasManager();
               }, "", true),
               !p.isPrimaryCompanion ? button("Definir principal", async () => {
-                personasState = await FlowBridge.setPrimaryPersona(p.id);
+                personaError = "";
+                try {
+                  personasState = await FlowBridge.setPrimaryPersona(p.id);
+                } catch (err) {
+                  personaError = String(err).replace(/^Error:\s*/, "");
+                }
                 renderPersonasManager();
               }, "", true) : null,
               button(t("Delete"), async () => {
-                personasState = await FlowBridge.deletePersona(p.id);
-                drawList();
+                personaError = "";
+                try {
+                  personasState = await FlowBridge.deletePersona(p.id);
+                  drawList();
+                } catch (err) {
+                  personaError = String(err).replace(/^Error:\s*/, "");
+                }
                 renderPersonasManager();
               }, "danger", true),
             ),
@@ -387,6 +519,22 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
           p.interestFilter ? h("div", { class: "hub-note", text: `Foco: ${p.interestFilter}` }) : null,
           p.identity ? h("div", { class: "hub-note", text: `Identidade: ${p.identity}` }) : null,
           p.rules ? h("div", { class: "hub-note", text: `Regras: ${p.rules}` }) : null,
+          p.firstMessage?.trim()
+            ? h("div", {
+                class: "hub-note",
+                style: "padding:6px 10px;border-inline-start:2px solid rgba(255,255,255,0.16);white-space:pre-wrap",
+                text: `Primeira fala: ${p.firstMessage.trim()}`,
+              })
+            : null,
+          p.mesExample?.trim()
+            ? h("details", { class: "hub-note" },
+                h("summary", { style: "cursor:pointer;user-select:none", text: "Exemplo de diálogo" }),
+                h("div", {
+                  style: "margin-top:6px;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:8px;white-space:pre-wrap",
+                  text: p.mesExample.trim(),
+                }),
+              )
+            : null,
         ),
       );
     }
@@ -441,6 +589,7 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
           },
             h("div", { class: "hub-row", style: "justify-content:space-between;align-items:center;gap:8px" },
               h("div", { class: "hub-row", style: "gap:6px;align-items:center" },
+                personaAvatar(c.characterName, color, c.authorKind === "user" ? null : persona?.avatar, 24),
                 h("strong", { style: `color:${color};font-size:13px`, text: c.characterName }),
                 parent ? h("span", { class: "hub-note", text: `↳ em resposta a ${parent.characterName}` }) : null,
               ),

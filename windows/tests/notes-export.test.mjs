@@ -25,7 +25,7 @@ Object.getPrototypeOf(root()).prepend = function (...nodes) {
   for (const node of nodes) node.parentNode = this;
   this.childNodes.unshift(...nodes);
 };
-const { notesPage } = await import("../src/hub/pages/notes.ts");
+const { notesPage, resolvePersonaAvatar, formatImportedPersonaFiles } = await import("../src/hub/pages/notes.ts");
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 const originalInvoke = internals.invoke;
 
@@ -144,4 +144,139 @@ test("Anotador permite criar nota em texto e enviar comentário para personas", 
   sendBtn.fire("click");
   await flush();
   assert.deepEqual(commentArgs, { id: "synthetic", content: "@clara veja isso", replyToId: null });
+});
+
+test("resolvePersonaAvatar converte asset://characters e bloqueia esquemas inseguros", () => {
+  assert.equal(resolvePersonaAvatar("asset://characters/socio_tecnico.png"), "/characters/socio_tecnico.png");
+  assert.equal(resolvePersonaAvatar("  /characters/curador.png  "), "/characters/curador.png");
+  assert.equal(resolvePersonaAvatar("https://example.com/a.png"), "https://example.com/a.png");
+  assert.equal(resolvePersonaAvatar("http://127.0.0.1:8080/a.png"), "http://127.0.0.1:8080/a.png");
+  assert.equal(resolvePersonaAvatar("data:image/png;base64,AAAA"), "data:image/png;base64,AAAA");
+  assert.equal(resolvePersonaAvatar("asset://characters/"), null);
+  assert.equal(resolvePersonaAvatar("/characters/"), null);
+  assert.equal(resolvePersonaAvatar("javascript:alert(1)"), null);
+  assert.equal(resolvePersonaAvatar("data:text/html,<script>"), null);
+  assert.equal(resolvePersonaAvatar("file:///etc/passwd"), null);
+  assert.equal(resolvePersonaAvatar(""), null);
+  assert.equal(resolvePersonaAvatar(null), null);
+});
+
+test("formatImportedPersonaFiles injeta id do arquivo em YAMLs sem id e une múltiplos com ---", () => {
+  const joined = formatImportedPersonaFiles([
+    { name: "socio_tecnico.yaml", content: "name: Sócio Técnico\nrole: Arquiteto" },
+    { name: "curador.yml", content: "---\nid: curador_custom\nname: Curador" },
+    { name: "advogado_diabo.yaml", content: "---\nname: Advogado" },
+  ]);
+  assert.equal(
+    joined,
+    "id: socio_tecnico\nname: Sócio Técnico\nrole: Arquiteto\n---\nid: curador_custom\nname: Curador\n---\nid: advogado_diabo\nname: Advogado",
+  );
+  const singleJson = formatImportedPersonaFiles([{ name: "p.json", content: '  [{"id":"a","name":"A"}]  ' }]);
+  assert.equal(singleJson, '[{"id":"a","name":"A"}]');
+});
+
+test("Avatares com fallback onerror, exibição de firstMessage/mesExample e fluxos ADB/Restaurar padrões", async t => {
+  t.mock.method(globalThis, "setInterval", () => 1);
+  t.mock.method(globalThis, "clearInterval", () => {});
+  const persona = {
+    id: "socio_tecnico",
+    name: "Sócio Técnico",
+    role: "Arquiteto",
+    avatar: "asset://characters/socio_tecnico.png",
+    identity: "Direto e técnico",
+    userProfile: "Dev",
+    rules: "Aponte riscos",
+    persona: "",
+    firstMessage: "Qual gargalo vamos destravar hoje?",
+    mesExample: "<START>\n{{user}}: E o deploy?\n{{char}}: Valide rollback antes.",
+    tags: ["arquitetura"],
+    interestFilter: "sistema",
+    isPrimaryCompanion: true,
+    enabled: true,
+    color: "#3B9EFF",
+  };
+  const note = {
+    id: "n1",
+    title: "Nota sintética",
+    titleEdited: false,
+    start: Date.now() - 5000,
+    status: "ready",
+    speakers: [],
+    lines: [{ id: "l1", speaker: "me", start: 0, end: 1, text: "Testar avatares" }],
+    summary: "",
+    keyPoints: [],
+    todos: [],
+    comments: [
+      { id: "c1", characterId: "socio_tecnico", characterName: "Sócio Técnico", authorKind: "persona", content: "Veja os logs.", createdAt: 1 },
+    ],
+  };
+
+  t.mock.method(internals, "invoke", async (cmd, args) => {
+    if (cmd === "notes_state") return { notes: [note], recording: null, working: [] };
+    if (cmd === "personas_state") return { personas: [persona], settings: { enableCharacterComment: true, maxCommentCharacters: 2 } };
+    return originalInvoke(cmd, args);
+  });
+
+  const page = root();
+  const ctx = { hero: () => root(), status: { models: { parakeet: { state: "ready" } } } };
+  await notesPage(page, ctx);
+  t.after(() => ctx.onLeave());
+
+  // Comentário exibe <img> resolvido para /characters/... e faz fallback para inicial no onerror.
+  const commentImg = page.find("img").find((img) => img.getAttribute("src") === "/characters/socio_tecnico.png");
+  assert.ok(commentImg, "comentário deve renderizar <img> com caminho resolvido");
+  assert.equal(commentImg.getAttribute("alt"), "Sócio Técnico");
+  commentImg.fire("error");
+  assert.equal(page.find("img").length, 0);
+  assert.ok(page.find(".av").some((el) => el.textContent === "S"), "fallback deve exibir inicial colorida");
+
+  // Abre o gerenciador de personas.
+  page.find("button").find((b) => b.textContent.startsWith("Personas (")).fire("click");
+  const cardImg = page.find("img").find((img) => img.getAttribute("src") === "/characters/socio_tecnico.png");
+  assert.ok(cardImg, "card da persona deve renderizar avatar <img>");
+  assert.match(page.textContent, /Qual gargalo vamos destravar hoje\?/);
+  assert.match(page.textContent, /Valide rollback antes\./);
+  cardImg.fire("error");
+  assert.equal(page.find("img").length, 0);
+  assert.ok(page.find(".av").some((el) => el.textContent === "S"), "fallback do card deve exibir inicial colorida");
+
+  // Seleção de múltiplos arquivos .yaml no input preenche textarea concatenado.
+  const fileInput = page.find("input").find((i) => i.getAttribute("type") === "file");
+  assert.equal(fileInput.getAttribute("accept"), ".json,.yaml,.yml,application/json,text/yaml");
+  assert.notEqual(fileInput.getAttribute("multiple"), null);
+  fileInput.files = [
+    { name: "curador.yaml", text: async () => "name: Curador" },
+    { name: "tradutor.yml", text: async () => "id: tradutor_id\nname: Tradutor" },
+  ];
+  fileInput.fire("change");
+  await flush();
+  const importArea = page.find("textarea").find((ta) => ta.getAttribute("placeholder")?.includes(".yaml"));
+  assert.equal(importArea.value, "id: curador\nname: Curador\n---\nid: tradutor_id\nname: Tradutor");
+
+  // Fluxo ADB: estado de loading + sucesso; depois erro e sucesso em Restaurar 15 padrões.
+  let resolveAdb;
+  t.mock.method(FlowBridge, "syncPersonasAdb", () => new Promise((resolve) => { resolveAdb = resolve; }));
+  const adbBtn = page.find("button").find((b) => b.textContent === "Sincronizar do celular (ADB)");
+  adbBtn.fire("click");
+  const syncingBtn = page.find("button").find((b) => b.textContent === "Sincronizando…");
+  assert.ok(syncingBtn);
+  assert.equal(syncingBtn.disabled, true);
+  assert.equal(page.find("button").find((b) => b.textContent === "Restaurar 15 padrões").disabled, true);
+  resolveAdb({ personas: [persona], settings: { enableCharacterComment: true, maxCommentCharacters: 2 } });
+  await flush();
+  assert.match(page.textContent, /Personas sincronizadas do celular \(1 no total\)\./);
+
+  let failReset = true;
+  t.mock.method(FlowBridge, "resetDefaultPersonas", async () => {
+    if (failReset) throw new Error("Falha sintética ao restaurar padrões");
+    return { personas: [persona], settings: { enableCharacterComment: true, maxCommentCharacters: 2 } };
+  });
+  page.find("button").find((b) => b.textContent === "Restaurar 15 padrões").fire("click");
+  await flush();
+  assert.match(page.textContent, /Falha sintética ao restaurar padrões/);
+
+  failReset = false;
+  page.find("button").find((b) => b.textContent === "Restaurar 15 padrões").fire("click");
+  await flush();
+  assert.match(page.textContent, /1 personas padrão restauradas\./);
 });

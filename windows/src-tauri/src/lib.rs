@@ -1223,6 +1223,8 @@ pub fn run() {
             notes::personas_delete,
             notes::personas_set_primary,
             notes::personas_set_comment_settings,
+            notes::personas_reset_defaults,
+            notes::personas_sync_adb,
             notes::notes_rename,
             notes::notes_rename_speaker,
             notes::notes_toggle_todo,

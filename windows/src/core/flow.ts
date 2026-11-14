@@ -164,12 +164,14 @@ export interface PersonaProfile {
   id: string;
   name: string;
   role?: string | null;
+  avatar?: string | null;
   identity: string;
   userProfile: string;
   rules: string;
   persona: string;
   systemPromptOverride?: string | null;
   postHistoryInstructions?: string | null;
+  firstMessage?: string | null;
   mesExample?: string | null;
   tags: string[];
   interestFilter?: string | null;
@@ -286,6 +288,8 @@ export const FlowBridge = {
   generateNoteComments: (id: string) => callOrThrow<void>("notes_generate_comments", { id }),
   personasState: () => call<PersonasState>("personas_state"),
   importPersonas: (raw: string) => callOrThrow<PersonasState>("personas_import", { raw }),
+  resetDefaultPersonas: () => callOrThrow<PersonasState>("personas_reset_defaults"),
+  syncPersonasAdb: () => callOrThrow<PersonasState>("personas_sync_adb"),
   togglePersona: (id: string, enabled: boolean) => callOrThrow<PersonasState>("personas_toggle", { id, enabled }),
   deletePersona: (id: string) => callOrThrow<PersonasState>("personas_delete", { id }),
   setPrimaryPersona: (id: string) => callOrThrow<PersonasState>("personas_set_primary", { id }),
