@@ -1,5 +1,12 @@
 # Changelog
 
+## Windows 0.7.4 — 15 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Google no Lumen (`L7.1`, `L7.2`, `L7.3` e animação P3)** — login OAuth PKCE no navegador com credenciais no Windows Credential Manager, backup semanal + restauração íntegra (`SHA-256` e snapshot prévio) na pasta `Segunda Mente/Lumen-PC` do Google Drive, leitura e criação confirmada de eventos no Google Calendar (`attendees` vazio e `sendUpdates=none`) e gesto `triggerCloudBackup` no `CompassEngine`.
+- **Notch compacto 2A e aba rápida de tarefas na ilha** — pílula contextual no modo compacto (`2A`), aba icônica de tarefas no notch aberto e ajuste dinâmico de altura da ilha.
+- **Redesign editorial do Hub (Etapas 1 a 4) e MailCraft** — nova direção visual em Tarefas, Notas, E-mail, Celular, ChatGPT e Ajustes, seletor de agendamento (`schedule-picker.ts`) e exibição de erro real de conexão no card do MailCraft.
+- **Personas vivas nas notas e motores OAuth/CLI nos resumos** — suporte a chat em grupo com até 15 personas da Segunda Mente, respostas abertas e uso de ChatGPT/Codex OAuth e Antigravity/Gemini CLI nos resumos do Anotador.
+
 ## Windows 0.7.3 — 15 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Pareamento via relay com a Segunda Mente (`L6.2`)** — geração de QR/código efêmero no Lumen e troca segura de chaves + segredo do relay com o Android.

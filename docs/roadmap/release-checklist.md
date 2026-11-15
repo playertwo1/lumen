@@ -12,6 +12,19 @@
 - [x] Comparar os SHA-256 dos instaladores publicados com o preflight. Os hashes diferiram; os assets finais foram baixados, conferidos com os digests do GitHub e examinados diretamente pelo Defender sem detecções (evento 1001, exame `{9AD2DD74-E9E4-4DCE-8E77-D2954870AA9F}`).
 - Nunca executar esta lista de publicação sem o proprietário pedir release.
 
+## Windows 0.7.4 — Google no Lumen (L7), redesign editorial do Hub, Notch 2A e personas vivas (publicação local)
+
+- [x] Pedido explícito do proprietário em 2026-11-15 para consolidar as alterações na `main`, gerar os instaladores/executáveis versionados e publicar no GitHub (`playertwo1/lumen`, publicação local `no-github-actions`).
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.4: 3 items in 1 languages`), `npx tsc --noEmit`, `npm test` (`721/721`), `npm run build` (`tsc --noEmit && vite build`), `cargo test --lib` (`743` passaram, `9` ignorados), `cargo test` em `windows/hook/` (`37/37`) e `npm run pack`.
+- [x] Microsoft Defender (`MpCmdRun.exe -Scan -ScanType 3 -File <arquivo> -DisableRemediation`) examinou individualmente os quatro artefatos gerados: código 0 e `found no threats`.
+- [x] SHA-256 dos artefatos:
+  - Setup `Lumen-Windows-0.7.4-setup.exe`: `ED9D15AF5FFFCD868B151388FF7F19FD984895CF01351BD6ECABEC0B7732BA22`.
+  - MSI `Lumen-Windows-0.7.4.msi`: `4209C39D5A80EF226710C8250BE010522401CC95715F551CECF530DA82F2E420`.
+  - App portátil `lumen.exe`: `2DCFBF6E48A0605D60C180527E2D946471DC37314F5E25F9468A37E149BF2B98`.
+  - Hook `lumen-hook.exe`: `C78837624E06153EF61E5EC7EE3CD2D425942EC22872E47C35A7050ACCE0F5FC`.
+- [x] Publicação local via `gh release create windows-v0.7.4` em `playertwo1/lumen` e atualização da release móvel `windows-latest` (`Lumen-Windows.msi` e `Lumen-Windows-setup.exe`).
+- [ ] Proprietário validar no uso real: login OAuth Google, backup/restauração no Drive (`Segunda Mente/Lumen-PC`), criação confirmada de eventos no Calendar (`L7`) e novo Notch 2A + Hub redesenhado no notebook. Continua **NOT_RUN**.
+
 ## Windows 0.7.3 — L6.2 pareamento via relay, L6.3 sync E2EE de tarefas, L6.4 cancelamento cruzado e animação P3 (publicação local)
 
 - [x] Pedido explícito do proprietário em 2026-11-15 para criar e publicar a release `0.7.3` localmente (`no-github-actions`) para validação da ponte com a Segunda Mente (`v1.0.48+133`).

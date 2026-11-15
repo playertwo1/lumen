@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.4",
+      "items": [
+        {
+          "icon": "shield",
+          "title": { "pt-BR": "Google no Lumen: Drive e Calendar (L7)" },
+          "detail": { "pt-BR": "Login Google PKCE no cofre, backup semanal com SHA-256 no Drive e agenda no Calendar sem convites." }
+        },
+        {
+          "icon": "checklist",
+          "title": { "pt-BR": "Notch compacto 2A e aba de tarefas na ilha" },
+          "detail": { "pt-BR": "Aba rápida de tarefas no notch aberto, pílula contextual no modo compacto e animação de backup." }
+        },
+        {
+          "icon": "paint",
+          "title": { "pt-BR": "Redesign editorial do Hub e personas vivas" },
+          "detail": { "pt-BR": "Novo visual em Tarefas, Notas, E-mail e Ajustes, além de chat em grupo até 15 personas nas notas." }
+        }
+      ]
+    },
+    {
       "version": "0.7.3",
       "items": [
         {
