@@ -480,7 +480,7 @@ fn collect_due_alarms(mgr: &TaskManager, now_ms: i64) -> Vec<(TodoItem, i64)> {
     out
 }
 
-/// Calcula se a tarefa deve disparar aviso em `now_ms`, evitando duplicidade no mesmo `(version, trigger_ms)`.
+/// Calcula se a tarefa deve disparar aviso em `now_ms`, evitando duplicidade para o mesmo `trigger_ms`.
 pub fn due_trigger_for_now(
     item: &TodoItem,
     now_ms: i64,
@@ -505,7 +505,7 @@ pub fn due_trigger_for_now(
     };
 
     if trigger_ms <= now_ms && (now_ms - trigger_ms) <= TRIGGER_GRACE_MS {
-        if last_fired == Some((item.version, trigger_ms)) {
+        if last_fired.map(|(_, fired_ms)| fired_ms) == Some(trigger_ms) {
             return None;
         }
         return Some(trigger_ms);
@@ -584,7 +584,7 @@ pub fn handle_toast_action(
                 .unwrap()
                 .snooze_and_enqueue(task_id, Some(TODO_ALARM_SNOOZE_MINUTES), now)
             {
-                mgr.fired.lock().unwrap().remove(task_id);
+                dismiss_if_active(app, &mgr, task_id);
                 let _ = mgr.wake_tx.send(());
                 let _ = mgr.sync_wake_tx.send(());
                 emit_tasks_changed(app);
@@ -598,7 +598,7 @@ pub fn handle_toast_action(
                 .unwrap()
                 .toggle_done_and_enqueue(task_id, Some(true), now)
             {
-                mgr.fired.lock().unwrap().remove(task_id);
+                dismiss_if_active(app, &mgr, task_id);
                 let _ = mgr.wake_tx.send(());
                 if changed || outcome.next_occurrence.is_some() {
                     let _ = mgr.sync_wake_tx.send(());
@@ -835,8 +835,7 @@ pub fn tasks_update(
         .lock()
         .unwrap()
         .update_and_enqueue(input, now_utc_ms())?;
-    mgr.fired.lock().unwrap().remove(&item.id);
-    clear_task_toast(&app, &item.id);
+    dismiss_if_active(&app, &mgr, &item.id);
     let _ = mgr.wake_tx.send(());
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
@@ -855,8 +854,7 @@ pub fn tasks_toggle_done(
         .lock()
         .unwrap()
         .toggle_done_and_enqueue(&id, done, now_utc_ms())?;
-    mgr.fired.lock().unwrap().remove(&id);
-    clear_task_toast(&app, &id);
+    dismiss_if_active(&app, &mgr, &id);
     let _ = mgr.wake_tx.send(());
     if changed || outcome.next_occurrence.is_some() {
         let _ = mgr.sync_wake_tx.send(());
@@ -880,8 +878,7 @@ pub fn tasks_snooze(
         .lock()
         .unwrap()
         .snooze_and_enqueue(&id, minutes, now_utc_ms())?;
-    mgr.fired.lock().unwrap().remove(&id);
-    clear_task_toast(&app, &id);
+    dismiss_if_active(&app, &mgr, &id);
     let _ = mgr.wake_tx.send(());
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
@@ -900,8 +897,7 @@ pub fn tasks_delete(
         .lock()
         .unwrap()
         .delete_and_enqueue(&id, now_utc_ms())?;
-    mgr.fired.lock().unwrap().remove(&id);
-    clear_task_toast(&app, &id);
+    dismiss_if_active(&app, &mgr, &id);
     let _ = mgr.wake_tx.send(());
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
@@ -1152,6 +1148,70 @@ mod tests {
         let at_14_25 = utc_ms_from_local(2026, 11, 14, 14, 25, TODO_TIME_ZONE);
         assert_eq!(due_trigger_for_now(&item, at_14_24, None), None);
         assert_eq!(due_trigger_for_now(&item, at_14_25, None), Some(at_14_25));
+    }
+
+    #[test]
+    fn remote_text_or_priority_edit_does_not_refire_but_new_schedule_or_cleared_fired_does() {
+        // Criada às 13:00 local (16:00Z), vence 14:30 local com alerta 20m -> dispara 14:10 local.
+        let mut item = sample_item("2026-11-14T16:00:00Z", "2026-11-14", "14:30", 20);
+        let trigger_14_10 = utc_ms_from_local(2026, 11, 14, 14, 10, TODO_TIME_ZONE);
+        let at_14_10_05 = trigger_14_10 + 5_000;
+        let at_14_12 = trigger_14_10 + 120_000; // ainda dentro de TRIGGER_GRACE_MS (5m)
+
+        assert_eq!(due_trigger_for_now(&item, at_14_10_05, None), Some(trigger_14_10));
+
+        // Edição remota só de texto/prioridade/subtarefa muda `version`, mantendo o mesmo `trigger_ms`.
+        item.text = "Enviar orçamento revisado".into();
+        item.priority = TodoPriority::Urgent;
+        item.subtasks.push(model::TodoSubtask {
+            id: "sub-1".into(),
+            text: "Anexar planilha".into(),
+            done: false,
+        });
+        item.version = 2;
+        assert_eq!(
+            due_trigger_for_now(&item, at_14_12, Some((1, trigger_14_10))),
+            None,
+            "mesmo trigger_ms não deve re-disparar quando só a versão mudou"
+        );
+
+        // Se `fired` tiver sido limpo explicitamente, volta a disparar dentro da janela de tolerância.
+        assert_eq!(due_trigger_for_now(&item, at_14_12, None), Some(trigger_14_10));
+
+        // Novo `snoozed_until` muda `trigger_ms`: cancela o anterior e dispara no novo horário.
+        let trigger_14_25 = utc_ms_from_local(2026, 11, 14, 14, 25, TODO_TIME_ZONE);
+        item.snoozed_until = Some("2026-11-14T17:25:00Z".into());
+        item.version = 3;
+        assert_eq!(
+            due_trigger_for_now(&item, at_14_12, Some((1, trigger_14_10))),
+            None
+        );
+        assert_eq!(
+            due_trigger_for_now(&item, trigger_14_25 + 5_000, Some((1, trigger_14_10))),
+            Some(trigger_14_25)
+        );
+        assert_eq!(
+            due_trigger_for_now(&item, trigger_14_25 + 5_000, None),
+            Some(trigger_14_25)
+        );
+
+        // Nova edição de texto após disparo do snooze também não re-dispara.
+        item.text = "Enviar orçamento final".into();
+        item.version = 4;
+        assert_eq!(
+            due_trigger_for_now(&item, trigger_14_25 + 60_000, Some((3, trigger_14_25))),
+            None
+        );
+
+        // Alterar `due_time` (limpando `snoozed_until`) produz novo `trigger_ms` e volta a disparar.
+        item.snoozed_until = None;
+        item.due_time = Some("15:00".into()); // alerta 20m -> 14:40 local
+        item.version = 5;
+        let trigger_14_40 = utc_ms_from_local(2026, 11, 14, 14, 40, TODO_TIME_ZONE);
+        assert_eq!(
+            due_trigger_for_now(&item, trigger_14_40 + 5_000, Some((3, trigger_14_25))),
+            Some(trigger_14_40)
+        );
     }
 
     #[test]
