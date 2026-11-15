@@ -13,8 +13,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
@@ -29,6 +31,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
 use super::pairing::SecretStore;
+#[allow(unused_imports)]
+pub use super::relay_crypto::MailboxRole;
 use super::relay_crypto::{self as crypto, PairingKey, Session};
 use super::server::{self, Shared};
 
@@ -211,6 +215,349 @@ pub async fn revoke_mailbox(target: &Target, creds: &Credentials) -> Result<u16,
     } else {
         Err(format!("relay revoke status {code}"))
     }
+}
+
+// ── Persistent mailbox HTTP client (`/v1/mailbox/<room>/*`) ──────────────────────────────────────
+
+const MAILBOX_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MailboxPostOutcome {
+    pub seq: u64,
+    pub id: String,
+    pub duplicate: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MailboxEnvelopeItem {
+    pub seq: u64,
+    pub id: String,
+    pub created_at: u64,
+    pub size_bytes: usize,
+    pub payload: Vec<u8>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MailboxListResponse {
+    pub messages: Vec<MailboxEnvelopeItem>,
+    pub latest_seq: u64,
+    pub pending_count: u64,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MailboxAckResponse {
+    pub acked_upto: u64,
+    pub deleted: u64,
+    pub remaining: u64,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MailboxStatsResponse {
+    pub pending_pc: u64,
+    pub pending_phone: u64,
+    pub stored_bytes: u64,
+    pub revoked: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MailboxHttpError {
+    Unauthorized,
+    Forbidden,
+    Revoked,
+    PayloadTooLarge,
+    MailboxFull,
+    RateLimited,
+    BadRequest(String),
+    Transport(String),
+}
+
+impl std::fmt::Display for MailboxHttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unauthorized => f.write_str("relay unauthorized (401)"),
+            Self::Forbidden => f.write_str("relay forbidden (403)"),
+            Self::Revoked => f.write_str("mailbox revoked (410)"),
+            Self::PayloadTooLarge => f.write_str("mailbox payload too large (413)"),
+            Self::MailboxFull => f.write_str("mailbox full (507)"),
+            Self::RateLimited => f.write_str("relay rate limited (429)"),
+            Self::BadRequest(msg) => write!(f, "mailbox bad request: {msg}"),
+            Self::Transport(msg) => write!(f, "mailbox transport error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for MailboxHttpError {}
+
+#[derive(Deserialize)]
+struct RawPostOutcome {
+    seq: u64,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    duplicate: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawEnvelopeItem {
+    seq: u64,
+    #[serde(default)]
+    id: Option<String>,
+    created_at: u64,
+    size_bytes: usize,
+    payload_b64: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawListResponse {
+    messages: Vec<RawEnvelopeItem>,
+    latest_seq: u64,
+    pending_count: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AckRequest {
+    upto_seq: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawAckResponse {
+    acked_upto: u64,
+    deleted: u64,
+    remaining: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawStatsResponse {
+    pending_pc: u64,
+    pending_phone: u64,
+    stored_bytes: u64,
+    revoked: bool,
+}
+
+fn map_http_status(code: u16) -> MailboxHttpError {
+    match code {
+        401 => MailboxHttpError::Unauthorized,
+        403 => MailboxHttpError::Forbidden,
+        410 => MailboxHttpError::Revoked,
+        413 => MailboxHttpError::PayloadTooLarge,
+        429 => MailboxHttpError::RateLimited,
+        507 => MailboxHttpError::MailboxFull,
+        400..=499 => MailboxHttpError::BadRequest(format!("http {code}")),
+        _ => MailboxHttpError::Transport(format!("http {code}")),
+    }
+}
+
+fn mailbox_client() -> Result<reqwest::Client, MailboxHttpError> {
+    reqwest::Client::builder()
+        .timeout(MAILBOX_HTTP_TIMEOUT)
+        .build()
+        .map_err(|_| MailboxHttpError::Transport("http client error".to_string()))
+}
+
+fn apply_mailbox_auth(req: reqwest::RequestBuilder, creds: &Credentials) -> reqwest::RequestBuilder {
+    req.header("Authorization", format!("Bearer {}", creds.access))
+        .header("X-Lumen-Join", crypto::join_proof(&creds.key))
+}
+
+async fn send_mailbox_request(req: reqwest::RequestBuilder) -> Result<reqwest::Response, MailboxHttpError> {
+    // Never include reqwest's error string here because it embeds the URL (host + room id).
+    let resp = req.send().await.map_err(|err| {
+        if err.is_timeout() {
+            MailboxHttpError::Transport("relay timeout".to_string())
+        } else {
+            MailboxHttpError::Transport("relay unreachable".to_string())
+        }
+    })?;
+    let status = resp.status();
+    if status.is_success() {
+        Ok(resp)
+    } else {
+        Err(map_http_status(status.as_u16()))
+    }
+}
+
+async fn read_mailbox_json<T: serde::de::DeserializeOwned>(resp: reqwest::Response) -> Result<T, MailboxHttpError> {
+    resp.json::<T>()
+        .await
+        .map_err(|_| MailboxHttpError::Transport("invalid mailbox response".to_string()))
+}
+
+fn block_on_mailbox<T: Send>(
+    fut: impl std::future::Future<Output = Result<T, MailboxHttpError>> + Send,
+) -> Result<T, MailboxHttpError> {
+    let run = || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| MailboxHttpError::Transport("http runtime error".to_string()))?;
+        rt.block_on(fut)
+    };
+    // Guard against panicking if called from inside an active Tokio runtime without `rt-multi-thread`.
+    if tokio::runtime::Handle::try_current().is_ok() {
+        std::thread::scope(|s| {
+            s.spawn(run)
+                .join()
+                .unwrap_or_else(|_| Err(MailboxHttpError::Transport("http worker panicked".to_string())))
+        })
+    } else {
+        run()
+    }
+}
+
+/// Enqueues an encrypted mailbox envelope (`POST /v1/mailbox/{room}/messages?to={to}`), async variant.
+#[allow(dead_code)]
+pub async fn mailbox_post_async(
+    target: &Target,
+    creds: &Credentials,
+    to: MailboxRole,
+    msg_id: &str,
+    body: &[u8],
+) -> Result<MailboxPostOutcome, MailboxHttpError> {
+    let url = format!("{}/v1/mailbox/{}/messages?to={}", target.http_base_url(), creds.room, to.as_str());
+    let req = apply_mailbox_auth(mailbox_client()?.post(&url), creds)
+        .header("Content-Type", "application/octet-stream")
+        .header("X-Lumen-Msg-Id", msg_id)
+        .body(body.to_vec());
+    let resp = send_mailbox_request(req).await?;
+    let status = resp.status().as_u16();
+    let raw: RawPostOutcome = read_mailbox_json(resp).await?;
+    Ok(MailboxPostOutcome {
+        seq: raw.seq,
+        id: raw.id.unwrap_or_default(),
+        duplicate: raw.duplicate.unwrap_or(status == 200),
+    })
+}
+
+/// Enqueues an encrypted mailbox envelope (`POST /v1/mailbox/{room}/messages?to={to}`).
+#[allow(dead_code)]
+pub fn mailbox_post(
+    target: &Target,
+    creds: &Credentials,
+    to: MailboxRole,
+    msg_id: &str,
+    body: &[u8],
+) -> Result<MailboxPostOutcome, MailboxHttpError> {
+    block_on_mailbox(mailbox_post_async(target, creds, to, msg_id, body))
+}
+
+/// Lists pending encrypted mailbox envelopes (`GET /v1/mailbox/{room}/messages?for=...`), async variant.
+#[allow(dead_code)]
+pub async fn mailbox_list_async(
+    target: &Target,
+    creds: &Credentials,
+    for_role: MailboxRole,
+    after_seq: u64,
+    limit: u32,
+) -> Result<MailboxListResponse, MailboxHttpError> {
+    let url = format!(
+        "{}/v1/mailbox/{}/messages?for={}&after={}&limit={}",
+        target.http_base_url(),
+        creds.room,
+        for_role.as_str(),
+        after_seq,
+        limit
+    );
+    let req = apply_mailbox_auth(mailbox_client()?.get(&url), creds);
+    let resp = send_mailbox_request(req).await?;
+    let raw: RawListResponse = read_mailbox_json(resp).await?;
+    let mut messages = Vec::with_capacity(raw.messages.len());
+    for item in raw.messages {
+        let payload = BASE64_STANDARD
+            .decode(&item.payload_b64)
+            .map_err(|_| MailboxHttpError::Transport("invalid mailbox payload".to_string()))?;
+        messages.push(MailboxEnvelopeItem {
+            seq: item.seq,
+            id: item.id.unwrap_or_default(),
+            created_at: item.created_at,
+            size_bytes: item.size_bytes,
+            payload,
+        });
+    }
+    Ok(MailboxListResponse {
+        messages,
+        latest_seq: raw.latest_seq,
+        pending_count: raw.pending_count,
+    })
+}
+
+/// Lists pending encrypted mailbox envelopes (`GET /v1/mailbox/{room}/messages?for=...`).
+#[allow(dead_code)]
+pub fn mailbox_list(
+    target: &Target,
+    creds: &Credentials,
+    for_role: MailboxRole,
+    after_seq: u64,
+    limit: u32,
+) -> Result<MailboxListResponse, MailboxHttpError> {
+    block_on_mailbox(mailbox_list_async(target, creds, for_role, after_seq, limit))
+}
+
+/// Acknowledges and deletes delivered envelopes up to `upto_seq` (`POST /v1/mailbox/{room}/ack?for=...`), async variant.
+#[allow(dead_code)]
+pub async fn mailbox_ack_async(
+    target: &Target,
+    creds: &Credentials,
+    for_role: MailboxRole,
+    upto_seq: u64,
+) -> Result<MailboxAckResponse, MailboxHttpError> {
+    let url = format!("{}/v1/mailbox/{}/ack?for={}", target.http_base_url(), creds.room, for_role.as_str());
+    let req = apply_mailbox_auth(mailbox_client()?.post(&url), creds).json(&AckRequest { upto_seq });
+    let resp = send_mailbox_request(req).await?;
+    let raw: RawAckResponse = read_mailbox_json(resp).await?;
+    Ok(MailboxAckResponse {
+        acked_upto: raw.acked_upto,
+        deleted: raw.deleted,
+        remaining: raw.remaining,
+    })
+}
+
+/// Acknowledges and deletes delivered envelopes up to `upto_seq` (`POST /v1/mailbox/{room}/ack?for=...`).
+#[allow(dead_code)]
+pub fn mailbox_ack(
+    target: &Target,
+    creds: &Credentials,
+    for_role: MailboxRole,
+    upto_seq: u64,
+) -> Result<MailboxAckResponse, MailboxHttpError> {
+    block_on_mailbox(mailbox_ack_async(target, creds, for_role, upto_seq))
+}
+
+/// Fetches mailbox queue and revocation counters (`GET /v1/mailbox/{room}/stats`), async variant.
+#[allow(dead_code)]
+pub async fn mailbox_stats_async(
+    target: &Target,
+    creds: &Credentials,
+) -> Result<MailboxStatsResponse, MailboxHttpError> {
+    let url = format!("{}/v1/mailbox/{}/stats", target.http_base_url(), creds.room);
+    let req = apply_mailbox_auth(mailbox_client()?.get(&url), creds);
+    let resp = send_mailbox_request(req).await?;
+    let raw: RawStatsResponse = read_mailbox_json(resp).await?;
+    Ok(MailboxStatsResponse {
+        pending_pc: raw.pending_pc,
+        pending_phone: raw.pending_phone,
+        stored_bytes: raw.stored_bytes,
+        revoked: raw.revoked,
+    })
+}
+
+/// Fetches mailbox queue and revocation counters (`GET /v1/mailbox/{room}/stats`).
+#[allow(dead_code)]
+pub fn mailbox_stats(
+    target: &Target,
+    creds: &Credentials,
+) -> Result<MailboxStatsResponse, MailboxHttpError> {
+    block_on_mailbox(mailbox_stats_async(target, creds))
 }
 
 // ── Status ───────────────────────────────────────────────────────────────────────────────────────
@@ -1106,5 +1453,285 @@ mod tests {
             assert_eq!(host.0.lock().unwrap().clone(), vec![("e2e-req".to_string(), true)], "the phone's decision reached the computer");
             handle.stop();
         });
+    }
+
+    // ── Mailbox HTTP client tests ────────────────────────────────────────────────────────────────
+
+    struct CapturedHttp {
+        request_line: String,
+        headers: std::collections::HashMap<String, String>,
+        body: Vec<u8>,
+    }
+
+    fn mailbox_test_creds() -> Credentials {
+        let store = MemStore::default();
+        set_access_key(&store, &crypto::base64url_encode(&[7u8; 32])).unwrap();
+        credentials(&store).unwrap()
+    }
+
+    fn spawn_mailbox_mock(
+        responses: Vec<(u16, &'static str, &'static str, Vec<u8>)>,
+    ) -> (Target, std::sync::mpsc::Receiver<CapturedHttp>, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            for (status, reason, content_type, resp_body) in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 4096];
+                let header_end = loop {
+                    if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        break pos;
+                    }
+                    let n = stream.read(&mut tmp).unwrap();
+                    assert!(n > 0, "unexpected EOF reading HTTP headers");
+                    buf.extend_from_slice(&tmp[..n]);
+                };
+                let head = std::str::from_utf8(&buf[..header_end]).unwrap();
+                let mut lines = head.split("\r\n");
+                let request_line = lines.next().unwrap().to_string();
+                let mut headers = std::collections::HashMap::new();
+                for line in lines {
+                    if let Some((k, v)) = line.split_once(':') {
+                        headers.insert(k.trim().to_ascii_lowercase(), v.trim().to_string());
+                    }
+                }
+                let content_length: usize = headers.get("content-length").and_then(|s| s.parse().ok()).unwrap_or(0);
+                let body_start = header_end + 4;
+                while buf.len() < body_start + content_length {
+                    let n = stream.read(&mut tmp).unwrap();
+                    assert!(n > 0, "unexpected EOF reading HTTP body");
+                    buf.extend_from_slice(&tmp[..n]);
+                }
+                let body = buf[body_start..body_start + content_length].to_vec();
+                tx.send(CapturedHttp { request_line, headers, body }).unwrap();
+
+                let head_resp = format!(
+                    "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    resp_body.len()
+                );
+                stream.write_all(head_resp.as_bytes()).unwrap();
+                stream.write_all(&resp_body).unwrap();
+                stream.flush().unwrap();
+            }
+        });
+        (Target { tls: false, host: "127.0.0.1".into(), port }, rx, handle)
+    }
+
+    #[test]
+    fn mailbox_post_sends_required_headers_and_handles_201_and_200_duplicate() {
+        let creds = mailbox_test_creds();
+        let expected_join = crypto::join_proof(&creds.key);
+        let payload = vec![1u8, 0xaa, 0xbb, 0xff, 0x00, 0x42];
+        let (target, rx, server) = spawn_mailbox_mock(vec![
+            (
+                201,
+                "Created",
+                "application/json",
+                br#"{"seq":1,"id":"msg-0001","createdAt":1700000000000,"duplicate":false,"storedMessages":1,"storedBytes":6}"#.to_vec(),
+            ),
+            (
+                200,
+                "OK",
+                "application/json",
+                br#"{"seq":1,"id":"msg-0001","createdAt":1700000000000,"duplicate":true}"#.to_vec(),
+            ),
+        ]);
+
+        let first = mailbox_post(&target, &creds, MailboxRole::Phone, "msg-0001", &payload).unwrap();
+        assert_eq!(first, MailboxPostOutcome { seq: 1, id: "msg-0001".into(), duplicate: false });
+
+        let second = mailbox_post(&target, &creds, MailboxRole::Phone, "msg-0001", &payload).unwrap();
+        assert_eq!(second, MailboxPostOutcome { seq: 1, id: "msg-0001".into(), duplicate: true });
+
+        server.join().unwrap();
+        for cap in [rx.recv().unwrap(), rx.recv().unwrap()] {
+            assert_eq!(cap.request_line, format!("POST /v1/mailbox/{}/messages?to=phone HTTP/1.1", creds.room));
+            assert_eq!(cap.headers.get("authorization").map(String::as_str), Some(format!("Bearer {}", creds.access).as_str()));
+            assert_eq!(cap.headers.get("x-lumen-join").map(String::as_str), Some(expected_join.as_str()));
+            assert_eq!(cap.headers.get("x-lumen-msg-id").map(String::as_str), Some("msg-0001"));
+            assert_eq!(cap.headers.get("content-type").map(String::as_str), Some("application/octet-stream"));
+            assert_eq!(cap.body, payload);
+        }
+    }
+
+    #[test]
+    fn mailbox_list_decodes_base64_payloads_and_checks_headers() {
+        let creds = mailbox_test_creds();
+        let expected_join = crypto::join_proof(&creds.key);
+        let raw_a = vec![0x01u8, 0x00, 0xfe, 0x80, 0x7f, 0x13];
+        let raw_b = vec![0x99u8, 0x10, 0x20, 0x30];
+        let resp = json!({
+            "messages": [
+                {
+                    "seq": 8,
+                    "id": "msg-0008",
+                    "createdAt": 1700000001000u64,
+                    "sizeBytes": raw_a.len(),
+                    "payloadB64": BASE64_STANDARD.encode(&raw_a)
+                },
+                {
+                    "seq": 9,
+                    "id": null,
+                    "createdAt": 1700000002000u64,
+                    "sizeBytes": raw_b.len(),
+                    "payloadB64": BASE64_STANDARD.encode(&raw_b)
+                }
+            ],
+            "latestSeq": 9,
+            "pendingCount": 2
+        });
+        let (target, rx, server) = spawn_mailbox_mock(vec![(
+            200,
+            "OK",
+            "application/json",
+            resp.to_string().into_bytes(),
+        )]);
+
+        let listed = mailbox_list(&target, &creds, MailboxRole::Pc, 7, 25).unwrap();
+        assert_eq!(
+            listed,
+            MailboxListResponse {
+                messages: vec![
+                    MailboxEnvelopeItem {
+                        seq: 8,
+                        id: "msg-0008".into(),
+                        created_at: 1700000001000,
+                        size_bytes: raw_a.len(),
+                        payload: raw_a,
+                    },
+                    MailboxEnvelopeItem {
+                        seq: 9,
+                        id: String::new(),
+                        created_at: 1700000002000,
+                        size_bytes: raw_b.len(),
+                        payload: raw_b,
+                    },
+                ],
+                latest_seq: 9,
+                pending_count: 2,
+            }
+        );
+
+        server.join().unwrap();
+        let cap = rx.recv().unwrap();
+        assert_eq!(cap.request_line, format!("GET /v1/mailbox/{}/messages?for=pc&after=7&limit=25 HTTP/1.1", creds.room));
+        assert_eq!(cap.headers.get("authorization").map(String::as_str), Some(format!("Bearer {}", creds.access).as_str()));
+        assert_eq!(cap.headers.get("x-lumen-join").map(String::as_str), Some(expected_join.as_str()));
+    }
+
+    #[test]
+    fn mailbox_ack_and_stats_round_trip_and_check_headers() {
+        let creds = mailbox_test_creds();
+        let expected_join = crypto::join_proof(&creds.key);
+        let (target, rx, server) = spawn_mailbox_mock(vec![
+            (
+                200,
+                "OK",
+                "application/json",
+                br#"{"ackedUpto":12,"deleted":3,"remaining":1}"#.to_vec(),
+            ),
+            (
+                200,
+                "OK",
+                "application/json",
+                br#"{"pendingPc":1,"pendingPhone":4,"storedBytes":4096,"revoked":false}"#.to_vec(),
+            ),
+        ]);
+
+        let ack = mailbox_ack(&target, &creds, MailboxRole::Pc, 12).unwrap();
+        assert_eq!(ack, MailboxAckResponse { acked_upto: 12, deleted: 3, remaining: 1 });
+
+        let stats = mailbox_stats(&target, &creds).unwrap();
+        assert_eq!(stats, MailboxStatsResponse { pending_pc: 1, pending_phone: 4, stored_bytes: 4096, revoked: false });
+
+        server.join().unwrap();
+        let ack_cap = rx.recv().unwrap();
+        assert_eq!(ack_cap.request_line, format!("POST /v1/mailbox/{}/ack?for=pc HTTP/1.1", creds.room));
+        assert_eq!(ack_cap.headers.get("authorization").map(String::as_str), Some(format!("Bearer {}", creds.access).as_str()));
+        assert_eq!(ack_cap.headers.get("x-lumen-join").map(String::as_str), Some(expected_join.as_str()));
+        assert_eq!(ack_cap.headers.get("content-type").map(String::as_str), Some("application/json"));
+        let ack_json: Value = serde_json::from_slice(&ack_cap.body).unwrap();
+        assert_eq!(ack_json, json!({ "uptoSeq": 12 }));
+
+        let stats_cap = rx.recv().unwrap();
+        assert_eq!(stats_cap.request_line, format!("GET /v1/mailbox/{}/stats HTTP/1.1", creds.room));
+        assert_eq!(stats_cap.headers.get("authorization").map(String::as_str), Some(format!("Bearer {}", creds.access).as_str()));
+        assert_eq!(stats_cap.headers.get("x-lumen-join").map(String::as_str), Some(expected_join.as_str()));
+    }
+
+    #[test]
+    fn mailbox_http_maps_all_error_status_codes() {
+        let creds = mailbox_test_creds();
+        let cases = [
+            (401u16, "Unauthorized", MailboxHttpError::Unauthorized),
+            (403, "Forbidden", MailboxHttpError::Forbidden),
+            (410, "Gone", MailboxHttpError::Revoked),
+            (413, "Payload Too Large", MailboxHttpError::PayloadTooLarge),
+            (429, "Too Many Requests", MailboxHttpError::RateLimited),
+            (507, "Insufficient Storage", MailboxHttpError::MailboxFull),
+            (400, "Bad Request", MailboxHttpError::BadRequest("http 400".into())),
+            (502, "Bad Gateway", MailboxHttpError::Transport("http 502".into())),
+        ];
+        let responses = cases
+            .iter()
+            .map(|(code, reason, _)| (*code, *reason, "application/json", Vec::new()))
+            .collect();
+        let (target, _rx, server) = spawn_mailbox_mock(responses);
+
+        for (_, _, expected) in &cases {
+            let err = mailbox_stats(&target, &creds).unwrap_err();
+            assert_eq!(&err, expected);
+        }
+        server.join().unwrap();
+
+        // Unreachable port maps to Transport without exposing room or secrets.
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed_port = closed.local_addr().unwrap().port();
+        drop(closed);
+        let dead_target = Target { tls: false, host: "127.0.0.1".into(), port: closed_port };
+        let err = mailbox_stats(&dead_target, &creds).unwrap_err();
+        assert!(matches!(err, MailboxHttpError::Transport(_)));
+        let msg = err.to_string();
+        assert!(!msg.contains(&creds.room) && !msg.contains(&creds.access), "{msg}");
+    }
+
+    #[test]
+    fn mailbox_sync_and_async_interoperate_with_cipher_even_inside_tokio_runtime() {
+        let creds = mailbox_test_creds();
+        let km = crypto::k_mailbox(&creds.key);
+        let plaintext = r#"{"contract_version":1,"mutation_id":"mut-test-1"}"#;
+        let sealed = crypto::seal_mailbox(&km, &creds.room, MailboxRole::Phone, plaintext).unwrap();
+        let list_body = json!({
+            "messages": [{
+                "seq": 1,
+                "id": "mut-test-1",
+                "createdAt": 1700000003000u64,
+                "sizeBytes": sealed.len(),
+                "payloadB64": BASE64_STANDARD.encode(&sealed)
+            }],
+            "latestSeq": 1,
+            "pendingCount": 1
+        })
+        .to_string()
+        .into_bytes();
+
+        let (target, _rx, server) = spawn_mailbox_mock(vec![
+            (201, "Created", "application/json", br#"{"seq":1,"id":"mut-test-1","duplicate":false}"#.to_vec()),
+            (200, "OK", "application/json", list_body),
+        ]);
+
+        block_on(async {
+            let posted = mailbox_post(&target, &creds, MailboxRole::Phone, "mut-test-1", &sealed).unwrap();
+            assert_eq!(posted.seq, 1);
+            let listed = mailbox_list_async(&target, &creds, MailboxRole::Phone, 0, 50).await.unwrap();
+            assert_eq!(listed.messages.len(), 1);
+            let opened = crypto::open_mailbox(&km, &creds.room, MailboxRole::Phone, &listed.messages[0].payload).unwrap();
+            assert_eq!(opened, plaintext);
+        });
+        server.join().unwrap();
     }
 }

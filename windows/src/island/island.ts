@@ -143,6 +143,7 @@ export class Island {
   private wasInIsland = false;
   /** A reply is being typed in a card (WhatsApp): the island stays open. */
   private holdingOpen = false;
+  private activeTaskReminderId: string | null = null;
   /** Last shape handed to Rust for the click-through test. */
   private pushedRect = { x: -1, y: -1, w: -1, h: -1 };
 
@@ -666,12 +667,24 @@ export class Island {
   }
 
   taskReminder(payload: TaskReminderPayload) {
+    this.activeTaskReminderId = payload.id;
     setActiveTaskReminder(payload);
     this.alert("taskReminder");
     const compass = this.engine as BotEngine & { triggerTaskReminder?: (duration?: number) => void };
     if (compass.triggerTaskReminder) compass.triggerTaskReminder();
     else this.engine.triggerEmote("happy", 1.5);
     this.ensureRunning();
+  }
+
+  taskDismiss(taskId: string) {
+    if (this.activeTaskReminderId !== taskId) return;
+    this.activeTaskReminderId = null;
+    if (State.view !== "taskReminder") return;
+    if (State.mode === "expanded") this.collapse();
+    if (State.view === "taskReminder") {
+      State.view = State.defaultView();
+      State.notify();
+    }
   }
 
   taskSnoozed() {

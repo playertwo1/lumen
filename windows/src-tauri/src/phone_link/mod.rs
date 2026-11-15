@@ -22,8 +22,8 @@ mod hub;
 #[cfg(test)]
 mod interop;
 mod pairing;
-mod relay_client;
-mod relay_crypto;
+pub(crate) mod relay_client;
+pub(crate) mod relay_crypto;
 mod server;
 #[cfg(test)]
 mod tests;
@@ -239,6 +239,22 @@ impl PhoneLink {
             log::line("phone link: stopped");
         }
     }
+}
+
+/// Returns active relay mailbox target and pairing credentials when "Away from home Wi-Fi" is enabled and paired.
+pub(crate) fn mailbox_credentials(app: &AppHandle) -> Option<(relay_client::Target, relay_client::Credentials)> {
+    let shared = app.try_state::<Shared>()?;
+    let (enabled, url) = {
+        let s = shared.settings.lock().unwrap();
+        (s.phone_relay, s.phone_relay_url.clone())
+    };
+    if !enabled {
+        return None;
+    }
+    let target = relay_client::Target::parse(&url).ok()?;
+    let link = app.try_state::<PhoneLink>()?;
+    let creds = relay_client::existing_credentials(&*link.store)?;
+    Some((target, creds))
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { installFakeDom } from "./fakedom.mjs";
-import { calls, internals, sent } from "./tauri.mjs";
+import { calls, emit, internals, sent } from "./tauri.mjs";
 import {
   bucketFor,
   dateForShortcut,
@@ -17,8 +17,77 @@ import {
 } from "../src/core/tasks.ts";
 import { chatTodoProposalCard } from "../src/views/tasks.ts";
 
+Object.defineProperty(globalThis, "navigator", { configurable: true, value: { userAgent: "Windows NT" } });
+globalThis.__TAURI_EVENT_PLUGIN_INTERNALS__ ??= { unregisterListener() {} };
+
+function setupDom() {
+  const dom = installFakeDom();
+  const baseCreate = document.createElement;
+  document.createElement = (tag) => {
+    const el = baseCreate(tag);
+    if (tag === "canvas") el.getContext = () => null;
+    return el;
+  };
+  return dom;
+}
+
+const initialDom = setupDom();
+const { tasksPage } = await import("../src/hub/pages/tasks.ts");
+const { State } = await import("../src/core/state.ts");
+const { Island } = await import("../src/island/island.ts");
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
 const defaultInvoke = internals.invoke;
 let customInvoke = null;
+let pageCtx = null;
+
+function makeSync(overrides = {}) {
+  return {
+    state: "local_only",
+    paired: false,
+    device_id: "pc-test-1",
+    pending_outbox: 0,
+    pending_peer: null,
+    last_synced_at: null,
+    last_error: null,
+    quarantined_count: 0,
+    poison_count: 0,
+    revoked: false,
+    conflicts: [],
+    unsynced_item_ids: [],
+    ...overrides,
+  };
+}
+
+function makeSnapshot(overrides = {}) {
+  return {
+    items: [fakeTodo()],
+    shortcuts: {
+      enabled_date_shortcuts: ["today", "tomorrow", "inThreeDays", "nextMonday"],
+      time_shortcuts_minutes: [540, 840, 1200],
+      default_alert_minutes: 20,
+    },
+    windows_notifications_available: true,
+    voice_ready: false,
+    recording: false,
+    quarantined_file: null,
+    sync: makeSync(),
+    ...overrides,
+  };
+}
+
+async function openTasksPage(snapshot, extra = {}) {
+  const container = initialDom.root();
+  const ctx = {};
+  pageCtx = ctx;
+  customInvoke = async (cmd, args) => {
+    if (cmd in extra) return extra[cmd](args);
+    if (cmd === "tasks_state") return snapshot;
+    return undefined;
+  };
+  await tasksPage(container, ctx);
+  return container;
+}
 
 function fakeTodo(overrides = {}) {
   return {
@@ -46,9 +115,10 @@ function fakeTodo(overrides = {}) {
 }
 
 beforeEach(() => {
-  installFakeDom();
+  setupDom();
   calls.length = 0;
   customInvoke = null;
+  pageCtx = null;
   internals.invoke = async (cmd, args) => {
     if (customInvoke) {
       const handled = await customInvoke(cmd, args);
@@ -62,6 +132,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  pageCtx?.onLeave?.();
+  pageCtx = null;
   customInvoke = null;
   internals.invoke = defaultInvoke;
 });
@@ -201,4 +273,306 @@ test("chatTodoProposalCard nunca grava sem clique explícito em Confirmar", asyn
   assert.equal(confirmCalls[0].input.due_date, dateForShortcut("tomorrow"));
   assert.equal(confirmCalls[0].input.due_time, "14:00");
   assert.equal(formatDueLabel({ due_date: "2099-01-02", due_time: "09:00", alert_minutes: 20 }), "02/01/2099 · 09:00 · aviso 20m");
+});
+
+test("L6.3: local_only, sync ausente e saved_on_pc exibem 'Salvo neste PC' e nunca 'Sincronizado'", async () => {
+  const localPage = await openTasksPage(makeSnapshot({ sync: makeSync({ state: "local_only", paired: false }) }));
+  const localBar = localPage.querySelector(".tasks-sync-bar");
+  assert.ok(localBar.textContent.includes("Salvo neste PC · celular não pareado"));
+  assert.equal(localPage.querySelector(".tasks-sync-now-btn"), null);
+  assert.equal(localPage.textContent.includes("Sincronizado"), false);
+  for (const pill of localPage.find(".tasks-item-sync")) {
+    assert.equal(pill.textContent, "Salvo neste PC");
+  }
+
+  // Tolerância a snapshots sem o campo sync
+  const legacySnap = makeSnapshot();
+  delete legacySnap.sync;
+  const legacyPage = await openTasksPage(legacySnap);
+  assert.ok(legacyPage.querySelector(".tasks-sync-bar").textContent.includes("Salvo neste PC · celular não pareado"));
+  assert.equal(legacyPage.textContent.includes("Sincronizado"), false);
+
+  // saved_on_pc com alterações pendentes
+  const pendingPage = await openTasksPage(
+    makeSnapshot({
+      sync: makeSync({
+        state: "saved_on_pc",
+        paired: true,
+        pending_outbox: 2,
+        unsynced_item_ids: ["t-1"],
+      }),
+    }),
+  );
+  const pendingBar = pendingPage.querySelector(".tasks-sync-bar");
+  assert.ok(pendingBar.textContent.includes("Salvo neste PC · 2 alterações pendentes para enviar"));
+  assert.ok(pendingPage.querySelector(".tasks-sync-now-btn"));
+  assert.equal(pendingPage.textContent.includes("Sincronizado"), false);
+});
+
+test("L6.3: waiting_phone mantém item em 'Salvo neste PC' até 'Sincronizar agora' concluir em 'synced'", async () => {
+  const items = [
+    fakeTodo({ id: "t-recente", text: "Item recém-enviado" }),
+    fakeTodo({ id: "t-antigo", text: "Item anterior" }),
+  ];
+  const syncedSnap = makeSnapshot({
+    items,
+    sync: makeSync({
+      state: "synced",
+      paired: true,
+      pending_outbox: 0,
+      pending_peer: 0,
+      last_synced_at: "2026-11-15T02:00:00Z",
+      unsynced_item_ids: [],
+    }),
+  });
+
+  const page = await openTasksPage(
+    makeSnapshot({
+      items,
+      sync: makeSync({
+        state: "waiting_phone",
+        paired: true,
+        pending_outbox: 0,
+        pending_peer: 1,
+        unsynced_item_ids: ["t-recente"],
+      }),
+    }),
+    { tasks_sync_now: () => syncedSnap },
+  );
+
+  const bar = page.querySelector(".tasks-sync-bar");
+  assert.ok(bar.textContent.includes("Salvo neste PC · aguardando o celular abrir a caixa"));
+  assert.equal(page.textContent.includes("Sincronizado"), false);
+  for (const pill of page.find(".tasks-item-sync")) {
+    assert.equal(pill.textContent, "Salvo neste PC");
+  }
+
+  const syncBtn = page.querySelector(".tasks-sync-now-btn");
+  assert.ok(syncBtn);
+  assert.equal(syncBtn.textContent, "Sincronizar agora");
+  syncBtn.fire("click");
+  await flush();
+
+  assert.equal(sent("tasks_sync_now").length, 1);
+  assert.ok(bar.textContent.includes("Sincronizado"));
+  assert.equal(bar.textContent.includes("Salvo neste PC"), false);
+  for (const pill of page.find(".tasks-item-sync")) {
+    assert.equal(pill.textContent, "Sincronizado");
+  }
+
+  // Mesmo em state === "synced", item ainda listado em unsynced_item_ids continua "Salvo neste PC"
+  const partialPage = await openTasksPage(
+    makeSnapshot({
+      items,
+      sync: makeSync({
+        state: "synced",
+        paired: true,
+        unsynced_item_ids: ["t-recente"],
+      }),
+    }),
+  );
+  const pills = partialPage.find(".tasks-item").map((card) => ({
+    id: card.getAttribute("data-task-id"),
+    syncText: card.querySelector(".tasks-item-sync").textContent,
+  }));
+  assert.deepEqual(pills, [
+    { id: "t-recente", syncText: "Salvo neste PC" },
+    { id: "t-antigo", syncText: "Sincronizado" },
+  ]);
+});
+
+test("L6.3: estados revoked, error, quarentena/poison e falha de tasks_sync_now", async () => {
+  const revokedPage = await openTasksPage(
+    makeSnapshot({
+      sync: makeSync({ state: "revoked", paired: true, revoked: true }),
+    }),
+  );
+  assert.ok(revokedPage.querySelector(".tasks-sync-bar").textContent.includes("Salvo neste PC · pareamento revogado"));
+  assert.equal(revokedPage.textContent.includes("Sincronizado"), false);
+
+  const errorPage = await openTasksPage(
+    makeSnapshot({
+      sync: makeSync({
+        state: "error",
+        paired: true,
+        last_error: "Tempo esgotado no servidor",
+        quarantined_count: 1,
+        poison_count: 2,
+      }),
+    }),
+    {
+      tasks_sync_now: () => {
+        throw new Error("Sem conexão com a caixa");
+      },
+    },
+  );
+  const barText = errorPage.querySelector(".tasks-sync-bar").textContent;
+  assert.ok(barText.includes("Salvo neste PC · falha na última sincronização (Tempo esgotado no servidor)"));
+  assert.ok(barText.includes("1 atualização em quarentena"));
+  assert.ok(barText.includes("2 mensagens inválidas ignoradas"));
+  assert.equal(errorPage.textContent.includes("Sincronizado"), false);
+
+  const syncBtn = errorPage.querySelector(".tasks-sync-now-btn");
+  syncBtn.fire("click");
+  await flush();
+  const warnBanner = errorPage.querySelector(".tasks-banner.warn");
+  assert.equal(warnBanner.hidden, false);
+  assert.ok(warnBanner.textContent.includes("Sem conexão com a caixa"));
+  assert.equal(errorPage.querySelector(".tasks-sync-now-btn").disabled, false);
+});
+
+test("L6.3: resolução inline de conflitos chama tasks_resolve_conflict com conflictId e choice", async () => {
+  const item = fakeTodo({ id: "t-conf", text: "Título vencedor temporário" });
+  const conflictTitle = {
+    id: "conf-1",
+    entity_id: "t-conf",
+    field: "text",
+    local_text: "Texto deste PC",
+    remote_text: "Texto do celular",
+    winner_side: "remote",
+    winner_text: "Texto do celular",
+    loser_text: "Texto deste PC",
+    local_updated_at: "2026-11-15T01:00:00Z",
+    remote_updated_at: "2026-11-15T01:05:00Z",
+    conflict_state: "pending_review",
+  };
+  const conflictSub = {
+    id: "conf-2",
+    entity_id: "t-conf",
+    field: "subtask",
+    local_text: "Subtarefa PC",
+    remote_text: "Subtarefa celular",
+    winner_side: "local",
+    winner_text: "Subtarefa PC",
+    loser_text: "Subtarefa celular",
+    local_updated_at: "2026-11-15T01:06:00Z",
+    remote_updated_at: "2026-11-15T01:02:00Z",
+    conflict_state: "pending_review",
+  };
+
+  let currentSnap = makeSnapshot({
+    items: [item],
+    sync: makeSync({
+      state: "synced",
+      paired: true,
+      conflicts: [conflictTitle, conflictSub],
+    }),
+  });
+
+  const page = await openTasksPage(currentSnap, {
+    tasks_resolve_conflict: ({ conflictId, choice }) => {
+      if (conflictId === "conf-1" && choice === "local") {
+        currentSnap = makeSnapshot({
+          items: [fakeTodo({ id: "t-conf", text: "Texto deste PC" })],
+          sync: makeSync({
+            state: "saved_on_pc",
+            paired: true,
+            pending_outbox: 1,
+            conflicts: [conflictSub],
+            unsynced_item_ids: ["t-conf"],
+          }),
+        });
+      } else if (conflictId === "conf-2" && choice === "remote") {
+        currentSnap = makeSnapshot({
+          items: [fakeTodo({ id: "t-conf", text: "Texto deste PC", subtasks: [{ id: "s1", text: "Subtarefa celular", done: false }] })],
+          sync: makeSync({
+            state: "saved_on_pc",
+            paired: true,
+            pending_outbox: 1,
+            conflicts: [],
+            unsynced_item_ids: ["t-conf"],
+          }),
+        });
+      }
+      return currentSnap;
+    },
+  });
+
+  const cards = page.find(".tasks-conflict-card");
+  assert.equal(cards.length, 2);
+  assert.ok(cards[0].textContent.includes("Conflito de edição (Título)"));
+  assert.ok(cards[0].textContent.includes("Neste PC: Texto deste PC"));
+  assert.ok(cards[0].textContent.includes("No celular: Texto do celular"));
+  assert.ok(cards[1].textContent.includes("Conflito de edição (Subtarefa)"));
+
+  const keepLocal = cards[0].find("BUTTON").find((b) => b.textContent === "Manter texto deste PC");
+  assert.ok(keepLocal);
+  keepLocal.fire("click");
+  await flush();
+
+  assert.deepEqual(sent("tasks_resolve_conflict")[0], { conflictId: "conf-1", choice: "local" });
+  assert.equal(page.querySelector(".tasks-item-title").textContent, "Texto deste PC");
+  assert.equal(page.find(".tasks-conflict-card").length, 1);
+
+  const useRemote = page.find(".tasks-conflict-card")[0].find("BUTTON").find((b) => b.textContent === "Usar texto do celular");
+  assert.ok(useRemote);
+  useRemote.fire("click");
+  await flush();
+
+  assert.deepEqual(sent("tasks_resolve_conflict")[1], { conflictId: "conf-2", choice: "remote" });
+  assert.equal(page.find(".tasks-conflict-card").length, 0);
+});
+
+test("L6.3: task-dismiss dispensa lembrete ativo na Ilha apenas para o taskId correspondente e recarrega página", async () => {
+  const oldMode = State.mode;
+  const oldView = State.view;
+  try {
+    State.mode = "hidden";
+    State.view = "overview";
+    const island = Object.create(Island.prototype);
+    island.engine = { triggerEmote() {} };
+    island.ensureRunning = () => {};
+    island.fsm = {
+      pinned: false,
+      forceHome: () => island.expand("taskReminder"),
+      forcePetit: () => island.setMode("compact"),
+    };
+    island.setMode = (mode) => { State.mode = mode; };
+    island.animateGeometry = () => {};
+    island.expand = (view) => {
+      State.view = view;
+      State.mode = "expanded";
+    };
+    island.alert = (view) => {
+      State.view = view;
+      State.mode = "expanded";
+    };
+
+    island.taskReminder({
+      id: "t-dismiss-1",
+      text: "Tomar remédio",
+      due_date: "2026-11-15",
+      due_time: "09:00",
+      priority: "high",
+      alert_minutes: 0,
+    });
+    assert.equal(State.mode, "expanded");
+    assert.equal(State.view, "taskReminder");
+
+    // Outro ID não dispensa o card ativo
+    island.taskDismiss("t-outro");
+    assert.equal(State.mode, "expanded");
+    assert.equal(State.view, "taskReminder");
+
+    // ID correspondente recolhe a Ilha e sai da view taskReminder
+    island.taskDismiss("t-dismiss-1");
+    assert.equal(State.mode, "compact");
+    assert.notEqual(State.view, "taskReminder");
+
+    // Na página Tarefas, o evento task-dismiss dispara recarga de tasks_state
+    let stateCalls = 0;
+    await openTasksPage(makeSnapshot(), {
+      tasks_state: () => {
+        stateCalls++;
+        return makeSnapshot();
+      },
+    });
+    assert.equal(stateCalls, 1);
+    emit("task-dismiss", "t-dismiss-1");
+    await flush();
+    assert.equal(stateCalls, 2);
+  } finally {
+    State.mode = oldMode;
+    State.view = oldView;
+  }
 });

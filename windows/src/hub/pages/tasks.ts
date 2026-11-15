@@ -13,9 +13,11 @@ import {
   formatDueLabel,
   formatTimeMinutes,
   groupTasks,
+  isTaskItemSynced,
   recurrenceLabel,
   searchTodos,
   timeChipLabel,
+  type TaskSyncState,
   type TasksSnapshot,
   type TodoBucket,
   type TodoDateShortcut,
@@ -30,6 +32,23 @@ type FilterKind = "all" | TodoBucket;
 
 let activeCleanup: (() => void) | null = null;
 
+function formatSyncTimestamp(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function safeSyncError(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw.trim().replace(/\s+/g, " ").slice(0, 120);
+}
+
 function emptySnapshot(): TasksSnapshot {
   return {
     items: [],
@@ -38,6 +57,20 @@ function emptySnapshot(): TasksSnapshot {
     voice_ready: false,
     recording: false,
     quarantined_file: null,
+    sync: {
+      state: "local_only",
+      paired: false,
+      device_id: "",
+      pending_outbox: 0,
+      pending_peer: null,
+      last_synced_at: null,
+      last_error: null,
+      quarantined_count: 0,
+      poison_count: 0,
+      revoked: false,
+      conflicts: [],
+      unsynced_item_ids: [],
+    },
   };
 }
 
@@ -54,6 +87,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
   let undoItem: TodoItem | null = null;
   let statusError = "";
   let busy = false;
+  let syncing = false;
   let recording = snap.recording;
 
   const captureInput = h("input", {
@@ -62,6 +96,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     placeholder: "Nova tarefa… ex.: ligar pro contador amanhã 9h",
     spellcheck: "false",
   }) as HTMLInputElement;
+  captureInput.value = "";
 
   const searchInput = h("input", {
     type: "search",
@@ -70,28 +105,107 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     value: query,
     spellcheck: "false",
   }) as HTMLInputElement;
+  searchInput.value = query;
 
   const proposeBtn = button("Propor", () => void handleProposeText(), "primary", true);
   const micBtn = button(recording ? "Concluir voz" : "Ditar", () => void handleToggleVoice(), "", true);
 
+  const syncBar = h("div", { class: "tasks-sync-bar" });
   const errorBanner = h("div", { class: "tasks-banner warn", hidden: true });
   const statusBanner = h("div", { class: "tasks-banner info", hidden: true });
   const undoSlot = h("div");
   const proposalSlot = h("div");
   const filterSlot = h("div");
   const listSlot = h("div", { class: "tasks-sections" });
+  let syncNowBtn: HTMLButtonElement | null = null;
 
   function updateCaptureButtons() {
-    proposeBtn.disabled = busy || recording || captureInput.value.trim().length === 0;
+    proposeBtn.disabled = busy || recording || (captureInput.value ?? "").trim().length === 0;
     micBtn.textContent = recording ? "Concluir voz" : "Ditar";
     micBtn.classList.toggle("primary", recording);
     micBtn.disabled = busy;
     captureInput.disabled = busy || recording;
+    if (syncNowBtn) syncNowBtn.disabled = syncing || busy;
     errorBanner.textContent = statusError;
     errorBanner.hidden = !statusError;
   }
 
+  function renderSyncBar() {
+    clear(syncBar);
+    syncNowBtn = null;
+    const sync = snap.sync;
+    const state: TaskSyncState = sync?.state ?? "local_only";
+    const isSynced = state === "synced";
+    const pillClass =
+      state === "synced"
+        ? "tasks-sync-pill synced"
+        : state === "error" || state === "revoked"
+          ? "tasks-sync-pill warn"
+          : state === "waiting_phone" || state === "saved_on_pc"
+            ? "tasks-sync-pill pending"
+            : "tasks-sync-pill local";
+
+    let detailText = " · celular não pareado";
+    if (state === "synced") {
+      const formattedAt = formatSyncTimestamp(sync?.last_synced_at);
+      detailText = formattedAt ? ` · última confirmação ${formattedAt}` : "";
+    } else if (state === "saved_on_pc") {
+      const n = sync?.pending_outbox ?? 0;
+      detailText = ` · ${n} ${n === 1 ? "alteração pendente" : "alterações pendentes"} para enviar`;
+    } else if (state === "waiting_phone") {
+      detailText = " · aguardando o celular abrir a caixa";
+    } else if (state === "revoked") {
+      detailText = " · pareamento revogado (pareie novamente em Configurações)";
+    } else if (state === "error") {
+      const safeErr = safeSyncError(sync?.last_error);
+      detailText = safeErr
+        ? ` · falha na última sincronização (${safeErr})`
+        : " · falha na última sincronização";
+    }
+
+    if (sync?.paired) {
+      syncNowBtn = button(syncing ? "Sincronizando…" : "Sincronizar agora", () => void handleSyncNow(), "", true);
+      syncNowBtn.classList.add("tasks-sync-now-btn");
+      syncNowBtn.setAttribute("data-testid", "tasks-sync-now");
+      syncNowBtn.disabled = syncing || busy;
+    }
+
+    syncBar.append(
+      h(
+        "div",
+        { class: "tasks-sync-row" },
+        h(
+          "div",
+          { class: "tasks-sync-status" },
+          h("span", { class: pillClass, text: isSynced ? "Sincronizado" : "Salvo neste PC" }),
+          detailText ? h("span", { class: "tasks-sync-detail", text: detailText }) : null,
+        ),
+        syncNowBtn,
+      ),
+    );
+
+    const notices: string[] = [];
+    if (sync && sync.quarantined_count > 0) {
+      notices.push(
+        sync.quarantined_count === 1
+          ? "1 atualização em quarentena (versão mais nova)"
+          : `${sync.quarantined_count} atualizações em quarentena (versão mais nova)`,
+      );
+    }
+    if (sync && sync.poison_count > 0) {
+      notices.push(
+        sync.poison_count === 1
+          ? "1 mensagem inválida ignorada"
+          : `${sync.poison_count} mensagens inválidas ignoradas`,
+      );
+    }
+    if (notices.length > 0) {
+      syncBar.append(h("div", { class: "tasks-sync-notice", text: notices.join(" · ") }));
+    }
+  }
+
   function renderBanners() {
+    renderSyncBar();
     const notes: string[] = [];
     if (snap.quarantined_file) {
       notes.push(`Arquivo todo.json corrompido movido para quarentena: ${snap.quarantined_file}.`);
@@ -162,6 +276,11 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
       text: PRIORITY_LABELS[item.priority],
     });
     const recText = recurrenceLabel(item.recurrence);
+    const itemSynced = isTaskItemSynced(snap.sync, item.id);
+    const syncPill = h("span", {
+      class: itemSynced ? "tasks-chip-pill tasks-item-sync synced" : "tasks-chip-pill tasks-item-sync local",
+      text: itemSynced ? "Sincronizado" : "Salvo neste PC",
+    });
     const meta = h(
       "div",
       { class: "tasks-item-meta" },
@@ -169,6 +288,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
       recText ? h("span", { class: "tasks-chip-pill", text: recText }) : null,
       item.snoozed_until ? h("span", { class: "tasks-chip-pill snoozed", text: "Adiada" }) : null,
       prioBadge,
+      syncPill,
     );
 
     const actionsRow = h(
@@ -317,6 +437,41 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
       );
     }
 
+    const conflicts = (snap.sync?.conflicts ?? []).filter(
+      (c) => c.entity_id === item.id && (!c.conflict_state || c.conflict_state === "pending_review"),
+    );
+    const conflictNodes = conflicts.map((c) => {
+      let resolving = false;
+      const resolve = (choice: "local" | "remote") => {
+        if (resolving) return;
+        resolving = true;
+        keepLocalBtn.disabled = true;
+        useRemoteBtn.disabled = true;
+        void runMutation(() => TasksBridge.resolveConflict(c.id, choice), true).finally(() => {
+          resolving = false;
+          keepLocalBtn.disabled = false;
+          useRemoteBtn.disabled = false;
+        });
+      };
+      const keepLocalBtn = button("Manter texto deste PC", () => resolve("local"), "", true);
+      const useRemoteBtn = button("Usar texto do celular", () => resolve("remote"), "primary", true);
+      return h(
+        "div",
+        { class: "tasks-conflict-card", "data-conflict-id": c.id },
+        h("div", {
+          class: "tasks-conflict-title",
+          text: `Conflito de edição (${c.field === "text" ? "Título" : "Subtarefa"})`,
+        }),
+        h(
+          "div",
+          { class: "tasks-conflict-options" },
+          h("div", { class: "tasks-conflict-line", text: `Neste PC: ${c.local_text}` }),
+          h("div", { class: "tasks-conflict-line", text: `No celular: ${c.remote_text}` }),
+        ),
+        h("div", { class: "tasks-conflict-actions" }, keepLocalBtn, useRemoteBtn),
+      );
+    });
+
     const row = h(
       "div",
       {
@@ -340,6 +495,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
         actionsRow,
       ),
       item.subtasks.length > 0 ? subtaskRows : null,
+      ...conflictNodes,
       editPanel,
     );
     return row;
@@ -424,8 +580,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     );
   }
 
-  async function reload() {
-    const fresh = await TasksBridge.state();
+  function applySnapshot(fresh: TasksSnapshot | null | undefined) {
     if (fresh) {
       snap = fresh;
       recording = fresh.recording;
@@ -437,13 +592,35 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     renderList();
   }
 
-  async function runMutation(op: () => Promise<unknown>) {
+  async function reload() {
+    applySnapshot(await TasksBridge.state());
+  }
+
+  async function runMutation(op: () => Promise<unknown>, appliesSnapshot = false) {
     statusError = "";
     try {
-      await op();
-      await reload();
+      const result = await op();
+      if (appliesSnapshot && result) {
+        applySnapshot(result as TasksSnapshot);
+      } else {
+        await reload();
+      }
     } catch (err) {
       statusError = String(err).replace(/^Error:\s*/, "");
+      updateCaptureButtons();
+    }
+  }
+
+  async function handleSyncNow() {
+    if (syncing) return;
+    syncing = true;
+    renderBanners();
+    updateCaptureButtons();
+    try {
+      await runMutation(() => TasksBridge.syncNow(), true);
+    } finally {
+      syncing = false;
+      renderBanners();
       updateCaptureButtons();
     }
   }
@@ -520,7 +697,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     }
   });
   searchInput.addEventListener("input", () => {
-    query = searchInput.value;
+    query = searchInput.value ?? "";
     renderList();
   });
 
@@ -543,6 +720,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
           "div",
           { class: "tasks-privacy-caption", text: "Armazenamento 100% local (Todo/todo.json) · Atalho global Ctrl+Alt+K · Datas ambíguas sempre pedem confirmação." },
         ),
+        syncBar,
         errorBanner,
         statusBanner,
       ),
@@ -571,11 +749,21 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
   });
   const offFocus = await onEvent<string>("task-focus", (id) => {
     focusTaskId = id;
-    renderList();
+    if (snap.items.some((item) => item.id === id)) {
+      renderList();
+    } else {
+      void reload();
+    }
   });
+  const offDismiss = await onEvent<string>("task-dismiss", () => void reload());
   activeCleanup = () => {
     offChanged();
     offVoice();
     offFocus();
+    offDismiss();
+  };
+  if (_ctx) _ctx.onLeave = () => {
+    activeCleanup?.();
+    activeCleanup = null;
   };
 }

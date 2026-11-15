@@ -117,6 +117,61 @@ impl TaskStore {
         self.items.iter().find(|item| item.id == id && !item.is_tombstoned())
     }
 
+    pub fn all_items(&self) -> &[TodoItem] {
+        &self.items
+    }
+
+    pub fn find_any(&self, id: &str) -> Option<&TodoItem> {
+        self.items.iter().find(|item| item.id == id)
+    }
+
+    pub fn upsert_remote(&mut self, item: TodoItem) -> Result<(), String> {
+        if let Some(idx) = self.items.iter().position(|existing| existing.id == item.id) {
+            self.items[idx] = item;
+        } else {
+            self.items.push(item);
+        }
+        self.persist_items()
+    }
+
+    /// Aplica a escolha humana em um conflito de texto (`"text"` ou `"subtasks.<id>.text"`).
+    /// Retorna `Ok(Some((prev_version, updated_item)))` ou `Ok(None)` se o alvo já não existir.
+    pub fn apply_conflict_choice(
+        &mut self,
+        entity_id: &str,
+        field: &str,
+        chosen_text: &str,
+    ) -> Result<Option<(u32, TodoItem)>, String> {
+        if chosen_text.trim().is_empty() {
+            return Err("O texto escolhido não pode ficar vazio.".into());
+        }
+        let Some(idx) = self
+            .items
+            .iter()
+            .position(|i| i.id == entity_id && !i.is_tombstoned())
+        else {
+            return Ok(None);
+        };
+        let prev_version = self.items[idx].version;
+        if field == "text" {
+            self.items[idx].text = chosen_text.to_string();
+        } else if let Some(sub_id) = field
+            .strip_prefix("subtasks.")
+            .and_then(|rest| rest.strip_suffix(".text"))
+        {
+            let Some(sub) = self.items[idx].subtasks.iter_mut().find(|s| s.id == sub_id) else {
+                return Ok(None);
+            };
+            sub.text = chosen_text.to_string();
+        } else {
+            return Err("Campo de conflito desconhecido.".into());
+        }
+        self.items[idx].version = prev_version.saturating_add(1);
+        let updated = self.items[idx].clone();
+        self.persist_items()?;
+        Ok(Some((prev_version, updated)))
+    }
+
     pub fn shortcut_settings(&self) -> &TodoShortcutSettings {
         &self.shortcuts
     }
@@ -550,7 +605,7 @@ fn load_shortcut_settings(dir: &Path) -> TodoShortcutSettings {
     }
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
