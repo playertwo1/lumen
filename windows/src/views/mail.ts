@@ -40,6 +40,7 @@ function data(): MailCardData {
     messages: Array.isArray(d.messages) ? d.messages : [],
     shown: d.shown ?? 12,
     maxShown: d.maxShown ?? 60,
+    error: d.error ?? null,
   };
 }
 
@@ -176,7 +177,7 @@ export function buildMailCard(host: MailCardHost): MailCard {
     const isMailCraft = (d.backend ?? "mailcraft") === "mailcraft";
     const list = displayed();
     const key = [
-      language(), d.running, d.windows, d.backend, d.unread, searchOpen, filter, searching, results === null, d.shown,
+      language(), d.running, d.windows, d.backend, d.unread, d.error ?? "", searchOpen, filter, searching, results === null, d.shown,
       Math.floor(Date.now() / 60_000),
       ...list.map((m) => `${messageId(m)}|${m.unread}|${m.flagged}`),
     ].join("~");
@@ -290,7 +291,7 @@ export function buildMailCard(host: MailCardHost): MailCard {
     }
     if (!d.running) {
       const msg = isMailCraft
-        ? "Conecte o MailCraft (--control 7991 ou MCP) em Central → E-mail."
+        ? (d.error?.trim() || "Conecte o MailCraft (--control 7991 ou MCP local) em Central → E-mail.")
         : t("Open Outlook (the classic one) to see your mail here.");
       listBody.append(h("div", { class: "mail-empty", text: msg }));
       return;

@@ -72,7 +72,7 @@ export async function mailOverviewPage(page: HTMLElement, ctx: HubContext) {
   const portInput = input("Porta de controle (padrão 7991)");
   portInput.type = "number";
   portInput.value = String(cfg.port);
-  const mcpInput = input("Ex.: mailcraft-cli mcp --connect 127.0.0.1:7991");
+  const mcpInput = input("Opcional (auto) ou ex.: mailcraft-cli mcp --connect 127.0.0.1:7991");
   mcpInput.value = cfg.mcpCommand;
   const mcpRow = h("div", { class: "hub-row" }, mcpInput);
   mcpRow.style.display = cfg.mode === "mcp" ? "" : "none";

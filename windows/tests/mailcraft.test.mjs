@@ -165,3 +165,23 @@ test("card exibe rótulo secundário quando backend está em outlook", () => {
   card.sync();
   assert.ok((card.el.textContent ?? "").includes("Outlook (secundário)"));
 });
+
+test("card mostra erro real do MailCraft quando desconectado", () => {
+  State.integrations[MAIL_ID] = {
+    data: {
+      running: false,
+      windows: true,
+      backend: "mailcraft",
+      mode: "control",
+      unread: 0,
+      shown: 12,
+      maxShown: 60,
+      messages: [],
+      error: "Chave --control 7991 ausente",
+    },
+    error: null,
+  };
+  const card = buildMailCard({ keyboard: () => {} });
+  card.sync();
+  assert.ok((card.el.textContent ?? "").includes("Chave --control 7991 ausente"));
+});

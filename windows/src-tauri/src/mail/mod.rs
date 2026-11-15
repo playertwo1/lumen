@@ -64,6 +64,7 @@ struct Runtime {
     /// The messages of the last list sent to the AI, by their number.
     numbered: HashMap<usize, Message>,
     accounts: Vec<(String, String)>,
+    last_error: Option<String>,
     plans: HashMap<String, PlanRun>,
     cancelled: HashSet<String>,
 }
@@ -78,6 +79,7 @@ fn rt() -> MutexGuard<'static, Runtime> {
             last_unread: 0,
             numbered: HashMap::new(),
             accounts: Vec::new(),
+            last_error: None,
             plans: HashMap::new(),
             cancelled: HashSet::new(),
         })
@@ -127,6 +129,7 @@ fn emit_card(app: &AppHandle, running: bool) {
             "messages": r.last,
             "shown": r.shown,
             "maxShown": MAX_SHOWN,
+            "error": r.last_error,
         })
     };
     let _ = app.emit_to(crate::island::WINDOW_LABEL, "integration", json!({
@@ -172,13 +175,25 @@ pub async fn poll(app: &AppHandle) {
                     let mut r = rt();
                     r.last_unread = unread;
                     r.last = all.iter().take(r.shown).cloned().collect();
+                    r.last_error = None;
                     if !accounts.is_empty() {
                         r.accounts = accounts;
                     }
                 }
                 emit_card(app, true);
             }
-            Err(_) => emit_card(app, false),
+            Err(e) => {
+                let changed = {
+                    let mut r = rt();
+                    let diff = r.last_error.as_deref() != Some(e.as_str());
+                    r.last_error = Some(e.clone());
+                    diff
+                };
+                if changed {
+                    crate::log::line(format!("[mail] MailCraft: {e}"));
+                }
+                emit_card(app, false);
+            }
         }
         return;
     }
