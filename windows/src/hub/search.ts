@@ -141,6 +141,7 @@ export const SETTINGS_ENTRIES: SettingsSearchEntry[] = [
     terms: [
       "Stripe", "GitHub", "Vercel", "n8n", "Notion", "Resend", "Cal.com", "WhatsApp", "Spotify", "Crypto",
       "Linear", "X", "YouTube", "Figma", "OpenWeather", "Railway", "Supabase", "Hugging Face", "Sentry", "PostHog", "Twilio",
+      "Google", "Google Drive", "Google Calendar", "Backup",
     ],
   },
   { id: "phone.android", page: "phone", title: "phone.title", terms: ["phone.status", "phone.pairing", "phone.approvals"] },

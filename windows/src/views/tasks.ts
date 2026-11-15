@@ -5,7 +5,6 @@
 // - chatTodoProposalCard: card editável dentro da bolha do chat para ```lumen-todo
 
 import { clear, h, svg } from "./dom";
-import { ICONS } from "./icons";
 import { TasksBridge, onEvent } from "../core/bridge";
 import { washRGBA } from "../core/layout";
 import { Sound } from "../core/sound";
@@ -91,6 +90,7 @@ export function createProposalEditor(opts: ProposalEditorOptions): {
     class: "task-edit-input",
     value: title,
     placeholder: "Título da tarefa",
+    "aria-label": "Título da tarefa",
     spellcheck: "false",
   }) as HTMLInputElement;
   titleInput.addEventListener("input", () => {
@@ -121,11 +121,13 @@ export function createProposalEditor(opts: ProposalEditorOptions): {
   const dateInput = h("input", {
     type: "date",
     class: "task-native-picker",
+    "aria-label": "Data",
     value: dueDate ?? "",
   }) as HTMLInputElement;
   const timeInput = h("input", {
     type: "time",
     class: "task-native-picker",
+    "aria-label": "Horário",
     value: dueTime ?? "",
   }) as HTMLInputElement;
 
@@ -148,7 +150,7 @@ export function createProposalEditor(opts: ProposalEditorOptions): {
   }
   const noDateBtn = h("button", {
     type: "button",
-    class: "task-chip",
+    class: "task-chip task-chip-neutral",
     text: "Sem data",
     onclick: () => {
       dueDate = null;
@@ -196,7 +198,7 @@ export function createProposalEditor(opts: ProposalEditorOptions): {
   }
   const noTimeBtn = h("button", {
     type: "button",
-    class: "task-chip",
+    class: "task-chip task-chip-neutral",
     text: "Sem hora",
     onclick: () => {
       dueTime = null;
@@ -276,10 +278,12 @@ export function createProposalEditor(opts: ProposalEditorOptions): {
     for (const [k, btn] of dateButtons) {
       const active = k === "none" ? dueDate === null : dueDate === dateForShortcut(k);
       btn.classList.toggle("on", active);
+      btn.setAttribute("aria-pressed", String(active));
     }
     for (const [k, btn] of timeButtons) {
       const active = k === "none" ? dueTime === null : dueTime === k;
       btn.classList.toggle("on", active);
+      btn.setAttribute("aria-pressed", String(active));
     }
     alertSelect.disabled = !dueDate || !dueTime;
   }
@@ -338,7 +342,7 @@ export function createProposalEditor(opts: ProposalEditorOptions): {
     timePillsRow,
     metaRow,
     errorEl,
-    h("div", { class: "actions" }, confirmBtn, discardBtn),
+    h("div", { class: "actions" }, discardBtn, confirmBtn),
   );
 
   return {
@@ -359,14 +363,14 @@ export function buildTaskCaptureView(actions: ViewActions): ViewHost {
 
   const input = h("input", {
     type: "text",
-    class: "chat-input",
-    placeholder: "Ex.: pagar boleto amanhã 14h",
+    class: "chat-input task-capture-input",
+    placeholder: "Ex.: enviar relatório sexta 14h",
     spellcheck: "false",
   }) as HTMLInputElement;
 
   const micBtn = h("button", {
     type: "button",
-    class: "dictate-btn",
+    class: "dictate-btn task-capture-mic",
     title: "Ditar tarefa pelo microfone",
     "aria-label": "Ditar tarefa",
     onclick: () => void toggleVoice(),
@@ -374,13 +378,14 @@ export function buildTaskCaptureView(actions: ViewActions): ViewHost {
 
   const proposeBtn = h("button", {
     type: "button",
-    class: "send-btn",
+    class: "btn primary task-propose-btn",
     title: "Gerar cartão editável",
     "aria-label": "Propor tarefa",
+    text: "Criar proposta",
     onclick: () => void submitText(),
-  }, svg(ICONS.arrowUp, 11)) as HTMLButtonElement;
+  }) as HTMLButtonElement;
 
-  const bar = h("div", { class: "chat-bar" }, input, micBtn, proposeBtn);
+  const bar = h("div", { class: "task-capture-bar" }, input, micBtn, proposeBtn);
   const errorEl = h("div", { class: "task-error", hidden: true });
 
   const openHubBtn = h("button", {
@@ -403,20 +408,27 @@ export function buildTaskCaptureView(actions: ViewActions): ViewHost {
     },
   });
 
+  const footer = h(
+    "div",
+    { class: "task-capture-foot" },
+    h("div", { class: "actions" }, openHubBtn, closeBtn),
+    h("span", { class: "task-capture-hint", text: "Datas ambíguas sempre pedem confirmação" }),
+  );
+
   const body = h(
     "div",
-    { class: "task-island-body" },
+    { class: "task-island-body task-capture-body" },
     h(
       "div",
       { class: "task-island-head" },
-      h("span", { class: "title", text: "Nova tarefa" }),
+      h("span", { class: "title", text: "Nova tarefa rápida" }),
       h("span", { class: "task-shortcut-badge", text: "Ctrl+Alt+K" }),
     ),
     bar,
     errorEl,
-    h("div", { class: "actions" }, openHubBtn, closeBtn),
+    footer,
   );
-  const el = h("div", { class: "view" }, taskCard("cyan", body));
+  const el = h("div", { class: "view" }, taskCard("amber", body));
 
   function sync() {
     micBtn.classList.toggle("on", recording);
@@ -425,7 +437,7 @@ export function buildTaskCaptureView(actions: ViewActions): ViewHost {
     input.disabled = busy || recording;
     input.placeholder = recording
       ? "Ouvindo… clique no microfone para concluir"
-      : "Ex.: pagar boleto amanhã 14h";
+      : "Ex.: enviar relatório sexta 14h";
     errorEl.textContent = statusError;
     errorEl.hidden = !statusError;
     actions.holdOpen(recording || busy || input.value.trim().length > 0);
@@ -661,7 +673,10 @@ export function buildTaskReminderView(actions: ViewActions): ViewHost {
 
 // ── Chat: Card editável embutido em respostas com ```lumen-todo ──────────────
 
-export function chatTodoProposalCard(initialProposal: TodoProposal): HTMLElement {
+export function chatTodoProposalCard(
+  initialProposal: TodoProposal,
+  shortcuts: TodoShortcutSettings = DEFAULT_SHORTCUT_SETTINGS,
+): HTMLElement {
   const wrap = h("div", { class: "chat-todo-card" });
   const head = h(
     "div",
@@ -690,7 +705,7 @@ export function chatTodoProposalCard(initialProposal: TodoProposal): HTMLElement
 
   const editor = createProposalEditor({
     proposal: initialProposal,
-    shortcuts: DEFAULT_SHORTCUT_SETTINGS,
+    shortcuts,
     compact: true,
     onConfirmed: (item) => renderSaved(item),
     onDiscard: () => {

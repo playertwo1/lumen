@@ -18,6 +18,7 @@ mod fullscreen;
 mod flow;
 mod github;
 mod git;
+mod google;
 mod herdr;
 mod hooks;
 mod i18n;
@@ -1107,6 +1108,16 @@ pub fn run() {
             chatgpt_sign_in,
             chatgpt_activate,
             chatgpt_sign_out,
+            google::google_status,
+            google::google_save_client_config,
+            google::google_clear_client_config,
+            google::google_sign_in,
+            google::google_sign_out,
+            google::google_set_weekly_backup,
+            google::google_backup_now,
+            google::google_restore_backup,
+            google::google_calendar_list_events,
+            google::google_calendar_create_from_task,
             claude_api_models,
             local_connect,
             local_set_key,
@@ -1288,6 +1299,7 @@ pub fn run() {
             flow::setup(&handle);
             notes::setup(&handle);
             tasks::setup(&handle);
+            google::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
                 // Where Tauri takes the drop itself (Linux), its paths are the
@@ -1347,6 +1359,7 @@ pub fn run() {
                     permission_notifications::shutdown(&toasts);
                 }
                 phone_link::stop_on_exit(app);
+                google::shutdown(app);
                 notes::shutdown(app);
                 tasks::shutdown(app);
                 // GOWA started by Coucou stops with it; the conversations were only in memory.

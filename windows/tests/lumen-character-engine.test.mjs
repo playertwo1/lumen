@@ -576,6 +576,7 @@ test("animações P3 de tarefas (lembrete, soneca e conclusão) animam, respeita
     engine.triggerMailInboxSummary(1.0);
     engine.triggerTaskSync("saved", 1.0);
     engine.triggerTaskSync("synced", 1.0);
+    engine.triggerCloudBackup(1.0);
     assert.equal(engine.busy, false);
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
@@ -631,5 +632,36 @@ test("animação P3 da L6 (sincronização de tarefas: saved vs synced) desenha 
   engine.draw(syncedProbe.ctx, 96, 96);
   assert.ok(syncedProbe.ops.some((o) => o.op === "lineTo"), "modo synced deve traçar feixe/pulso conectando PC e celular");
   for (let i = 0; i < 20; i++) engine.update(0.06);
+  assert.equal(engine.busy, false);
+});
+
+test("animação P3 da L7 (nuvem guardando caixinha no backup) anima caixa entrando na nuvem e retorna ao repouso", () => {
+  const engine = new BotEngine();
+  engine.setAgent("agent_claude");
+
+  engine.triggerCloudBackup(1.0);
+  assert.equal(engine.busy, true);
+
+  engine.update(0.2);
+  const earlyProbe = canvasProbe();
+  engine.draw(earlyProbe.ctx, 96, 96);
+  const earlyRects = earlyProbe.ops.filter((o) => o.op === "rect" && o.args[2] === 7.2);
+  assert.ok(earlyRects.length >= 1, "deve desenhar a caixinha do backup");
+  const earlyBoxTranslate = earlyProbe.ops
+    .filter((o) => o.op === "translate" && Math.abs(o.args[0]) < 0.01 && Math.abs(o.args[1]) > 0.1)
+    .at(-1);
+
+  engine.update(0.45);
+  const laterProbe = canvasProbe();
+  engine.draw(laterProbe.ctx, 96, 96);
+  const laterBoxTranslate = laterProbe.ops
+    .filter((o) => o.op === "translate" && Math.abs(o.args[0]) < 0.01)
+    .at(-1);
+  assert.ok(
+    earlyBoxTranslate && laterBoxTranslate && laterBoxTranslate.args[1] < earlyBoxTranslate.args[1],
+    "caixinha deve subir para dentro da nuvem ao longo da animação",
+  );
+
+  for (let i = 0; i < 25; i++) engine.update(0.06);
   assert.equal(engine.busy, false);
 });

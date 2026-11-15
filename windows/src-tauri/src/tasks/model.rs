@@ -243,7 +243,7 @@ pub enum TodoDateShortcut {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TodoShortcutSettings {
     pub enabled_date_shortcuts: Vec<TodoDateShortcut>,
-    pub time_shortcuts_minutes: [u16; 3],
+    pub time_shortcuts_minutes: Vec<u16>,
     pub default_alert_minutes: i32,
 }
 
@@ -256,7 +256,7 @@ impl Default for TodoShortcutSettings {
                 TodoDateShortcut::InThreeDays,
                 TodoDateShortcut::NextMonday,
             ],
-            time_shortcuts_minutes: [540, 840, 1200],
+            time_shortcuts_minutes: vec![540, 840, 1200],
             default_alert_minutes: TODO_DEFAULT_ALERT_MINUTES,
         }
     }
@@ -264,6 +264,9 @@ impl Default for TodoShortcutSettings {
 
 impl TodoShortcutSettings {
     pub fn validate(&self) -> Result<(), String> {
+        if self.time_shortcuts_minutes.len() > 8 {
+            return Err("Limite máximo de 8 horários predefinidos.".into());
+        }
         if self.time_shortcuts_minutes.iter().any(|&m| m >= 1440) {
             return Err("Atalho de horário fora de 0..1439 minutos.".into());
         }
@@ -271,6 +274,13 @@ impl TodoShortcutSettings {
             return Err("Alerta padrão não pode ser negativo.".into());
         }
         Ok(())
+    }
+
+    pub fn normalized(mut self) -> Result<Self, String> {
+        self.time_shortcuts_minutes.sort_unstable();
+        self.time_shortcuts_minutes.dedup();
+        self.validate()?;
+        Ok(self)
     }
 }
 
@@ -720,6 +730,21 @@ mod tests {
         // Na segunda-feira (2026-11-16), "Semana que vem" pula +7 dias para 2026-11-23.
         let mon_ms = utc_ms_from_local(2026, 11, 16, 9, 0, TODO_TIME_ZONE);
         assert_eq!(date_for_shortcut(TodoDateShortcut::NextMonday, mon_ms, TODO_TIME_ZONE), "2026-11-23");
+    }
+
+    #[test]
+    fn custom_time_presets_sort_dedup_and_enforce_limit() {
+        let mut s = TodoShortcutSettings::default();
+        s.time_shortcuts_minutes.push(630);
+        s.time_shortcuts_minutes.push(540);
+        let norm = s.normalized().expect("4 presets valid");
+        assert_eq!(norm.time_shortcuts_minutes, vec![540, 630, 840, 1200]);
+
+        let too_many = TodoShortcutSettings {
+            time_shortcuts_minutes: vec![60, 120, 180, 240, 300, 360, 420, 480, 540],
+            ..TodoShortcutSettings::default()
+        };
+        assert!(too_many.normalized().is_err());
     }
 
     #[test]

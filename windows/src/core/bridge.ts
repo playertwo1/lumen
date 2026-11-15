@@ -893,3 +893,90 @@ export async function onEvent<T>(name: string, handler: (payload: T) => void) {
   if (!IS_TAURI) return () => {};
   return listen<T>(name, (e) => handler(e.payload));
 }
+
+export interface GoogleStatus {
+  configured: boolean;
+  clientIdPreview: string | null;
+  hasClientSecret: boolean;
+  connected: boolean;
+  email: string | null;
+  displayName: string | null;
+  scopes: string[];
+  driveFolder: string;
+  weeklyBackupEnabled: boolean;
+  lastBackupAt: string | null;
+  lastBackupAtMs: number | null;
+  lastRestoreAt: string | null;
+  lastBackupError: string | null;
+}
+
+export interface GoogleBackupStatus {
+  driveFolder: string;
+  fileId: string;
+  createdAt: string;
+  createdAtMs: number;
+  sha256: string;
+  notesCount: number;
+  tasksIncluded: boolean;
+}
+
+export interface GoogleRestoreSummary {
+  backupCreatedAt: string;
+  sha256: string;
+  tasksRestored: boolean;
+  notesRestored: number;
+  personasRestored: boolean;
+  settingsRestored: boolean;
+  safetySnapshot: string;
+}
+
+export interface GoogleCalendarEvent {
+  id: string;
+  summary: string;
+  description: string | null;
+  location: string | null;
+  start: string;
+  end: string;
+  allDay: boolean;
+  htmlLink: string | null;
+  status: string | null;
+}
+
+export interface GoogleCreateEventInput {
+  taskId: string;
+  confirmed: boolean;
+  overrideDate?: string | null;
+  overrideTime?: string | null;
+  durationMinutes?: number | null;
+  description?: string | null;
+}
+
+export const GoogleBridge = {
+  status: () => callOrThrow<GoogleStatus>("google_status"),
+  saveClientConfig: (rawInput: string, clientSecret?: string | null) =>
+    callOrThrow<GoogleStatus>("google_save_client_config", {
+      rawInput,
+      clientSecret: clientSecret ?? null,
+    }),
+  clearClientConfig: () => callOrThrow<GoogleStatus>("google_clear_client_config"),
+  signIn: () => callOrThrow<GoogleStatus>("google_sign_in"),
+  signOut: () => callOrThrow<GoogleStatus>("google_sign_out"),
+  setWeeklyBackup: (enabled: boolean) =>
+    callOrThrow<GoogleStatus>("google_set_weekly_backup", { enabled }),
+  backupNow: () => callOrThrow<GoogleBackupStatus>("google_backup_now"),
+  restoreBackup: () => callOrThrow<GoogleRestoreSummary>("google_restore_backup"),
+  listCalendarEvents: (opts?: { timeMin?: string; timeMax?: string; maxResults?: number }) =>
+    callOrThrow<GoogleCalendarEvent[]>("google_calendar_list_events", {
+      timeMin: opts?.timeMin ?? null,
+      timeMax: opts?.timeMax ?? null,
+      maxResults: opts?.maxResults ?? null,
+    }),
+  createEventFromTask: (input: GoogleCreateEventInput) => {
+    if (!input.confirmed) {
+      return Promise.reject(
+        new Error("A criação de evento no Google Calendar exige confirmação explícita."),
+      );
+    }
+    return callOrThrow<GoogleCalendarEvent>("google_calendar_create_from_task", { input });
+  },
+};

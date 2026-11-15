@@ -2,20 +2,28 @@
 // Mirrors IslandRootView.swift + IslandWindowController.swift.
 
 import { Tracked, Spring, clamp } from "../core/anim";
-import { Bridge, IS_TAURI, onDragDrop, type DragDropPayload, type VitalsReading } from "../core/bridge";
+import { Bridge, IS_TAURI, TasksBridge, onDragDrop, type DragDropPayload, type VitalsReading } from "../core/bridge";
+import {
+  compactCenter,
+  type CompactCenterAction,
+  type CompactCenterItem,
+  type CompactNotice,
+} from "../core/compact";
 import {
   CLOSED_BOT_D, CLOSED_H, closedContent, closedIsland, closedWidth, type ClosedContent,
 } from "../core/closed";
 import {
-  EXPANDED_CORNER, EXPANDED_W, NOTCH_W, PANEL_H, PANEL_W,
+  COMPACT_W, EXPANDED_CORNER, EXPANDED_W, NOTCH_H, NOTCH_W, PANEL_H, PANEL_W,
   ROUNDED_CORNER, VIEW_LAYOUTS, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
-  islandSize,
+  compactWidth, islandSize,
   QUESTION_PICKER_H,
   type BotEmoteName, type IslandMode, type IslandViewName,
 } from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import { MUSIC_IDS, Spotify, islandDances } from "../core/spotify";
+import type { MailCardData } from "../core/mail";
+import { WhatsApp } from "../core/whatsapp";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { CALM, type MochiMood } from "../mochi/mood";
 import { describeVitals, isVitalsHover, moodFromVitals, pluggedInWhileLow, shouldReadVitals } from "../mochi/vitals";
@@ -33,7 +41,7 @@ import { h } from "../views/dom";
 import { buildSessionDropList, type SessionDropList } from "../views/session-drop";
 import { DROP_TEXT_RIGHT_WITH_LIST, dropTargetAt, dropTargets } from "../core/launch";
 import { IslandStateMachine } from "./fsm";
-import type { TaskReminderPayload } from "../core/tasks";
+import type { TaskReminderPayload, TodoItem } from "../core/tasks";
 import { setActiveTaskReminder } from "../views/tasks";
 import { refreshHookPills } from "./integrations";
 import { restoreAlertFocus } from "./hooks";
@@ -110,6 +118,15 @@ export class Island {
   private compactPlan!: HTMLElement;
   private compactPlanDot!: HTMLElement;
   private compactPlanLabel!: HTMLElement;
+  private compactCenterEl!: HTMLElement;
+  private compactCenterDot!: HTMLElement;
+  private compactCenterNote!: HTMLElement;
+  private compactCenterText!: HTMLElement;
+  private compactCenterAction: CompactCenterAction | null = null;
+  private compactTodos: TodoItem[] = [];
+  private compactNotice: CompactNotice | null = null;
+  private compactNoticeTimer: number | null = null;
+  private lastCompactW = COMPACT_W;
   private wakeStrip!: HTMLElement;
 
   private header!: ViewHost;
@@ -385,6 +402,26 @@ export class Island {
       this.compactPlanDot,
       this.compactPlanLabel,
     );
+    this.compactCenterDot = h("span", { class: "compact-center-dot" });
+    this.compactCenterNote = h("span", { class: "compact-center-note", text: "♪" });
+    this.compactCenterText = h("span", { class: "compact-center-text" });
+    this.compactCenterEl = h(
+      "button",
+      {
+        type: "button",
+        id: "compact-center",
+        onmousedown: (e) => {
+          e.stopPropagation();
+        },
+        onclick: (e) => {
+          e.stopPropagation();
+          this.activateCompactCenter();
+        },
+      },
+      this.compactCenterDot,
+      this.compactCenterNote,
+      this.compactCenterText,
+    );
 
     this.header = buildHeader(actions);
     this.views = buildViews(actions, () => this.animateGeometry(false));
@@ -422,6 +459,7 @@ export class Island {
       this.botGlow,
       this.botCanvas,
       this.miniGrid,
+      this.compactCenterEl,
       this.compactPlan,
       this.clockEl,
       this.closedEl,
@@ -505,6 +543,7 @@ export class Island {
     // Folding all the way: the closed island's width for what it will show.
     if (mode === "hidden") this.updateClosed();
     else this.closedEl.classList.remove("on");
+    if (mode === "compact") this.lastCompactW = this.targetSize().w;
     this.scheduleClosedLife();
     this.updateWindowCollapsed();
     this.animateGeometry(modeOrder(mode) < modeOrder(prev));
@@ -663,6 +702,7 @@ export class Island {
     const compass = this.engine as BotEngine & { triggerNoteWrite?: (duration?: number) => void };
     if (compass.triggerNoteWrite) compass.triggerNoteWrite();
     else this.engine.triggerEmote("happy", 1.2);
+    this.pushCompactNotice("Nota salva", "#34D399");
     this.ensureRunning();
   }
 
@@ -691,6 +731,7 @@ export class Island {
     const compass = this.engine as BotEngine & { triggerTaskSnooze?: (duration?: number) => void };
     if (compass.triggerTaskSnooze) compass.triggerTaskSnooze();
     else this.engine.triggerEmote("happy", 1.1);
+    this.pushCompactNotice("Lembrete adiado 10m", "#F5A524");
     this.ensureRunning();
   }
 
@@ -699,6 +740,7 @@ export class Island {
     if (compass.triggerTaskCheck) compass.triggerTaskCheck();
     else this.engine.triggerEmote("happy", 1.2);
     Sound.play("approve");
+    this.pushCompactNotice("Tarefa concluída", "#34D399");
     this.ensureRunning();
   }
 
@@ -706,6 +748,10 @@ export class Island {
     const compass = this.engine as BotEngine & { triggerMailInboxSummary?: (duration?: number) => void };
     if (compass.triggerMailInboxSummary) compass.triggerMailInboxSummary();
     else this.engine.triggerEmote("happy", 1.4);
+    this.pushCompactNotice("Resumo de e-mails pronto", "#38BDF8", {
+      kind: "focus",
+      pillId: "integration_mail",
+    });
     this.ensureRunning();
   }
 
@@ -713,6 +759,51 @@ export class Island {
     const compass = this.engine as BotEngine & { triggerTaskSync?: (state: "saved" | "synced", duration?: number) => void };
     if (compass.triggerTaskSync) compass.triggerTaskSync(state);
     else this.engine.triggerEmote(state === "synced" ? "happy" : "wink", 1.2);
+    this.ensureRunning();
+  }
+
+  cloudBackup() {
+    const compass = this.engine as BotEngine & { triggerCloudBackup?: (duration?: number) => void };
+    if (compass.triggerCloudBackup) compass.triggerCloudBackup();
+    else this.engine.triggerEmote("happy", 1.4);
+    this.pushCompactNotice("Backup concluído", "#38BDF8");
+    this.ensureRunning();
+  }
+
+  async refreshTasks() {
+    const snap = await TasksBridge.state();
+    if (!snap) return;
+    this.setCompactTodos(snap.items ?? []);
+  }
+
+  setCompactTodos(items: TodoItem[]) {
+    this.compactTodos = items;
+    this.dirty = true;
+    this.ensureRunning();
+  }
+
+  pushCompactNotice(
+    text: string,
+    color: string,
+    action: CompactCenterAction | null = null,
+    ttlMs = 7000,
+  ) {
+    if (this.compactNoticeTimer != null) window.clearTimeout(this.compactNoticeTimer);
+    this.compactNotice = {
+      text,
+      color,
+      expiresAt: Date.now() + ttlMs,
+      action,
+    };
+    this.compactNoticeTimer = window.setTimeout(() => {
+      this.compactNoticeTimer = null;
+      this.compactNotice = null;
+      this.dirty = true;
+      if (State.mode === "compact") this.animateGeometry(true);
+      this.ensureRunning();
+    }, ttlMs + 50);
+    this.dirty = true;
+    if (State.mode === "compact") this.animateGeometry(false);
     this.ensureRunning();
   }
 
@@ -979,9 +1070,90 @@ export class Island {
     return closedIsland(State.settings.closedIsland) !== "hidden";
   }
 
+  private getCompactCenterItem(now = new Date()): CompactCenterItem | null {
+    const track = Spotify.state.track;
+    const mail = State.integrations["integration_mail"]?.data as Partial<MailCardData> | undefined;
+    const mailUnread = typeof mail?.unread === "number" ? mail.unread : 0;
+    const pending = State.pendingApproval
+      ? {
+          pillName: State.tasks.find((t) => t.id === State.pendingApproval?.pillId)?.name,
+          questions: State.pendingApproval.questions,
+        }
+      : null;
+    const wa = WhatsApp.view.unread > 0
+      ? {
+          unread: WhatsApp.view.unread,
+          conversations: WhatsApp.view.conversations.map((c) => ({ name: c.name, unread: c.unread })),
+        }
+      : null;
+    return compactCenter({
+      now,
+      pendingApproval: pending,
+      notice: this.compactNotice,
+      whatsapp: wa,
+      mailUnread,
+      todos: this.compactTodos,
+      music: State.spotifyPlaying && track ? { title: track.title, artist: track.artist } : null,
+    });
+  }
+
+  private activateCompactCenter() {
+    const action = this.compactCenterAction;
+    if (!action) {
+      this.fsm.click();
+      return;
+    }
+    Sound.resume();
+    State.lastActivity = performance.now();
+    this.fsm.userInteracted();
+    switch (action.kind) {
+      case "approval": {
+        const req = State.pendingApproval;
+        this.fsm.forceHome();
+        if (req) {
+          State.setFocus(req.pillId);
+          this.expand(req.questions ? "question" : "approval");
+        } else {
+          this.expand(State.defaultView());
+        }
+        break;
+      }
+      case "focus":
+        State.setFocus(action.pillId);
+        this.fsm.forceHome();
+        this.expand("overview");
+        break;
+      case "music": {
+        const musicTask = State.tasks.find((t) => MUSIC_IDS.includes(t.id));
+        if (musicTask) State.setFocus(musicTask.id);
+        this.fsm.forceHome();
+        this.expand("overview");
+        break;
+      }
+      case "task":
+        void TasksBridge.openPage(action.taskId);
+        this.collapse();
+        break;
+      case "view":
+        this.fsm.forceHome();
+        this.expand(action.view);
+        break;
+    }
+  }
+
   private targetSize(): { w: number; h: number; r: number } {
     if (State.mode === "hidden" && this.closedShows) {
       return { w: this.closedW, h: CLOSED_H, r: 10 };
+    }
+    if (State.mode === "compact") {
+      const hasCenter = this.getCompactCenterItem() != null || State.settings.showClock;
+      const otherCount = State.otherTasks.slice(0, 4).length;
+      const hasPlanGauge = claudeCompactPillVisible();
+      return {
+        w: compactWidth(hasCenter, otherCount, hasPlanGauge),
+        h: NOTCH_H,
+        r: ROUNDED_CORNER,
+      };
     }
     let { w, h } = islandSize(State.mode, State.view, State.chatHistory.length);
     if (State.mode === "expanded" && State.view === "question" && State.pendingApproval?.questions) {
@@ -1013,11 +1185,14 @@ export class Island {
     this.islandEl.style.height = `${hh}px`;
     this.islandEl.style.borderRadius = `0 0 ${r}px ${r}px`;
     this.islandEl.style.transform = `translateX(-50%)`;
+    this.islandEl.classList.toggle("is-visible", hh > 1);
+    this.islandEl.classList.toggle("is-expanded", State.mode === "expanded");
     // These follow the island as it resizes, so they belong here rather than in
     // the state-driven DOM sync.
     this.miniGrid.style.left = `${w - 40 - 14.5}px`;
     this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
     this.clockEl.style.height = `${hh}px`;
+    this.compactCenterEl.style.height = `${hh}px`;
     this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
     this.uploadCanvas.el.style.left = `${(w - EXPANDED_W) / 2}px`;
 
@@ -1731,25 +1906,64 @@ export class Island {
     const showPlan = claudeCompactPillVisible();
     this.compactPlan.style.opacity = showPlan ? "1" : "0";
     this.compactPlan.style.pointerEvents = showPlan ? "auto" : "none";
+    const compactOthers = State.otherTasks.slice(0, 4);
     if (showPlan) {
-      const others = State.otherTasks.slice(0, 4);
-      this.compactPlan.style.right = others.length > 0 ? "58px" : "20px";
+      this.compactPlan.style.right = compactOthers.length > 0 ? "58px" : "20px";
       const pct = dominantPct(State.planUsage);
       const color = planColor(pct);
       this.compactPlan.style.setProperty("--plan", color);
       this.compactPlanLabel.textContent = pct != null ? `${Math.round(pct)}%` : "—";
     }
 
-    this.updateClock();
+    // Compact contextual center (Modo 2A ocioso vs centro vivo sob demanda)
+    const centerItem = this.syncCompactCenter(compactOthers.length, showPlan);
+
+    this.updateClock(centerItem != null);
 
     syncMiniBotStates(State.tasks);
     this.engine.setState(State.effectiveState);
   }
 
+  private syncCompactCenter(
+    otherCount = State.otherTasks.slice(0, 4).length,
+    hasPlanGauge = claudeCompactPillVisible(),
+    now = new Date(),
+  ): CompactCenterItem | null {
+    const centerItem = State.mode === "compact" ? this.getCompactCenterItem(now) : null;
+    this.compactCenterAction = centerItem?.action ?? null;
+    this.compactCenterEl.classList.toggle("on", centerItem != null);
+    this.compactCenterEl.classList.toggle("urgent", Boolean(centerItem?.urgent));
+    this.compactCenterEl.style.pointerEvents = centerItem ? "auto" : "none";
+    if (centerItem) {
+      this.compactCenterEl.style.right = otherCount > 0
+        ? (hasPlanGauge ? "112px" : "62px")
+        : (hasPlanGauge ? "74px" : "20px");
+      this.compactCenterText.textContent = centerItem.text;
+      this.compactCenterEl.title = centerItem.text;
+      this.compactCenterDot.style.display = centerItem.dot ? "" : "none";
+      if (centerItem.dot) this.compactCenterDot.style.background = centerItem.dot;
+      this.compactCenterNote.style.display = centerItem.note ? "" : "none";
+    } else {
+      this.compactCenterText.textContent = "";
+      this.compactCenterEl.removeAttribute("title");
+    }
+
+    if (State.mode === "compact") {
+      const hasCenter = centerItem != null || State.settings.showClock;
+      const targetCompactW = compactWidth(hasCenter, otherCount, hasPlanGauge);
+      if (targetCompactW !== this.lastCompactW) {
+        this.lastCompactW = targetCompactW;
+        this.animateGeometry(targetCompactW < this.width.value);
+      }
+    }
+    return centerItem;
+  }
+
   /** The clock sits in the middle of the compact island, where the notch is on a Mac. */
-  private updateClock() {
+  private updateClock(hasContextualCenter?: boolean) {
     this.updateClosed();
-    const on = State.mode === "compact" && State.settings.showClock;
+    const resolvedCenter = hasContextualCenter ?? (this.syncCompactCenter() != null);
+    const on = State.mode === "compact" && State.settings.showClock && !resolvedCenter;
     this.clockEl.style.opacity = on ? "1" : "0";
     if (!on) return;
     const now = new Date();

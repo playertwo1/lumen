@@ -202,6 +202,8 @@ async function main() {
   island.onWake = checkRecap;
   await onEvent<null>("recap-check", checkRecap);
   await onEvent<string>("note-created", () => island.noteCreated());
+  await onEvent("tasks-changed", () => void island.refreshTasks());
+  void island.refreshTasks();
   await onEvent<TaskReminderPayload>("task-reminder", (payload) => island.taskReminder(payload));
   await onEvent<string>("task-snoozed", () => island.taskSnoozed());
   await onEvent<string>("task-completed", () => island.taskCompleted());
@@ -211,6 +213,7 @@ async function main() {
     const state = rawState === "synced" ? "synced" : "saved";
     island.taskSyncState(state);
   });
+  await onEvent("google-backup-completed", () => island.cloudBackup());
   await onEvent<{ count?: number; unread?: number }>("mail-inbox-summarized", () => island.mailInboxSummarized());
 
   island.launch();

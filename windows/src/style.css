@@ -74,10 +74,17 @@ body {
   position: absolute;
   top: 0;
   left: 50%;
+  box-sizing: border-box;
   background: #000;
   border-radius: 0 0 14px 14px;
   overflow: visible;
   will-change: width, height, transform;
+}
+
+#island.is-visible {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 0;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
 }
 
 #island-clip {
@@ -258,6 +265,64 @@ body {
   color: rgba(255, 255, 255, 0.85);
   pointer-events: none;
   transition: opacity 0.25s ease-in-out;
+}
+
+/* Centro Contextual dinâmico no modo compacto (mensagens, aprovações, tarefas, música). */
+#compact-center {
+  position: absolute;
+  left: 58px;
+  right: 62px;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: rgba(243, 244, 246, 0.92);
+  font: 500 11.5px var(--font);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  z-index: 2;
+  transition: opacity 0.2s ease-in-out, right 0.2s ease, color 0.16s ease;
+}
+
+#compact-center.on {
+  opacity: 1;
+}
+
+#compact-center:hover .compact-center-text {
+  color: #ffffff;
+}
+
+#compact-center.urgent .compact-center-text {
+  color: #fde68a;
+}
+
+#compact-center .compact-center-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+#compact-center .compact-center-note {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1;
+  color: #1ed760;
+}
+
+#compact-center .compact-center-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  letter-spacing: -0.005em;
 }
 
 /* The closed island's one line (core/closed.ts): the time, the plan, the song. */
@@ -793,15 +858,15 @@ body {
   height: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-auto-rows: 28px;
-  gap: 4px;
+  grid-auto-rows: 34px;
+  gap: 6px;
   align-content: center;
-  padding: 0 8px;
+  padding: 0 10px;
 }
 
 .pill {
   position: relative;
-  height: 28px;
+  height: 34px;
   border-radius: 999px;
   background: var(--card-flat);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -813,7 +878,8 @@ body {
 }
 
 .pill .mini {
-  margin-left: 7px;
+  margin-left: 8px;
+  flex-shrink: 0;
 }
 
 .pill .lbl {
@@ -821,12 +887,12 @@ body {
   left: 0;
   right: 0;
   text-align: center;
-  font: 600 10px var(--font);
+  font: 600 10.5px var(--font);
   color: var(--dim-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 0 8px 0 34px;
+  padding: 0 10px 0 38px;
   pointer-events: none;
 }
 
@@ -1779,9 +1845,12 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .int-card {
-  padding: 10px 12px 0 108px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px 10px 108px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 
 .int-head {
@@ -1842,7 +1911,20 @@ input[type="range"]::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-top: 6px;
+  padding-top: 8px;
+}
+
+.int-actions .link-btn {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.int-actions .link-btn:hover {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.24);
 }
 
 .git-root {
@@ -3982,6 +4064,85 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   gap: 8px;
 }
 
+.task-capture-body {
+  justify-content: space-between;
+  padding: 13px 18px 13px 118px;
+}
+
+.task-capture-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.task-capture-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 11px;
+  border-radius: 9px;
+  border: 1px solid rgba(233, 154, 61, 0.36);
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--ink);
+  font: 500 12px var(--font);
+  outline: none;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.task-capture-input:focus {
+  border-color: #e99a3d;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dictate-btn.task-capture-mic {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e7eb;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.btn.primary.task-propose-btn {
+  height: 32px;
+  flex: 0 0 auto;
+  padding: 0 13px;
+  border-radius: 9px;
+  background: #e99a3d;
+  color: #12100d;
+  font: 600 11.5px var(--font);
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn.primary.task-propose-btn:hover:not(:disabled) {
+  background: #f0ab55;
+}
+
+.btn.primary.task-propose-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.task-capture-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.task-capture-hint {
+  font: 500 10.5px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+}
+
 .task-shortcut-badge,
 .task-reminder-badge,
 .task-prio-tag {
@@ -4131,6 +4292,12 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   color: #f6c88a;
 }
 
+.chat-todo-card .task-chip.task-chip-neutral.on {
+  background: rgba(243, 238, 230, 0.08);
+  border-color: rgba(243, 238, 230, 0.24);
+  color: #ded9d1;
+}
+
 .chat-todo-card .task-native-picker,
 .chat-todo-card .task-select {
   color-scheme: dark;
@@ -4154,6 +4321,15 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
 .chat-todo-card .task-error {
   color: #ffb4ae;
   font: 500 11.5px/1.35 var(--font);
+}
+
+.chat-todo-card .actions {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.chat-todo-card .btn {
+  border-radius: 10px;
 }
 
 .chat-todo-card .btn.primary {

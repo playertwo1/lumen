@@ -4,7 +4,17 @@
 // island's settings are drawn here, one Notch page at a time.
 
 import "./settings.css";
-import { Bridge, onEvent, type ChatGptAccountStatus, type HookPreview, type HookStatus, type ShortcutsReport, type SubscriptionStatus } from "../core/bridge";
+import {
+  Bridge,
+  GoogleBridge,
+  onEvent,
+  type ChatGptAccountStatus,
+  type GoogleStatus,
+  type HookPreview,
+  type HookStatus,
+  type ShortcutsReport,
+  type SubscriptionStatus,
+} from "../core/bridge";
 import { CUSTOM_SERVER_KEY, providerDef, urlExposure } from "../core/providers";
 import {
   ISLAND_SHORTCUTS, SHORTCUTS, SHORTCUT_TEXT, activeKeys, displayKeys, duplicates, effective,
@@ -23,6 +33,7 @@ import { startHub, type PageId } from "../hub/shell";
 import { FLOW_PAGE_RENDERERS } from "../hub/pages";
 import { claudeModelControl } from "./claude-models";
 import { agentsSection } from "./agents";
+import { chatGptAccountSection } from "./chatgpt";
 import { phoneSection } from "./phone";
 import { whatsappSection } from "./whatsapp";
 import { WHATSAPP_ID } from "../core/whatsapp";
@@ -652,137 +663,6 @@ function activePillsSection(connected: Record<string, boolean>): HTMLElement {
 
 // ── Chat providers section ────────────────────────────────────────────────────
 
-function chatGptAccountSection(initial: ChatGptAccountStatus | null, initialError: string | null): HTMLElement {
-  const body = h("div", { style: "display:flex;flex-direction:column;gap:10px" });
-  const section = h(
-    "section",
-    {},
-    h("h2", {}, h("span", { text: "Usar seu plano ChatGPT" })),
-    h("div", {
-      class: "hint",
-      text: "Conecte sua conta ChatGPT para conversar no chat usando o seu plano. As credenciais ficam no cofre do sistema.",
-    }),
-    body,
-  );
-  let status = initial;
-  let error = initialError;
-  let notice = "";
-  let busy = false;
-
-  const draw = () => {
-    clear(body);
-    const add = h("button", { class: "primary", text: busy ? "Aguardando o navegador…" : "Continuar com ChatGPT" });
-    add.disabled = busy;
-    add.addEventListener("click", () => void signIn());
-    body.append(add);
-    if (error) body.append(h("div", { class: "notice err", text: error }));
-    if (notice) body.append(h("div", { class: "hint", text: notice }));
-    for (const account of status?.accounts ?? []) {
-      const state = !account.connected
-        ? "Sessão desconectada"
-        : account.planEnabled
-          ? account.active ? "Conta ativa no chat" : "Autorização do plano confirmada"
-          : "Conectada, sem autorização para usar o plano";
-      const row = h("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" });
-      row.append(h("strong", { text: account.label }), h("span", { class: "hint", text: state }));
-      if (account.connected && account.planEnabled && account.active) {
-        const inUse = settings.chatProvider === "chatgpt";
-        const useInChat = h("button", {
-          class: inUse ? "" : "primary",
-          text: inUse ? "Em uso" : "Usar no chat",
-        });
-        useInChat.disabled = busy || inUse;
-        useInChat.addEventListener("click", () => void run(async () => {
-          settings.chatProvider = "chatgpt";
-          await save();
-          localRedraw?.();
-        }));
-        row.append(useInChat);
-      }
-      if (account.connected && account.planEnabled && !account.active) {
-        const use = h("button", { text: "Usar esta conta" });
-        use.disabled = busy;
-        use.addEventListener("click", () => void run(async () => { status = await Bridge.chatGptActivate(account.profileId); }));
-        row.append(use);
-      }
-      const reconnect = h("button", { text: account.connected ? "Reautorizar" : "Conectar novamente" });
-      reconnect.disabled = busy;
-      reconnect.addEventListener("click", () => void signIn(account.profileId));
-      row.append(reconnect);
-      if (account.connected) {
-        const signOut = h("button", { text: "Sair" });
-        signOut.disabled = busy;
-        signOut.addEventListener("click", () => void endSession(account.profileId));
-        row.append(signOut);
-      }
-      body.append(h("div", { style: "display:flex;flex-direction:column;gap:5px;padding:8px 0;border-top:1px solid var(--line, #333)" }, row));
-    }
-  };
-
-  async function run(action: () => Promise<void>) {
-    busy = true;
-    error = null;
-    notice = "";
-    draw();
-    try {
-      await action();
-      status = await Bridge.chatGptStatus();
-    } catch (err) {
-      error = String(err).replace(/^Error:\s*/, "");
-    } finally {
-      busy = false;
-      draw();
-    }
-  }
-
-  async function signIn(profileId?: string) {
-    busy = true;
-    error = null;
-    notice = "Conclua o login na janela do navegador. O Lumen não recebe sua senha.";
-    draw();
-    try {
-      status = await Bridge.chatGptSignIn(profileId);
-      notice = "Conta conectada e salva no cofre do sistema.";
-    } catch (err) {
-      error = String(err).replace(/^Error:\s*/, "");
-      notice = "";
-    } finally {
-      busy = false;
-      draw();
-    }
-  }
-
-  async function endSession(profileId: string) {
-    busy = true;
-    error = null;
-    notice = "";
-    draw();
-    try {
-      const result = await Bridge.chatGptSignOut(profileId);
-      status = await Bridge.chatGptStatus();
-      const anyActive = Boolean(status?.accounts?.some((a) => a.connected && a.planEnabled));
-      if (!anyActive && settings.chatProvider === "chatgpt") {
-        settings.chatProvider = "anthropic";
-        await save();
-      }
-      notice = result.localCleared
-        ? result.remoteRevoked
-          ? "Sessão encerrada e revogada."
-          : "Tokens removidos deste computador; a revogação remota não foi confirmada. Você pode desconectar o Lumen nas configurações da sua conta ChatGPT."
-        : "Não foi possível confirmar a limpeza local das credenciais. Confira o estado da conta antes de continuar.";
-    } catch (err) {
-      error = String(err).replace(/^Error:\s*/, "");
-    } finally {
-      busy = false;
-      draw();
-    }
-  }
-
-  declaredViews.push(draw);
-  draw();
-  return section;
-}
-
 function chatLocationSection(): HTMLElement {
   const input = h("input", {
     type: "text",
@@ -1145,6 +1025,230 @@ const declaredViews: (() => void)[] = [];
 function declaredChanged() {
   for (const redraw of declaredViews) redraw();
   void save();
+}
+
+function formatGoogleTimestamp(iso: string | null): string {
+  if (!iso) return "Nunca";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleString("pt-BR");
+}
+
+function googleSection(initial: GoogleStatus | null, initialError: string | null): HTMLElement {
+  const body = h("div", { style: "display:flex;flex-direction:column;gap:10px" });
+  const section = h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Google (Drive e Calendar)" })),
+    h("div", {
+      class: "hint",
+      text: "Credenciais próprias do seu projeto no Google Cloud (uso pessoal) guardadas apenas no cofre do sistema. O backup do PC usa a subpasta isolada Segunda Mente/Lumen-PC e eventos no Calendar nunca convidam terceiros.",
+    }),
+    body,
+  );
+
+  let status = initial;
+  let error = initialError;
+  let notice = "";
+  let busy = false;
+  let confirmRestore = false;
+
+  async function runAction(fn: () => Promise<void>) {
+    busy = true;
+    error = null;
+    notice = "";
+    draw();
+    try {
+      await fn();
+      status = await GoogleBridge.status();
+    } catch (err) {
+      error = String(err).replace(/^Error:\s*/, "");
+    } finally {
+      busy = false;
+      draw();
+    }
+  }
+
+  const draw = () => {
+    clear(body);
+
+    if (!status) {
+      const retry = h("button", { text: "Recarregar status Google" });
+      retry.disabled = busy;
+      retry.addEventListener("click", () => void runAction(async () => {
+        status = await GoogleBridge.status();
+      }));
+      body.append(retry);
+      if (error) body.append(h("div", { class: "notice err", text: error }));
+      return;
+    }
+
+    // 1) Client ID / JSON OAuth do projeto Google Cloud próprio
+    const clientInput = h("textarea", {
+      rows: "2",
+      placeholder: status.configured
+        ? `Client ID salvo (${status.clientIdPreview ?? ""}) — cole outro Client ID ou JSON para substituir`
+        : "Cole seu Client ID (.apps.googleusercontent.com) ou o JSON OAuth baixado do Google Cloud Console",
+      spellcheck: "false",
+      style: "width:100%;resize:vertical",
+    }) as HTMLTextAreaElement;
+    const secretInput = h("input", {
+      type: "password",
+      placeholder: status.hasClientSecret ? CHAT_STRINGS.stored : "Client Secret (opcional se já vier no JSON)",
+      autocomplete: "off",
+      spellcheck: "false",
+      style: "flex:1 1 auto;min-width:0",
+    }) as HTMLInputElement;
+
+    const saveCfgBtn = h("button", {
+      class: status.configured ? "" : "primary",
+      text: "Salvar credencial",
+    });
+    saveCfgBtn.disabled = busy;
+    saveCfgBtn.addEventListener("click", () => {
+      const raw = clientInput.value.trim();
+      if (!raw) {
+        error = "Informe o Client ID ou cole o JSON OAuth do Google Cloud.";
+        draw();
+        return;
+      }
+      void runAction(async () => {
+        status = await GoogleBridge.saveClientConfig(raw, secretInput.value.trim() || null);
+        notice = "Credencial Google salva no Credential Manager.";
+      });
+    });
+
+    const clearCfgBtn = status.configured
+      ? h("button", { text: "Limpar credencial" })
+      : null;
+    if (clearCfgBtn) {
+      clearCfgBtn.disabled = busy;
+      clearCfgBtn.addEventListener("click", () => void runAction(async () => {
+        confirmRestore = false;
+        status = await GoogleBridge.clearClientConfig();
+        notice = "Credencial e sessão Google removidas do cofre.";
+      }));
+    }
+
+    body.append(
+      h("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
+        statusDot(status.configured),
+        h("strong", { text: status.configured ? "Projeto OAuth configurado" : "Projeto OAuth ainda não configurado" }),
+        status.clientIdPreview ? h("span", { class: "hint", text: status.clientIdPreview }) : null,
+      ),
+      clientInput,
+      h("div", { class: "row" }, secretInput, saveCfgBtn, clearCfgBtn),
+    );
+
+    // 2) Autenticação PKCE
+    const authRow = h("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--line, #333)" });
+    authRow.append(
+      statusDot(status.connected),
+      h("strong", {
+        text: status.connected
+          ? `Conectada${status.email ? `: ${status.email}` : ""}`
+          : "Desconectada",
+      }),
+    );
+    if (status.displayName) {
+      authRow.append(h("span", { class: "hint", text: `(${status.displayName})` }));
+    }
+    if (!status.connected) {
+      const signInBtn = h("button", {
+        class: "primary",
+        text: busy ? "Aguardando login no navegador…" : "Entrar com Google",
+      });
+      signInBtn.disabled = busy || !status.configured;
+      signInBtn.addEventListener("click", () => void runAction(async () => {
+        confirmRestore = false;
+        status = await GoogleBridge.signIn();
+        notice = "Conta Google conectada via OAuth PKCE.";
+      }));
+      authRow.append(signInBtn);
+    } else {
+      const signOutBtn = h("button", { text: "Sair da conta Google" });
+      signOutBtn.disabled = busy;
+      signOutBtn.addEventListener("click", () => void runAction(async () => {
+        confirmRestore = false;
+        status = await GoogleBridge.signOut();
+        notice = "Sessão Google encerrada.";
+      }));
+      authRow.append(signOutBtn);
+    }
+    body.append(authRow);
+
+    // 3) Backup semanal e restauração no Google Drive (`Segunda Mente/Lumen-PC`)
+    const driveBox = h("div", { style: "display:flex;flex-direction:column;gap:8px;padding-top:8px;border-top:1px solid var(--line, #333)" });
+    driveBox.append(
+      h("div", { class: "row" },
+        h("label", { text: "Backup semanal automático" }),
+        toggle(status.weeklyBackupEnabled, (enabled) => {
+          void runAction(async () => {
+            status = await GoogleBridge.setWeeklyBackup(enabled);
+            notice = enabled
+              ? "Backup semanal no Google Drive ativado."
+              : "Backup semanal automático desativado.";
+          });
+        }),
+      ),
+      h("div", {
+        class: "hint",
+        text: `Destino no Drive: ${status.driveFolder} · Último backup: ${formatGoogleTimestamp(status.lastBackupAt)} · Última restauração: ${formatGoogleTimestamp(status.lastRestoreAt)}`,
+      }),
+    );
+
+    if (status.lastBackupError) {
+      driveBox.append(h("div", { class: "notice err", text: `Último erro de backup: ${status.lastBackupError}` }));
+    }
+
+    if (status.connected) {
+      const backupBtn = h("button", {
+        text: busy ? "Processando…" : "Fazer backup agora",
+      });
+      backupBtn.disabled = busy;
+      backupBtn.addEventListener("click", () => void runAction(async () => {
+        confirmRestore = false;
+        const summary = await GoogleBridge.backupNow();
+        notice = `Backup enviado para ${summary.driveFolder} (${summary.notesCount} notas).`;
+      }));
+
+      const restoreBtn = h("button", { text: "Restaurar backup" });
+      restoreBtn.disabled = busy;
+      restoreBtn.addEventListener("click", () => {
+        confirmRestore = true;
+        draw();
+      });
+
+      driveBox.append(h("div", { class: "row" }, backupBtn, restoreBtn));
+
+      if (confirmRestore) {
+        const confirmBtn = h("button", { class: "primary", text: "Confirmar restauração" });
+        confirmBtn.disabled = busy;
+        confirmBtn.addEventListener("click", () => void runAction(async () => {
+          confirmRestore = false;
+          const res = await GoogleBridge.restoreBackup();
+          notice = `Backup de ${formatGoogleTimestamp(res.backupCreatedAt)} restaurado (${res.notesRestored} notas). Snapshot pré-restauração salvo.`;
+        }));
+        const cancelBtn = h("button", { text: "Cancelar" });
+        cancelBtn.disabled = busy;
+        cancelBtn.addEventListener("click", () => {
+          confirmRestore = false;
+          draw();
+        });
+        driveBox.append(
+          h("div", { class: "notice warn", text: "Atenção: isso substituirá tarefas, notas (.json), personas e preferências pelos dados do Drive (um backup local de segurança será gravado antes)." }),
+          h("div", { class: "row" }, confirmBtn, cancelBtn),
+        );
+      }
+    }
+
+    body.append(driveBox);
+    if (error) body.append(h("div", { class: "notice err", text: error }));
+    if (notice) body.append(h("div", { class: "hint", text: notice }));
+  };
+
+  draw();
+  return section;
 }
 
 function integrationsSection(present: Record<string, boolean>): HTMLElement {
@@ -1815,6 +1919,15 @@ async function render() {
       chatGptError = String(err).replace(/^Error:\s*/, "");
     }
   }
+  let googleStatus: GoogleStatus | null = null;
+  let googleError: string | null = null;
+  if (LUMEN_WINDOWS && notchPage === "integrations") {
+    try {
+      googleStatus = await GoogleBridge.status();
+    } catch (err) {
+      googleError = String(err).replace(/^Error:\s*/, "");
+    }
+  }
 
   declaredViews.length = 0;
   localRedraw = null;
@@ -1825,8 +1938,28 @@ async function render() {
     general: () => [generalSection()],
     pills: () => [activePillsSection(connected)],
     agents: () => [claudeSection(status), agentsSection(agents), planSection(status)],
-    chat: () => [subscriptionsSection(), apiSection(hasKey, claudeRelay), ...(LUMEN_WINDOWS ? [chatGptAccountSection(chatGptStatus, chatGptError), chatLocationSection()] : []), chatProvidersSection(chatKeys, keyChanged), localSection(customKey)],
-    integrations: () => [integrationsSection(present), ...whatsappSections()],
+    chat: () => [
+      subscriptionsSection(),
+      apiSection(hasKey, claudeRelay),
+      ...(LUMEN_WINDOWS
+        ? [
+            chatGptAccountSection(chatGptStatus, chatGptError, {
+              settings,
+              save,
+              onUpdated: () => localRedraw?.(),
+              registerView: (draw) => declaredViews.push(draw),
+            }),
+            chatLocationSection(),
+          ]
+        : []),
+      chatProvidersSection(chatKeys, keyChanged),
+      localSection(customKey),
+    ],
+    integrations: () => [
+      ...(LUMEN_WINDOWS ? [googleSection(googleStatus, googleError)] : []),
+      integrationsSection(present),
+      ...whatsappSections(),
+    ],
     phone: () => [phoneSection(settings.phoneLink ?? false, toggle, settings)],
     shortcuts: () => [shortcutsSection(shortcutReport)],
   };

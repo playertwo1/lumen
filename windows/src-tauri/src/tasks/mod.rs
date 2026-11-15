@@ -293,6 +293,33 @@ pub fn get(app: &AppHandle) -> Option<Arc<TaskManager>> {
         .map(|s| s.inner().clone())
 }
 
+pub fn get_item(app: &AppHandle, id: &str) -> Option<TodoItem> {
+    let mgr = get(app)?;
+    let local = mgr.local.lock().unwrap();
+    local
+        .store
+        .get(id)
+        .filter(|item| !item.is_tombstoned())
+        .cloned()
+}
+
+pub fn reload_from_disk(app: &AppHandle) {
+    let Some(mgr) = get(app) else { return };
+    let dir = folder();
+    {
+        let mut local = mgr.local.lock().unwrap();
+        *local = LocalState {
+            store: TaskStore::load_at(dir.clone()),
+            sync: SyncStore::load_at(dir),
+        };
+    }
+    mgr.fired.lock().unwrap().clear();
+    let _ = mgr.wake_tx.send(());
+    let _ = mgr.sync_wake_tx.send(());
+    emit_tasks_changed(app);
+    emit_task_sync_state(app, &mgr);
+}
+
 pub fn setup(app: &AppHandle) {
     let (wake_tx, wake_rx) = mpsc::channel();
     let (sync_wake_tx, sync_wake_rx) = mpsc::channel();
@@ -1011,13 +1038,13 @@ pub fn tasks_save_shortcut_settings(
     mgr: State<Arc<TaskManager>>,
     settings: TodoShortcutSettings,
 ) -> Result<TodoShortcutSettings, String> {
-    mgr.local
-        .lock()
-        .unwrap()
-        .store
-        .set_shortcut_settings(settings.clone())?;
+    let saved = {
+        let mut local = mgr.local.lock().unwrap();
+        local.store.set_shortcut_settings(settings)?;
+        local.store.shortcut_settings().clone()
+    };
     emit_tasks_changed(&app);
-    Ok(settings)
+    Ok(saved)
 }
 
 #[tauri::command]

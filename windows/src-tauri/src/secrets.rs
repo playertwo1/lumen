@@ -126,9 +126,24 @@ pub const INTERNAL_KEYS: &[&str] = &[
     "siwc-host-id",
 ];
 
+/// Segredos da conta Google no Lumen (L7), mantidos fora de `INTERNAL_KEYS` para
+/// preservar a invariante dos testes do `phone_link` e inacessíveis à webview.
+pub const GOOGLE_INTERNAL_KEYS: &[&str] = &[
+    "google-oauth-client-id",
+    "google-oauth-client-secret",
+    "google-oauth-access-token",
+    "google-oauth-refresh-token",
+    "google-oauth-account-meta",
+    "google-drive-backup-meta",
+];
+
+fn is_google_internal_key(key: &str) -> bool {
+    GOOGLE_INTERNAL_KEYS.contains(&key)
+}
+
 /// Whether the keystore would accept this key through `get_internal` / `set_internal`.
 pub fn is_internal(key: &str) -> bool {
-    INTERNAL_KEYS.contains(&key) || is_siwc_profile_key(key)
+    INTERNAL_KEYS.contains(&key) || is_siwc_profile_key(key) || is_google_internal_key(key)
 }
 
 fn is_lower_hex(s: &str, len: usize) -> bool {
@@ -299,6 +314,18 @@ mod tests {
             "siwc-profile-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-fedcba9876543210-password",
         ] {
             assert!(!is_internal(key), "{key}");
+        }
+    }
+
+    #[test]
+    fn google_internal_keys_are_accepted_by_internal_store_and_hidden_from_webview() {
+        for key in GOOGLE_INTERNAL_KEYS {
+            assert!(is_internal(key), "{key}");
+            assert!(!KNOWN_KEYS.contains(key), "{key}");
+            assert!(entry(key).is_none(), "{key}");
+            assert!(set(key, "x").is_err(), "{key}");
+            assert!(clear(key).is_err(), "{key}");
+            assert!(!present(key), "{key}");
         }
     }
 
