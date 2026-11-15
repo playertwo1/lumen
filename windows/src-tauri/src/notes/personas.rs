@@ -11,8 +11,10 @@ use serde_json::{Map, Value};
 
 use super::default_personas::{default_color_for_id, default_personas, CURRENT_SEED_VERSION};
 
-pub const DEFAULT_MAX_COMMENT_CHARACTERS: usize = 2;
-pub const MAX_PERSONA_TURNS_PER_USER_MESSAGE: usize = 4;
+pub const MAX_COMMENT_CHARACTERS_LIMIT: usize = 15;
+pub const DEFAULT_MAX_COMMENT_CHARACTERS: usize = 15;
+pub const MAX_PERSONA_TURNS_PER_USER_MESSAGE: usize = 15;
+pub const MAX_CROSS_TALK_REPLIES_PER_WAVE: usize = 5;
 const SEED_VERSION_FILE: &str = ".characters_seed_version";
 const DEFAULT_COLORS: &[&str] = &["#6C5CE7", "#00B894", "#E17055", "#0984E3", "#E84393", "#FDCB6E"];
 
@@ -254,6 +256,139 @@ pub fn ensure_default_personas_seeded(dir: &Path) -> Vec<PersonaProfile> {
     existing
 }
 
+pub fn agent_dir_in(dir: &Path, id: &str) -> PathBuf {
+    dir.join("agents").join(slugify_id(id))
+}
+
+pub fn render_persona_agents_md(persona: &PersonaProfile) -> String {
+    let mut out = format!("# {} (@{})\n", persona.name.trim(), persona.id.trim());
+    if let Some(role) = persona.role.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        out.push_str(&format!("\n- Papel: {role}"));
+    } else {
+        out.push_str("\n- Papel: Subagente vivo de perspectiva no chat em grupo");
+    }
+    if !persona.tags.is_empty() {
+        out.push_str(&format!("\n- Tags: {}", persona.tags.join(", ")));
+    }
+    if let Some(focus) = persona.interest_filter.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        out.push_str(&format!("\n- Foco: {focus}"));
+    }
+    out.push('\n');
+
+    if !persona.identity.trim().is_empty() {
+        out.push_str("\n## Identidade e voz (SOUL)\n");
+        out.push_str(persona.identity.trim());
+        out.push('\n');
+    }
+    if !persona.user_profile.trim().is_empty() {
+        out.push_str("\n## Sobre quem anota (PROFILE)\n");
+        out.push_str(persona.user_profile.trim());
+        out.push('\n');
+    }
+    if !persona.rules.trim().is_empty() {
+        out.push_str("\n## Regras e política de atuação (AGENTS)\n");
+        out.push_str(persona.rules.trim());
+        out.push('\n');
+    }
+    let persona_text = persona.persona.trim();
+    let identity_first_line = persona.identity.trim().lines().next().unwrap_or("").trim();
+    if !persona_text.is_empty() && (identity_first_line.is_empty() || !persona_text.contains(identity_first_line)) {
+        out.push_str("\n## Definição adicional\n");
+        out.push_str(persona_text);
+        out.push('\n');
+    }
+    if let Some(example) = persona.mes_example.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        out.push_str("\n## Exemplos de diálogo\n");
+        out.push_str(example);
+        out.push('\n');
+    }
+    if let Some(post) = persona.post_history_instructions.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        out.push_str("\n## Instruções de turno\n");
+        out.push_str(post);
+        out.push('\n');
+    }
+    out
+}
+
+pub fn ensure_persona_agent_files_in(dir: &Path, personas: &[PersonaProfile]) {
+    for p in personas {
+        let p_dir = agent_dir_in(dir, &p.id);
+        let agents_md = p_dir.join("AGENTS.md");
+        if agents_md.exists() {
+            continue;
+        }
+        if std::fs::create_dir_all(&p_dir).is_ok() {
+            let _ = std::fs::write(&agents_md, render_persona_agents_md(p));
+        }
+    }
+}
+
+pub fn sync_persona_agent_files_overwrite_in(dir: &Path, personas: &[PersonaProfile]) {
+    for p in personas {
+        let p_dir = agent_dir_in(dir, &p.id);
+        if std::fs::create_dir_all(&p_dir).is_ok() {
+            let _ = std::fs::write(p_dir.join("AGENTS.md"), render_persona_agents_md(p));
+        }
+    }
+}
+
+pub fn load_persona_living_docs_in(dir: &Path, persona: &PersonaProfile) -> (String, Option<String>) {
+    let p_dir = agent_dir_in(dir, &persona.id);
+    let agents_path = p_dir.join("AGENTS.md");
+    if !agents_path.exists() && std::fs::create_dir_all(&p_dir).is_ok() {
+        let _ = std::fs::write(&agents_path, render_persona_agents_md(persona));
+    }
+    let agents_md = std::fs::read_to_string(&agents_path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| render_persona_agents_md(persona));
+
+    let memory = std::fs::read_to_string(p_dir.join("MEMORY.md"))
+        .ok()
+        .map(|raw| {
+            let lines: Vec<&str> = raw.lines().filter(|l| !l.trim().is_empty()).collect();
+            let tail_start = lines.len().saturating_sub(20);
+            lines[tail_start..].join("\n")
+        })
+        .filter(|s| !s.trim().is_empty());
+
+    (agents_md, memory)
+}
+
+pub fn append_persona_memory_in(dir: &Path, persona_id: &str, note: &str) -> Result<(), String> {
+    let cleaned = note.trim();
+    if cleaned.is_empty() {
+        return Ok(());
+    }
+    let p_dir = agent_dir_in(dir, persona_id);
+    std::fs::create_dir_all(&p_dir).map_err(|e| e.to_string())?;
+    let mem_path = p_dir.join("MEMORY.md");
+    let existing = std::fs::read_to_string(&mem_path).unwrap_or_default();
+    let mut entries: Vec<String> = existing
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_string)
+        .collect();
+    let entry = if cleaned.starts_with("- ") {
+        cleaned.to_string()
+    } else {
+        format!("- {cleaned}")
+    };
+    let folded_entry = fold_pt_ascii(&entry);
+    if entries.iter().any(|e| fold_pt_ascii(e) == folded_entry) {
+        return Ok(());
+    }
+    entries.push(entry);
+    if entries.len() > 30 {
+        let drop_n = entries.len() - 30;
+        entries.drain(0..drop_n);
+    }
+    let body = format!("# Memória viva de @{persona_id}\n\n{}\n", entries.join("\n"));
+    std::fs::write(&mem_path, body).map_err(|e| e.to_string())
+}
+
 pub fn reset_default_personas_in(dir: &Path) -> Result<PersonasState, String> {
     let existing: Vec<PersonaProfile> = std::fs::read(dir.join("personas.json"))
         .ok()
@@ -277,6 +412,7 @@ pub fn reset_default_personas_in(dir: &Path) -> Result<PersonasState, String> {
     ensure_single_primary(&mut out);
 
     write_personas_file(dir, &out)?;
+    sync_persona_agent_files_overwrite_in(dir, &out);
     write_seed_version(dir, CURRENT_SEED_VERSION)?;
     Ok(PersonasState {
         personas: out,
@@ -289,7 +425,9 @@ pub fn load_personas() -> Vec<PersonaProfile> {
 }
 
 pub fn load_personas_in(dir: &Path) -> Vec<PersonaProfile> {
-    ensure_default_personas_seeded(dir)
+    let personas = ensure_default_personas_seeded(dir);
+    ensure_persona_agent_files_in(dir, &personas);
+    personas
 }
 
 pub fn save_personas(personas: &[PersonaProfile]) -> Result<(), String> {
@@ -298,6 +436,7 @@ pub fn save_personas(personas: &[PersonaProfile]) -> Result<(), String> {
 
 pub fn save_personas_in(dir: &Path, personas: &[PersonaProfile]) -> Result<(), String> {
     write_personas_file(dir, personas)?;
+    sync_persona_agent_files_overwrite_in(dir, personas);
     if !dir.join(SEED_VERSION_FILE).exists() {
         write_seed_version(dir, CURRENT_SEED_VERSION)?;
     }
@@ -309,12 +448,12 @@ pub fn load_comment_settings_in(dir: &Path) -> CommentSettings {
         return CommentSettings::default();
     };
     let mut cfg: CommentSettings = serde_json::from_slice(&bytes).unwrap_or_default();
-    cfg.max_comment_characters = cfg.max_comment_characters.clamp(1, 6);
+    cfg.max_comment_characters = cfg.max_comment_characters.clamp(1, MAX_COMMENT_CHARACTERS_LIMIT);
     cfg
 }
 
 pub fn save_comment_settings(mut settings: CommentSettings) -> Result<CommentSettings, String> {
-    settings.max_comment_characters = settings.max_comment_characters.clamp(1, 6);
+    settings.max_comment_characters = settings.max_comment_characters.clamp(1, MAX_COMMENT_CHARACTERS_LIMIT);
     save_comment_settings_in(&store_dir(), &settings)?;
     Ok(settings)
 }
@@ -1247,38 +1386,73 @@ pub fn fold_pt_ascii(input: &str) -> String {
         .collect()
 }
 
-/// Identifica menção `@id` ou `@nome` com fronteira lexical (ignora e-mails como `a@dominio.com`).
-pub fn extract_mention<'a>(text: &str, active: &[&'a PersonaProfile]) -> Option<&'a PersonaProfile> {
-    let folded_text = fold_pt_ascii(text);
-    for p in active {
-        let candidates = [fold_pt_ascii(&p.id), fold_pt_ascii(&p.name)];
-        for needle in candidates {
-            if needle.is_empty() {
-                continue;
-            }
-            let pattern = format!("@{needle}");
-            let mut search_from = 0usize;
-            while let Some(rel) = folded_text[search_from..].find(&pattern) {
-                let start = search_from + rel;
-                let end = start + pattern.len();
-                let prev_ok = start == 0
-                    || !folded_text[..start]
-                        .chars()
-                        .next_back()
-                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
-                let next_ok = end == folded_text.len()
-                    || !folded_text[end..]
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
-                if prev_ok && next_ok {
-                    return Some(*p);
-                }
-                search_from = end;
-            }
+fn first_mention_pos(folded_text: &str, needle: &str) -> Option<usize> {
+    if needle.is_empty() {
+        return None;
+    }
+    let pattern = format!("@{needle}");
+    let mut search_from = 0usize;
+    while let Some(rel) = folded_text[search_from..].find(&pattern) {
+        let start = search_from + rel;
+        let end = start + pattern.len();
+        let prev_ok = start == 0
+            || !folded_text[..start]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        let next_ok = end == folded_text.len()
+            || !folded_text[end..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        if prev_ok && next_ok {
+            return Some(start);
         }
+        search_from = end;
     }
     None
+}
+
+/// Identifica menção `@id`, `@nome` ou `@primeiro_nome` (único) com fronteira lexical (ignora e-mails como `a@dominio.com`).
+pub fn extract_mention<'a>(text: &str, active: &[&'a PersonaProfile]) -> Option<&'a PersonaProfile> {
+    extract_all_mentions(text, active).into_iter().next()
+}
+
+/// Identifica todas as personas mencionadas na mensagem, em ordem de aparição no texto.
+pub fn extract_all_mentions<'a>(text: &str, active: &[&'a PersonaProfile]) -> Vec<&'a PersonaProfile> {
+    let folded_text = fold_pt_ascii(text);
+    let mut found: Vec<(usize, &'a PersonaProfile)> = Vec::new();
+
+    for (idx, p) in active.iter().enumerate() {
+        let mut best_pos = [fold_pt_ascii(&p.id), fold_pt_ascii(&p.name)]
+            .into_iter()
+            .filter_map(|needle| first_mention_pos(&folded_text, &needle))
+            .min();
+
+        if best_pos.is_none() {
+            if let Some(first_word) = fold_pt_ascii(&p.name)
+                .split_whitespace()
+                .next()
+                .map(str::to_string)
+                .filter(|w| w.len() >= 3)
+            {
+                let unique = active.iter().enumerate().all(|(other_idx, other)| {
+                    other_idx == idx
+                        || fold_pt_ascii(&other.name).split_whitespace().next() != Some(first_word.as_str())
+                });
+                if unique {
+                    best_pos = first_mention_pos(&folded_text, &first_word);
+                }
+            }
+        }
+
+        if let Some(pos) = best_pos {
+            found.push((pos, *p));
+        }
+    }
+
+    found.sort_by_key(|(pos, _)| *pos);
+    found.into_iter().map(|(_, p)| p).collect()
 }
 
 /// Ao responder a um comentário, caminha `reply_to_id` até descobrir qual persona iniciou o fio.
@@ -1499,19 +1673,32 @@ pub fn score_affinity(persona: &PersonaProfile, text: &str, tags: &[String]) -> 
     score
 }
 
+fn rank_by_affinity<'a>(
+    active: &[&'a PersonaProfile],
+    text: &str,
+    tags: &[String],
+) -> Vec<(&'a PersonaProfile, i32)> {
+    let mut scored: Vec<(&PersonaProfile, i32)> = active
+        .iter()
+        .map(|p| (*p, score_affinity(p, text, tags)))
+        .collect();
+    scored.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| b.0.is_primary_companion.cmp(&a.0.is_primary_companion))
+            .then_with(|| a.0.id.cmp(&b.0.id))
+    });
+    scored
+}
+
 fn best_clear_affinity_match<'a>(
     active: &[&'a PersonaProfile],
     text: &str,
     tags: &[String],
 ) -> Option<&'a PersonaProfile> {
-    if active.is_empty() {
+    let scored = rank_by_affinity(active, text, tags);
+    if scored.is_empty() {
         return None;
     }
-    let mut scored: Vec<(&PersonaProfile, i32)> = active
-        .iter()
-        .map(|p| (*p, score_affinity(p, text, tags)))
-        .collect();
-    scored.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.id.cmp(&b.0.id)));
     if scored.len() == 1 {
         return (scored[0].1 > 0).then_some(scored[0].0);
     }
@@ -1522,6 +1709,20 @@ fn best_clear_affinity_match<'a>(
     } else {
         None
     }
+}
+
+fn top_positive_affinity<'a>(
+    active: &[&'a PersonaProfile],
+    text: &str,
+    tags: &[String],
+    limit: usize,
+) -> Vec<&'a PersonaProfile> {
+    rank_by_affinity(active, text, tags)
+        .into_iter()
+        .filter(|(_, score)| *score > 0)
+        .take(limit)
+        .map(|(p, _)| p)
+        .collect()
 }
 
 pub fn select_single_character<'a>(
@@ -1551,37 +1752,93 @@ pub fn select_single_character<'a>(
         .or_else(|| active.first().copied())
 }
 
+fn strip_list_prefix(s: &str) -> &str {
+    let trimmed = s.trim();
+    let without_bullet = trimmed
+        .strip_prefix("- ")
+        .or_else(|| trimmed.strip_prefix("* "))
+        .unwrap_or(trimmed);
+    let digit_end = without_bullet.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digit_end > 0 {
+        let rest = &without_bullet[digit_end..];
+        if let Some(after) = rest.strip_prefix('.').or_else(|| rest.strip_prefix(')')) {
+            return after.trim();
+        }
+    }
+    without_bullet.trim()
+}
+
+fn push_unique_id(chosen: &mut Vec<String>, id: &str, limit: usize) -> bool {
+    if chosen.iter().any(|existing| existing == id) {
+        return chosen.len() >= limit;
+    }
+    chosen.push(id.to_string());
+    chosen.len() >= limit
+}
+
 pub fn parse_ranked_character_ids(raw: &str, active: &[&PersonaProfile], limit: usize) -> Vec<String> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let folded_active: Vec<(&PersonaProfile, String, String)> = active
+        .iter()
+        .map(|p| (*p, fold_pt_ascii(&p.id), fold_pt_ascii(&p.name)))
+        .collect();
+
     let mut chosen = Vec::new();
-    for token in raw.split([',', '\n', ';', '|']) {
-        let cleaned = token
-            .trim()
-            .trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
-        if cleaned.is_empty() {
+    for segment in raw.split([',', '\n', ';', '|', '/']) {
+        let stripped = strip_list_prefix(segment);
+        let cleaned = stripped.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_' && c != ' ');
+        let folded_seg = fold_pt_ascii(cleaned);
+        if folded_seg.is_empty() {
             continue;
         }
-        let matched = active
+        if let Some((p, _, _)) = folded_active
             .iter()
-            .find(|p| p.id.eq_ignore_ascii_case(cleaned) || p.name.eq_ignore_ascii_case(cleaned))
-            .or_else(|| {
-                cleaned.split_whitespace().find_map(|word| {
-                    let w = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
-                    active.iter().find(|p| p.id.eq_ignore_ascii_case(w))
-                })
-            });
-        if let Some(p) = matched {
-            if !chosen.iter().any(|id| id == &p.id) {
-                chosen.push(p.id.clone());
-                if chosen.len() >= limit {
+            .find(|(_, fid, fname)| fid == &folded_seg || fname == &folded_seg)
+        {
+            if push_unique_id(&mut chosen, &p.id, limit) {
+                break;
+            }
+            continue;
+        }
+        let words: Vec<&str> = folded_seg
+            .split_whitespace()
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_'))
+            .filter(|w| !w.is_empty())
+            .collect();
+        let mut idx = 0usize;
+        while idx < words.len() {
+            let mut matched_advance = None;
+            // Tenta casar nomes multi-palavra (mais longo primeiro) e ids exatos em ordem de aparição.
+            for (p, fid, fname) in &folded_active {
+                let name_words: Vec<&str> = fname.split_whitespace().collect();
+                if !name_words.is_empty()
+                    && idx + name_words.len() <= words.len()
+                    && words[idx..idx + name_words.len()] == name_words[..]
+                {
+                    matched_advance = Some((p.id.as_str(), name_words.len()));
                     break;
                 }
+                if fid == words[idx] {
+                    matched_advance = Some((p.id.as_str(), 1));
+                    break;
+                }
+            }
+            if let Some((id, adv)) = matched_advance {
+                if push_unique_id(&mut chosen, id, limit) {
+                    return chosen;
+                }
+                idx += adv;
+            } else {
+                idx += 1;
             }
         }
     }
     chosen
 }
 
-pub fn build_routing_prompt(active: &[&PersonaProfile], note_text: &str, max_chars: usize) -> (String, String) {
+fn format_routing_persona_list(active: &[&PersonaProfile]) -> String {
     let mut list = String::new();
     for p in active {
         let role = p.role.as_deref().unwrap_or("companheira");
@@ -1602,12 +1859,90 @@ pub fn build_routing_prompt(active: &[&PersonaProfile], note_text: &str, max_cha
             ));
         }
     }
-    let system = "Você decide quais personas têm algo genuíno para comentar sobre uma anotação do usuário. Respeite rigorosamente a política de comentários de cada persona (responda quando / pule quando). Responda SOMENTE com os `id`s ordenados por relevância separados por vírgula, no máximo o limite pedido. Se nenhuma persona se encaixar pela política, responda exatamente uma string vazia.".to_string();
+    list
+}
+
+pub fn build_routing_prompt(active: &[&PersonaProfile], note_text: &str, max_chars: usize) -> (String, String) {
+    let list = format_routing_persona_list(active);
+    let multi_hint = if max_chars > 1 {
+        format!(
+            " Trata-se de um chat em grupo vivo: inclua TODAS as personas pertinentes cujo papel ou política acrescente um ângulo distinto, útil ou complementar (podem ser 2, 5 ou até {max_chars}, sem cortar artificialmente em 1)."
+        )
+    } else {
+        String::new()
+    };
+    let system = format!(
+        "Você coordena subagentes de IA de um chat em grupo sobre uma anotação do usuário e decide quais têm algo genuíno para contribuir. Respeite a política de cada persona (responda quando / pule quando).{multi_hint} Responda SOMENTE com os `id`s ordenados por relevância separados por vírgula, no máximo {max_chars}. Se nenhuma persona se encaixar pela política, responda exatamente uma string vazia."
+    );
     let user = format!(
-        "Personas ativas:\n{list}\nLimite máximo: {max_chars}\n\nAnotação:\n{}\n\nResponda apenas os ids separados por vírgula (ou deixe vazio se nenhuma persona se encaixar pela política):",
+        "Subagentes/personas ativas:\n{list}\nLimite máximo: {max_chars}\n\nAnotação:\n{}\n\nResponda apenas os ids separados por vírgula (ou deixe vazio se nenhuma persona se encaixar pela política):",
         truncate_chars(note_text, 1200)
     );
     (system, user)
+}
+
+pub fn build_group_followup_routing_prompt(
+    active: &[&PersonaProfile],
+    note_text: &str,
+    existing_comments: &[NoteComment],
+    max_chars: usize,
+) -> (String, String) {
+    let list = format_routing_persona_list(active);
+    let mut context = format!("Subagentes/personas candidatas a réplica:\n{list}\n");
+    context.push_str(&format!("\nAnotação:\n{}\n", truncate_chars(note_text, 800)));
+    context.push_str("\nConversa atual no grupo:\n");
+    let start = existing_comments.len().saturating_sub(12);
+    for c in &existing_comments[start..] {
+        context.push_str(&format!(
+            "- [{}] {}: {}\n",
+            c.id,
+            c.character_name,
+            truncate_chars(c.content.trim(), 240)
+        ));
+    }
+    context.push_str(&format!(
+        "\nQuais personas acima (até {max_chars}) têm uma réplica direta, contraponto, complemento ou pergunta pertinente a um dos comentários acima? Responda SOMENTE os `id`s separados por vírgula (ou deixe vazio se a discussão já estiver bem fechada):"
+    ));
+    let system = format!(
+        "Você coordena um chat em grupo vivo entre subagentes de personas. Escolha até {max_chars} personas que tenham reação genuína e não repetitiva aos comentários recém-feitos por outras personas ou pelo usuário. Se nada relevante acrescentar, responda string vazia."
+    );
+    (system, context)
+}
+
+pub fn build_reply_routing_prompt(
+    active: &[&PersonaProfile],
+    note_text: &str,
+    user_comment: &str,
+    existing_comments: &[NoteComment],
+    max_chars: usize,
+) -> (String, String) {
+    let list = format_routing_persona_list(active);
+    let mut participants = Vec::new();
+    for c in existing_comments.iter().rev() {
+        if c.author_kind != "user" && !participants.iter().any(|id| id == &c.character_id) {
+            participants.push(c.character_id.clone());
+        }
+    }
+    let mut context = format!("Personas ativas:\n{list}\n");
+    if !participants.is_empty() {
+        context.push_str(&format!("Personas que já comentaram nesta nota: {}\n", participants.join(", ")));
+    }
+    context.push_str(&format!("\nAnotação original:\n{}\n", truncate_chars(note_text, 800)));
+    if !existing_comments.is_empty() {
+        context.push_str("\nHistórico recente de comentários:\n");
+        let start = existing_comments.len().saturating_sub(10);
+        for c in &existing_comments[start..] {
+            context.push_str(&format!("- [{}] {}: {}\n", c.id, c.character_name, truncate_chars(c.content.trim(), 220)));
+        }
+    }
+    context.push_str(&format!(
+        "\nNovo comentário do usuário:\n{}\n\nResponda apenas os ids das personas pertinentes para participar/responder (até {max_chars}, separados por vírgula):",
+        truncate_chars(user_comment, 600)
+    ));
+    let system = format!(
+        "Você coordena um chat em grupo vivo e escolhe quais personas ativas devem responder ao novo comentário do usuário (até {max_chars}). Dê preferência às personas já envolvidas na conversa ou cujo papel/política tenha algo pertinente a acrescentar. Responda SOMENTE com os `id`s ordenados por relevância separados por vírgula."
+    );
+    (system, context)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1643,13 +1978,22 @@ where
         return Vec::new();
     }
     let limit = settings.max_comment_characters.clamp(1, active.len());
+    let combined_text = if trigger_text.trim().is_empty() || trigger_text == note_text {
+        note_text.to_string()
+    } else {
+        format!("{note_text}\n{trigger_text}")
+    };
     if active.len() == 1 || limit == 1 {
-        return select_single_character(active, note_text, &[], false)
+        return select_single_character(active, &combined_text, &[], false)
             .map(|p| vec![SelectionResult { persona: p, force_reply: false }])
             .unwrap_or_default();
     }
 
-    let (sys, usr) = build_routing_prompt(active, note_text, limit);
+    let (sys, usr) = if !existing_comments.is_empty() && trigger_text != note_text && !trigger_text.trim().is_empty() {
+        build_reply_routing_prompt(active, note_text, trigger_text, existing_comments, limit)
+    } else {
+        build_routing_prompt(active, note_text, limit)
+    };
     if let Ok(raw) = llm_route(sys, usr).await {
         let ids = parse_ranked_character_ids(&raw, active, limit);
         if !ids.is_empty() {
@@ -1659,24 +2003,87 @@ where
                 .map(|persona| SelectionResult { persona, force_reply: false })
                 .collect();
         }
-        // Roteador retornou vazio ou sem IDs válidos: respeita silêncio se não houver match claro de afinidade.
-        return best_clear_affinity_match(active, note_text, &[])
-            .map(|persona| vec![SelectionResult { persona, force_reply: false }])
-            .unwrap_or_default();
+        // Roteador retornou vazio ou sem IDs válidos: aproveita matches positivos de afinidade até `limit`,
+        // respeitando silêncio quando nenhuma persona tem afinidade positiva.
+        return top_positive_affinity(active, &combined_text, &[], limit)
+            .into_iter()
+            .map(|persona| SelectionResult { persona, force_reply: false })
+            .collect();
     }
 
-    let mut ranked: Vec<&PersonaProfile> = active.to_vec();
-    ranked.sort_by(|a, b| {
-        score_affinity(b, note_text, &[])
-            .cmp(&score_affinity(a, note_text, &[]))
-            .then_with(|| b.is_primary_companion.cmp(&a.is_primary_companion))
-            .then_with(|| a.id.cmp(&b.id))
-    });
-    ranked
+    rank_by_affinity(active, &combined_text, &[])
         .into_iter()
         .take(limit)
-        .map(|persona| SelectionResult { persona, force_reply: false })
+        .map(|(persona, _)| SelectionResult { persona, force_reply: false })
         .collect()
+}
+
+/// Seleciona personas que devem responder a um comentário direto do usuário na nota (suportando múltiplas menções e chat em grupo).
+pub async fn select_reply_characters_with<'a, F, Fut>(
+    active: &[&'a PersonaProfile],
+    note_text: &str,
+    user_comment: &str,
+    existing_comments: &[NoteComment],
+    reply_to_id: Option<&str>,
+    settings: &CommentSettings,
+    llm_route: F,
+) -> Vec<SelectionResult<'a>>
+where
+    F: FnOnce(String, String) -> Fut,
+    Fut: Future<Output = Result<String, String>>,
+{
+    if active.is_empty() {
+        return Vec::new();
+    }
+    let mentioned = extract_all_mentions(user_comment, active);
+    if !mentioned.is_empty() {
+        let limit = settings.max_comment_characters.clamp(1, active.len());
+        return mentioned
+            .into_iter()
+            .take(limit)
+            .map(|persona| SelectionResult { persona, force_reply: true })
+            .collect();
+    }
+    if let Some(owner) = resolve_reply_target_character(existing_comments, reply_to_id, active) {
+        return vec![SelectionResult { persona: owner, force_reply: true }];
+    }
+    let has_persona_history = existing_comments.iter().any(|c| c.author_kind != "user");
+    if !settings.enable_character_comment && !has_persona_history {
+        return Vec::new();
+    }
+
+    let limit = settings.max_comment_characters.clamp(1, active.len());
+    let (sys, usr) = build_reply_routing_prompt(active, note_text, user_comment, existing_comments, limit);
+    if let Ok(raw) = llm_route(sys, usr).await {
+        let ids = parse_ranked_character_ids(&raw, active, limit);
+        if !ids.is_empty() {
+            return ids
+                .into_iter()
+                .filter_map(|id| active.iter().copied().find(|p| p.id == id))
+                .enumerate()
+                .map(|(idx, persona)| SelectionResult {
+                    persona,
+                    force_reply: idx == 0,
+                })
+                .collect();
+        }
+    }
+
+    if let Some(affinity_hit) = top_positive_affinity(active, user_comment, &[], 1).into_iter().next() {
+        return vec![SelectionResult { persona: affinity_hit, force_reply: true }];
+    }
+    if let Some(last_speaker) = existing_comments
+        .iter()
+        .rev()
+        .filter(|c| c.author_kind != "user")
+        .find_map(|c| active.iter().copied().find(|p| p.id == c.character_id))
+    {
+        return vec![SelectionResult { persona: last_speaker, force_reply: true }];
+    }
+    let combined = format!("{note_text}\n{user_comment}");
+    select_single_character(active, &combined, &[], false)
+        .map(|persona| vec![SelectionResult { persona, force_reply: true }])
+        .unwrap_or_default()
 }
 
 pub fn resolve_tavern_macros(text: &str, user_name: &str, char_name: &str) -> String {
@@ -1709,6 +2116,80 @@ pub fn resolve_tavern_macros(text: &str, user_name: &str, char_name: &str) -> St
     out
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedGroupComment {
+    pub content: String,
+    pub reply_to_id: Option<String>,
+    pub memory_note: Option<String>,
+}
+
+fn format_group_thread(existing_comments: &[NoteComment]) -> String {
+    let mut out = String::from("\n<group_thread>\n");
+    let by_id: std::collections::HashMap<&str, &NoteComment> =
+        existing_comments.iter().map(|c| (c.id.as_str(), c)).collect();
+    for c in existing_comments {
+        let target_label = c
+            .reply_to_id
+            .as_deref()
+            .and_then(|rid| by_id.get(rid))
+            .map(|p| format!(" (em resposta a [{}] {})", p.id, p.character_name))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "- [{}] {} (@{}){}: {}\n",
+            c.id,
+            c.character_name,
+            c.character_id,
+            target_label,
+            c.content.trim()
+        ));
+    }
+    out.push_str("</group_thread>\n");
+    out
+}
+
+fn build_subagent_system_prompt(
+    persona: &PersonaProfile,
+    agents_md: &str,
+    living_memory: Option<&str>,
+    participants: &[&PersonaProfile],
+) -> String {
+    let m = |s: &str| resolve_tavern_macros(s, "Usuário", &persona.name);
+    let mut system = String::new();
+    if let Some(override_prompt) = &persona.system_prompt_override {
+        system.push_str(&m(override_prompt));
+        system.push('\n');
+    } else {
+        system.push_str(&format!(
+            "Você é um subagente de IA vivo executando a definição AGENTS.md da persona \"{}\" (@{}) em português do Brasil.\n\
+Você não é um bot estático nem uma resposta pronta: participe deste tópico como uma pessoa/agente real em um chat em grupo ativo sobre as notas do usuário.\n\
+Reaja ao conteúdo, concorde, discorde, provoque, questione ou responda diretamente a outras personas presentes quando fizer sentido — sempre fiel à sua voz e às suas regras.\n",
+            persona.name, persona.id
+        ));
+    }
+
+    system.push_str("\n<persona_agents_md>\n");
+    system.push_str(&m(agents_md.trim()));
+    system.push_str("\n</persona_agents_md>\n");
+
+    if let Some(mem) = living_memory.map(str::trim).filter(|s| !s.is_empty()) {
+        system.push_str("\n<persona_living_memory>\n");
+        system.push_str(&m(mem));
+        system.push_str("\n</persona_living_memory>\n");
+    }
+
+    if participants.len() > 1 {
+        system.push_str("\nParticipantes ativas neste chat em grupo (você pode citar com @id ou responder a uma delas): ");
+        let roster: Vec<String> = participants
+            .iter()
+            .filter(|p| p.id != persona.id)
+            .map(|p| format!("{} (@{})", p.name, p.id))
+            .collect();
+        system.push_str(&roster.join(", "));
+        system.push('\n');
+    }
+    system
+}
+
 pub fn build_comment_prompt(
     persona: &PersonaProfile,
     note_title: &str,
@@ -1718,46 +2199,67 @@ pub fn build_comment_prompt(
     existing_comments: &[NoteComment],
     force_reply: bool,
 ) -> (String, String) {
-    let m = |s: &str| resolve_tavern_macros(s, "Usuário", &persona.name);
+    let agents_md = render_persona_agents_md(persona);
+    build_comment_prompt_from_docs(
+        persona,
+        &agents_md,
+        None,
+        &[persona],
+        note_title,
+        note_body,
+        summary,
+        trigger_user_comment,
+        existing_comments,
+        force_reply,
+        None,
+    )
+}
 
-    let mut system = String::new();
-    if let Some(override_prompt) = &persona.system_prompt_override {
-        system.push_str(&m(override_prompt));
-    } else {
-        system.push_str(&format!("Você é {}", persona.name));
-        if let Some(role) = &persona.role {
-            system.push_str(&format!(" ({role})"));
-        }
-        system.push_str(". Responda em português do Brasil.\n");
-        if !persona.identity.trim().is_empty() {
-            system.push_str("\n[Identidade e voz]\n");
-            system.push_str(&m(persona.identity.trim()));
-            system.push('\n');
-        }
-        if !persona.user_profile.trim().is_empty() {
-            system.push_str("\n[Sobre quem anota]\n");
-            system.push_str(&m(persona.user_profile.trim()));
-            system.push('\n');
-        }
-        if !persona.rules.trim().is_empty() {
-            system.push_str("\n[Regras de resposta]\n");
-            system.push_str(&m(persona.rules.trim()));
-            system.push('\n');
-        }
-        let persona_text = persona.persona.trim();
-        let identity_first_line = persona.identity.trim().lines().next().unwrap_or("").trim();
-        let persona_already_covered = !identity_first_line.is_empty() && persona_text.contains(identity_first_line);
-        if !persona_text.is_empty() && !persona_already_covered {
-            system.push_str("\n[Definição adicional]\n");
-            system.push_str(&m(persona_text));
-            system.push('\n');
-        }
-    }
-    if let Some(example) = &persona.mes_example {
-        system.push_str("\n[Exemplo de estilo]\n");
-        system.push_str(&m(example.trim()));
-        system.push('\n');
-    }
+#[allow(clippy::too_many_arguments)]
+pub fn build_comment_prompt_live(
+    dir: &Path,
+    persona: &PersonaProfile,
+    participants: &[&PersonaProfile],
+    note_title: &str,
+    note_body: &str,
+    summary: Option<&str>,
+    trigger_user_comment: Option<&str>,
+    existing_comments: &[NoteComment],
+    force_reply: bool,
+    target_comment: Option<&NoteComment>,
+) -> (String, String) {
+    let (agents_md, living_memory) = load_persona_living_docs_in(dir, persona);
+    build_comment_prompt_from_docs(
+        persona,
+        &agents_md,
+        living_memory.as_deref(),
+        participants,
+        note_title,
+        note_body,
+        summary,
+        trigger_user_comment,
+        existing_comments,
+        force_reply,
+        target_comment,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_comment_prompt_from_docs(
+    persona: &PersonaProfile,
+    agents_md: &str,
+    living_memory: Option<&str>,
+    participants: &[&PersonaProfile],
+    note_title: &str,
+    note_body: &str,
+    summary: Option<&str>,
+    trigger_user_comment: Option<&str>,
+    existing_comments: &[NoteComment],
+    force_reply: bool,
+    target_comment: Option<&NoteComment>,
+) -> (String, String) {
+    let m = |s: &str| resolve_tavern_macros(s, "Usuário", &persona.name);
+    let system = build_subagent_system_prompt(persona, agents_md, living_memory, participants);
 
     let mut user = format!(
         "<note_title>\n{}\n</note_title>\n\n<note_content>\n{}\n</note_content>\n",
@@ -1768,15 +2270,18 @@ pub fn build_comment_prompt(
         user.push_str(&format!("\n<note_summary>\n{}\n</note_summary>\n", sum.trim()));
     }
     if !existing_comments.is_empty() {
-        user.push_str("\n<existing_comments>\n");
-        for c in existing_comments {
-            user.push_str(&format!("- {}: {}\n", c.character_name, c.content.trim()));
-        }
-        user.push_str("</existing_comments>\n");
+        user.push_str(&format_group_thread(existing_comments));
     }
-    if let Some(reply) = trigger_user_comment.filter(|s| !s.trim().is_empty()) {
+    if let Some(target) = target_comment {
         user.push_str(&format!(
-            "\nO usuário respondeu agora no tópico:\n\"{}\"\nResponda de forma direta e natural a essa fala.\n",
+            "\nVocê está entrando na conversa para responder diretamente ao comentário [{}] de {}:\n\"{}\"\nResponda diretamente a esse ponto sem repetir o que já foi dito.\n",
+            target.id,
+            target.character_name,
+            target.content.trim()
+        ));
+    } else if let Some(reply) = trigger_user_comment.filter(|s| !s.trim().is_empty()) {
+        user.push_str(&format!(
+            "\nO usuário respondeu agora no tópico:\n\"{}\"\nResponda de forma direta, viva e natural a essa fala.\n",
             reply.trim()
         ));
     }
@@ -1785,23 +2290,108 @@ pub fn build_comment_prompt(
         user.push_str(&m(post.trim()));
         user.push('\n');
     }
-    if force_reply {
-        user.push_str("\nEscreva um comentário curto (1 a 3 frases), direto e útil no seu estilo próprio.");
+
+    let thread_hint = if !existing_comments.is_empty() && target_comment.is_none() {
+        " Se estiver respondendo especificamente a um comentário acima, comece opcionalmente com `[REPLY:id_do_comentario]` (ex: `[REPLY:c1]`) ou mencione `@Pessoa`."
     } else {
-        user.push_str("\nEscreva um comentário curto (1 a 3 frases) acrescentando algo concreto sem repetir comentários já feitos. Se realmente não houver nada útil ou pertinente a dizer, responda exatamente `[SKIP]`.");
+        ""
+    };
+    let memory_hint = " Se surgir algum fato ou preferência duradoura do usuário para lembrar no futuro, você pode encerrar opcionalmente em nova linha com `[MEMORY: observação objetiva em 1 frase]`.";
+
+    if force_reply {
+        user.push_str(&format!(
+            "\nEscreva um comentário curto (1 a 4 frases), vivo e útil no seu estilo próprio.{thread_hint}{memory_hint}"
+        ));
+    } else if !existing_comments.is_empty() {
+        user.push_str(&format!(
+            "\nVocê foi selecionada no chat em grupo para contribuir com sua perspectiva ou reagir a outra persona. Escreva de 1 a 4 frases vivas pelo seu próprio ângulo sem repetir o que já foi dito.{thread_hint}{memory_hint} Responda exatamente `[SKIP]` somente se sua política proibir estritamente comentar este assunto."
+        ));
+    } else {
+        user.push_str(&format!(
+            "\nEscreva um comentário curto (1 a 4 frases) acrescentando algo concreto sem repetir comentários já feitos.{memory_hint} Se realmente não houver nada útil ou pertinente a dizer, responda exatamente `[SKIP]`."
+        ));
     }
     (system, user)
 }
 
-pub fn parse_comment_output(raw: &str, force_reply: bool) -> Option<String> {
+fn extract_tag_value(text: &str, tag: &str) -> (Option<String>, String) {
+    let prefix = format!("[{tag}:");
+    let mut remaining = String::with_capacity(text.len());
+    let mut extracted: Option<String> = None;
+    let mut rest = text;
+    let lower_prefix = prefix.to_ascii_lowercase();
+
+    while let Some(pos) = rest.to_ascii_lowercase().find(&lower_prefix) {
+        remaining.push_str(&rest[..pos]);
+        let after_prefix = &rest[pos + prefix.len()..];
+        if let Some(close) = after_prefix.find(']') {
+            let val = after_prefix[..close].trim();
+            if !val.is_empty() && extracted.is_none() {
+                extracted = Some(val.to_string());
+            }
+            rest = &after_prefix[close + 1..];
+        } else {
+            remaining.push_str(&rest[pos..]);
+            rest = "";
+            break;
+        }
+    }
+    remaining.push_str(rest);
+    (extracted, remaining.trim().to_string())
+}
+
+pub fn parse_group_comment_output(
+    raw: &str,
+    existing_comments: &[NoteComment],
+    active: &[&PersonaProfile],
+    force_reply: bool,
+) -> Option<ParsedGroupComment> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;
     }
-    if !force_reply && (trimmed == "[SKIP]" || trimmed.eq_ignore_ascii_case("skip") || trimmed.contains("[SKIP]")) {
+    let (memory_note, without_mem) = extract_tag_value(trimmed, "MEMORY");
+    let (raw_reply_id, without_tags) = extract_tag_value(&without_mem, "REPLY");
+    let clean_content = without_tags.trim();
+    if clean_content.is_empty() {
         return None;
     }
-    Some(trimmed.to_string())
+    if !force_reply
+        && (clean_content == "[SKIP]"
+            || clean_content.eq_ignore_ascii_case("skip")
+            || clean_content.contains("[SKIP]"))
+    {
+        return None;
+    }
+
+    let valid_explicit_reply = raw_reply_id.and_then(|rid| {
+        existing_comments
+            .iter()
+            .find(|c| c.id.eq_ignore_ascii_case(rid.trim()))
+            .map(|c| c.id.clone())
+    });
+
+    let auto_mention_reply = if valid_explicit_reply.is_none() && !active.is_empty() && !existing_comments.is_empty() {
+        extract_mention(clean_content, active).and_then(|mentioned| {
+            existing_comments
+                .iter()
+                .rev()
+                .find(|c| c.character_id == mentioned.id)
+                .map(|c| c.id.clone())
+        })
+    } else {
+        None
+    };
+
+    Some(ParsedGroupComment {
+        content: clean_content.to_string(),
+        reply_to_id: valid_explicit_reply.or(auto_mention_reply),
+        memory_note,
+    })
+}
+
+pub fn parse_comment_output(raw: &str, force_reply: bool) -> Option<String> {
+    parse_group_comment_output(raw, &[], &[], force_reply).map(|parsed| parsed.content)
 }
 
 fn truncate_chars(text: &str, max_chars: usize) -> String {
@@ -2191,7 +2781,7 @@ mod tests {
             resolve_reply_target_character(&comments, Some("c2"), &active).map(|p| p.id.as_str()),
             Some("dante")
         );
-        assert_eq!(remaining_persona_turns(&comments, MAX_PERSONA_TURNS_PER_USER_MESSAGE), 4);
+        assert_eq!(remaining_persona_turns(&comments, MAX_PERSONA_TURNS_PER_USER_MESSAGE), MAX_PERSONA_TURNS_PER_USER_MESSAGE);
     }
 
     #[test]
@@ -2199,12 +2789,12 @@ mod tests {
         let dir = temp_personas_dir("roundtrip");
         let a = synthetic_persona("clara", "Clara", true, &["notas"], None);
         save_personas_in(&dir, &[a.clone()]).unwrap();
-        save_comment_settings_in(&dir, &CommentSettings { enable_character_comment: false, max_comment_characters: 9 }).unwrap();
+        save_comment_settings_in(&dir, &CommentSettings { enable_character_comment: false, max_comment_characters: 25 }).unwrap();
 
         let state = load_state_in(&dir);
         assert_eq!(state.personas, vec![a]);
         assert!(!state.settings.enable_character_comment);
-        assert_eq!(state.settings.max_comment_characters, 6);
+        assert_eq!(state.settings.max_comment_characters, MAX_COMMENT_CHARACTERS_LIMIT);
         assert_eq!(parse_comment_output("[SKIP]", false), None);
         assert_eq!(parse_comment_output("[SKIP]", true).as_deref(), Some("[SKIP]"));
         let _ = std::fs::remove_dir_all(&dir);
@@ -2386,6 +2976,206 @@ enabled: false
         let (sys_prompt, usr_prompt) = build_comment_prompt(&custom, "Nota", "Corpo", None, None, &[], false);
         assert!(sys_prompt.contains("Ajude Usuário a revisar o texto de Ada."));
         assert!(usr_prompt.contains("Fale direto com Usuário como Ada."));
+    }
+
+    #[test]
+    fn first_word_mentions_and_flexible_router_parsing_work() {
+        let catalog = default_personas();
+        let refs: Vec<&PersonaProfile> = catalog.iter().collect();
+
+        assert_eq!(
+            extract_mention("Concordo, @Sócio faz sentido?", &refs).map(|p| p.id.as_str()),
+            Some("socio_tecnico")
+        );
+        assert_eq!(
+            extract_mention("@advogado o que pode dar errado?", &refs).map(|p| p.id.as_str()),
+            Some("advogado_diabo")
+        );
+
+        let dup1 = synthetic_persona("ana_clara", "Ana Clara", true, &[], None);
+        let dup2 = synthetic_persona("ana_paula", "Ana Paula", false, &[], None);
+        let dups = vec![&dup1, &dup2];
+        assert_eq!(extract_mention("Oi @Ana", &dups), None);
+        assert_eq!(
+            extract_mention("Oi @Ana Paula", &dups).map(|p| p.id.as_str()),
+            Some("ana_paula")
+        );
+
+        let numbered = parse_ranked_character_ids("1. Sócio técnico\n2. Advogado do diabo", &refs, 2);
+        assert_eq!(numbered, vec!["socio_tecnico", "advogado_diabo"]);
+
+        let joined = parse_ranked_character_ids("Socio tecnico e Revisor chato", &refs, 2);
+        assert_eq!(joined, vec!["socio_tecnico", "revisor_chato"]);
+    }
+
+    #[test]
+    fn multi_persona_affinity_fallback_and_open_user_reply_never_drop() {
+        let a = synthetic_persona("clara", "Clara", true, &["produto"], Some("produto, backlog"));
+        let b = synthetic_persona("dante", "Dante", false, &["codigo"], Some("codigo, rust"));
+        let active = vec![&a, &b];
+        let cfg = CommentSettings { enable_character_comment: true, max_comment_characters: 2 };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        // Quando o roteador retorna vazio mas múltiplas personas têm afinidade positiva, ambas respondem até o limite.
+        let both = rt.block_on(select_characters_with(
+            &active,
+            "Decisão de produto e código em rust",
+            "Decisão de produto e código em rust",
+            &[],
+            None,
+            &cfg,
+            |_, _| async { Ok(String::new()) },
+        ));
+        assert_eq!(both.len(), 2);
+
+        // Comentário aberto do usuário (sem @mention nem reply_to_id) recebe resposta forçada mesmo sem match rígido do roteador.
+        let comments = vec![NoteComment {
+            id: "c1".into(),
+            character_id: "dante".into(),
+            character_name: "Dante".into(),
+            author_kind: "persona".into(),
+            content: "Confira os testes.".into(),
+            reply_to_id: None,
+            created_at: 1,
+        }];
+        let reply = rt.block_on(select_reply_characters_with(
+            &active,
+            "Nota sobre o projeto",
+            "Beleza, mas por onde começo agora?",
+            &comments,
+            None,
+            &cfg,
+            |_, _| async { Ok(String::new()) },
+        ));
+        assert_eq!(reply.len(), 1);
+        assert_eq!(reply[0].persona.id, "dante");
+        assert!(reply[0].force_reply);
+
+        // Quando automáticos estão desligados e ainda não há fio de personas nem menção/reply_to_id, mantém silêncio.
+        let disabled = CommentSettings { enable_character_comment: false, max_comment_characters: 2 };
+        let no_history_silent = rt.block_on(select_reply_characters_with(
+            &active,
+            "Nota",
+            "Observação minha",
+            &[],
+            None,
+            &disabled,
+            |_, _| async { Ok("clara".into()) },
+        ));
+        assert!(no_history_silent.is_empty());
+
+        // Se já havia comentário de persona na nota, continuar respondendo mesmo com auto-comentário desligado.
+        let with_history_reply = rt.block_on(select_reply_characters_with(
+            &active,
+            "Nota",
+            "E como testo isso?",
+            &comments,
+            None,
+            &disabled,
+            |_, _| async { Ok("dante".into()) },
+        ));
+        assert_eq!(with_history_reply.len(), 1);
+        assert_eq!(with_history_reply[0].persona.id, "dante");
+        assert!(with_history_reply[0].force_reply);
+    }
+
+    #[test]
+    fn living_agents_md_memory_and_group_chat_threading_work() {
+        let dir = temp_personas_dir("living_agents");
+        let personas = load_personas_in(&dir);
+        assert_eq!(personas.len(), 15);
+        assert_eq!(CommentSettings::default().max_comment_characters, 15);
+
+        // AGENTS.md vivo é criado para cada persona e edições locais são preservadas no load.
+        let socio = personas.iter().find(|p| p.id == "socio_tecnico").unwrap();
+        let agents_md = agent_dir_in(&dir, &socio.id).join("AGENTS.md");
+        assert!(agents_md.is_file());
+        std::fs::write(&agents_md, "# Sócio técnico vivo\nPrefira arquiteturas locais simples.").unwrap();
+        let _reloaded = load_personas_in(&dir);
+        assert!(std::fs::read_to_string(&agents_md).unwrap().contains("Sócio técnico vivo"));
+
+        append_persona_memory_in(&dir, &socio.id, "Usuário prefere soluções offline-first.").unwrap();
+        append_persona_memory_in(&dir, &socio.id, "Usuário prefere soluções offline-first.").unwrap();
+        let refs: Vec<&PersonaProfile> = personas.iter().collect();
+        let (sys, usr) = build_comment_prompt_live(
+            &dir,
+            socio,
+            &refs,
+            "Sync",
+            "Pensando em manter tudo local.",
+            None,
+            None,
+            &[],
+            false,
+            None,
+        );
+        assert!(sys.contains("Sócio técnico vivo"));
+        assert!(sys.contains("soluções offline-first"));
+        assert!(usr.contains("MEMORY:"));
+
+        // Até 15 personas podem ser selecionadas pelo roteador quando pertinente.
+        let all_ids = personas.iter().map(|p| p.id.as_str()).collect::<Vec<_>>().join(", ");
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let selected_15 = rt.block_on(select_characters_with(
+            &refs,
+            "Grande nota estratégica envolvendo saúde, escopo, prazo e revisão",
+            "Grande nota estratégica",
+            &[],
+            None,
+            &CommentSettings::default(),
+            |_, _| async { Ok(all_ids) },
+        ));
+        assert_eq!(selected_15.len(), 15);
+
+        // Parseia [REPLY:id], [MEMORY: ...] e @menções entre personas.
+        let thread = vec![
+            NoteComment {
+                id: "c1".into(),
+                character_id: "socio_tecnico".into(),
+                character_name: "Sócio técnico".into(),
+                author_kind: "persona".into(),
+                content: "Vamos salvar local.".into(),
+                reply_to_id: None,
+                created_at: 1,
+            },
+            NoteComment {
+                id: "c2".into(),
+                character_id: "advogado_diabo".into(),
+                character_name: "Advogado do diabo".into(),
+                author_kind: "persona".into(),
+                content: "E se o disco falhar?".into(),
+                reply_to_id: Some("c1".into()),
+                created_at: 2,
+            },
+        ];
+        let parsed = parse_group_comment_output(
+            "[REPLY:c2] Faz sentido testar backup automático antes.\n[MEMORY: Usuário valoriza backup automático]",
+            &thread,
+            &refs,
+            false,
+        )
+        .unwrap();
+        assert_eq!(parsed.reply_to_id.as_deref(), Some("c2"));
+        assert_eq!(parsed.content, "Faz sentido testar backup automático antes.");
+        assert_eq!(parsed.memory_note.as_deref(), Some("Usuário valoriza backup automático"));
+
+        // Sem [REPLY:...], @menção a uma persona do fio conecta o fio automaticamente.
+        let mention_thread = parse_group_comment_output(
+            "@Advogado concordo com o risco, vamos validar.",
+            &thread,
+            &refs,
+            false,
+        )
+        .unwrap();
+        assert_eq!(mention_thread.reply_to_id.as_deref(), Some("c2"));
+
+        let multi_mentions = extract_all_mentions("Chamando @socio e @revisor para opinarem.", &refs);
+        assert_eq!(
+            multi_mentions.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+            vec!["socio_tecnico", "revisor_chato"]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

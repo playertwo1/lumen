@@ -161,6 +161,40 @@ pub fn is_recording(app: &AppHandle) -> bool {
     get(app).is_some_and(|n| n.recording.lock().unwrap().is_some())
 }
 
+pub fn ensure_idle_for_restore(app: &AppHandle) -> Result<(), String> {
+    let Some(taker) = get(app) else {
+        return Ok(());
+    };
+    if taker.recording.lock().unwrap().is_some() {
+        return Err("Não é possível restaurar notas enquanto uma gravação está em andamento.".into());
+    }
+    if !taker.working.lock().unwrap().is_empty() {
+        return Err("Não é possível restaurar notas enquanto uma transcrição ou resumo está em andamento.".into());
+    }
+    Ok(())
+}
+
+pub fn reload_from_disk(app: &AppHandle) -> Result<(), String> {
+    ensure_idle_for_restore(app)?;
+    let Some(taker) = get(app) else {
+        return Ok(());
+    };
+    let mut loaded: Vec<Note> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(folder()) {
+        for entry in entries.flatten() {
+            if let Ok(text) = std::fs::read_to_string(entry.path().join("note.json")) {
+                if let Ok(note) = serde_json::from_str::<Note>(&text) {
+                    loaded.push(note);
+                }
+            }
+        }
+    }
+    loaded.sort_by(|a, b| b.start.cmp(&a.start));
+    *taker.notes.lock().unwrap() = loaded;
+    let _ = app.emit_to(crate::HUB_LABEL, "notes-changed", "");
+    Ok(())
+}
+
 fn now_ms() -> u64 {
     crate::flow::store::now_ms()
 }
@@ -705,6 +739,48 @@ impl<'a> CommentRunGuard<'a> {
         }
         Some(Self { set, id: id.to_string() })
     }
+
+    fn acquire_wait(set: &'a Mutex<HashSet<String>>, id: &str, max_wait: Duration) -> Option<Self> {
+        let deadline = std::time::Instant::now() + max_wait;
+        loop {
+            if let Some(guard) = Self::acquire(set, id) {
+                return Some(guard);
+            }
+            if std::time::Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(150));
+        }
+    }
+}
+
+async fn complete_persona_llm(
+    settings: &crate::settings::Settings,
+    summary_engine: SummaryEngine,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+    timeout: Duration,
+) -> Result<String, String> {
+    match crate::chat::complete_oneshot(settings, system, user, max_tokens, timeout).await {
+        Ok(text) => Ok(text),
+        Err(chat_err) => {
+            if !matches!(summary_engine, SummaryEngine::Off | SummaryEngine::Chat) {
+                crate::log::line(format!(
+                    "notes: persona chat failed ({chat_err}), falling back to summary engine"
+                ));
+                match crate::chat::complete_summary(settings, summary_engine, system, user, max_tokens, timeout).await {
+                    Ok(text) => return Ok(text),
+                    Err(summary_err) => {
+                        crate::log::line(format!("notes: persona fallback failed: {summary_err}"));
+                        return Err(summary_err);
+                    }
+                }
+            }
+            crate::log::line(format!("notes: persona completion failed: {chat_err}"));
+            Err(chat_err)
+        }
+    }
 }
 
 impl Drop for CommentRunGuard<'_> {
@@ -797,9 +873,201 @@ fn apply_auto_comments_dedup(
     added
 }
 
+struct GroupRoundContext<'a> {
+    app: &'a AppHandle,
+    taker: &'a Arc<NoteTaker>,
+    note_id: &'a str,
+    title: &'a str,
+    body: &'a str,
+    summary_text: Option<&'a str>,
+    trigger_user_comment: Option<&'a str>,
+    settings: &'a crate::settings::Settings,
+    summary_engine: SummaryEngine,
+    personas_dir: &'a std::path::Path,
+    active: &'a [&'a personas::PersonaProfile],
+    existing: &'a mut Vec<personas::NoteComment>,
+}
+
+fn push_comment_live(
+    app: &AppHandle,
+    taker: &Arc<NoteTaker>,
+    note_id: &str,
+    comment: &personas::NoteComment,
+    hash_if_auto: Option<&str>,
+) {
+    let entry = comment.clone();
+    taker.change(app, note_id, |n| {
+        n.error = None;
+        if let Some(hash) = hash_if_auto {
+            apply_auto_comments_dedup(n, hash, vec![entry]);
+        } else {
+            n.comments.push(entry);
+        }
+    });
+}
+
+async fn invoke_persona_subagent(
+    ctx: &mut GroupRoundContext<'_>,
+    persona: &personas::PersonaProfile,
+    force_reply: bool,
+    target_comment: Option<&personas::NoteComment>,
+    hash_if_auto: Option<&str>,
+    fallback_reply_to: Option<&str>,
+) -> Result<Option<personas::NoteComment>, String> {
+    let (sys, usr) = personas::build_comment_prompt_live(
+        ctx.personas_dir,
+        persona,
+        ctx.active,
+        ctx.title,
+        ctx.body,
+        ctx.summary_text,
+        ctx.trigger_user_comment,
+        ctx.existing,
+        force_reply,
+        target_comment,
+    );
+    let raw = complete_persona_llm(
+        ctx.settings,
+        ctx.summary_engine,
+        &sys,
+        &usr,
+        512,
+        Duration::from_secs(60),
+    )
+    .await?;
+
+    let Some(parsed) = personas::parse_group_comment_output(&raw, ctx.existing, ctx.active, force_reply) else {
+        return Ok(None);
+    };
+    if let Some(mem) = parsed.memory_note.as_deref() {
+        let _ = personas::append_persona_memory_in(ctx.personas_dir, &persona.id, mem);
+    }
+
+    let resolved_reply = parsed
+        .reply_to_id
+        .or_else(|| target_comment.map(|c| c.id.clone()))
+        .or_else(|| fallback_reply_to.map(str::to_string));
+
+    let comment = personas::NoteComment {
+        id: crate::flow::text::new_id(),
+        character_id: persona.id.clone(),
+        character_name: persona.name.clone(),
+        author_kind: "persona".to_string(),
+        content: parsed.content,
+        reply_to_id: resolved_reply,
+        created_at: now_ms(),
+    };
+    ctx.existing.push(comment.clone());
+    push_comment_live(ctx.app, ctx.taker, ctx.note_id, &comment, hash_if_auto);
+    Ok(Some(comment))
+}
+
+async fn run_cross_persona_followup_wave(
+    ctx: &mut GroupRoundContext<'_>,
+    wave1_comments: &[personas::NoteComment],
+    already_replied_in_followup: &mut HashSet<String>,
+    cross_budget: usize,
+) -> Option<String> {
+    if wave1_comments.is_empty() || cross_budget == 0 || ctx.active.len() < 2 {
+        return None;
+    }
+
+    // 1) Personas diretamente mencionadas por outras personas na rodada respondem direto àquele comentário.
+    let mut targets: Vec<(&personas::PersonaProfile, personas::NoteComment, bool)> = Vec::new();
+    for comment in wave1_comments {
+        for mentioned in personas::extract_all_mentions(&comment.content, ctx.active) {
+            if mentioned.id == comment.character_id
+                || already_replied_in_followup.contains(&mentioned.id)
+                || targets.iter().any(|(p, _, _)| p.id == mentioned.id)
+            {
+                continue;
+            }
+            targets.push((mentioned, comment.clone(), true));
+            if targets.len() >= cross_budget {
+                break;
+            }
+        }
+        if targets.len() >= cross_budget {
+            break;
+        }
+    }
+
+    // 2) Se ainda há espaço na janela de diálogo entre personas, o coordenador convida réplicas pertinentes.
+    let remaining_cross = cross_budget.saturating_sub(targets.len());
+    if remaining_cross > 0 {
+        let candidates: Vec<&personas::PersonaProfile> = ctx
+            .active
+            .iter()
+            .copied()
+            .filter(|p| {
+                !already_replied_in_followup.contains(&p.id)
+                    && !targets.iter().any(|(tp, _, _)| tp.id == p.id)
+            })
+            .collect();
+        if !candidates.is_empty() {
+            let (sys, usr) = personas::build_group_followup_routing_prompt(
+                &candidates,
+                ctx.body,
+                ctx.existing,
+                remaining_cross,
+            );
+            if let Ok(raw) = complete_persona_llm(
+                ctx.settings,
+                ctx.summary_engine,
+                &sys,
+                &usr,
+                256,
+                Duration::from_secs(45),
+            )
+            .await
+            {
+                for id in personas::parse_ranked_character_ids(&raw, &candidates, remaining_cross) {
+                    let Some(persona) = candidates.iter().copied().find(|p| p.id == id) else {
+                        continue;
+                    };
+                    let default_target = ctx
+                        .existing
+                        .iter()
+                        .rev()
+                        .find(|c| c.author_kind != "user" && c.character_id != persona.id)
+                        .cloned();
+                    if let Some(target_c) = default_target {
+                        targets.push((persona, target_c, false));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut last_err: Option<String> = None;
+    for (persona, target_comment, force_reply) in targets {
+        already_replied_in_followup.insert(persona.id.clone());
+        match invoke_persona_subagent(
+            ctx,
+            persona,
+            force_reply,
+            Some(&target_comment),
+            None,
+            Some(target_comment.id.as_str()),
+        )
+        .await
+        {
+            Ok(Some(_)) => {}
+            Ok(None) => {}
+            Err(err) => last_err = Some(err),
+        }
+    }
+    last_err
+}
+
 fn maybe_generate_auto_comments(app: &AppHandle, id: &str, force_refresh: bool) {
     let Some(taker) = get(app) else { return };
-    let Some(_guard) = CommentRunGuard::acquire(&taker.commenting, id) else {
+    let _guard = if force_refresh {
+        CommentRunGuard::acquire_wait(&taker.commenting, id, Duration::from_secs(30))
+    } else {
+        CommentRunGuard::acquire(&taker.commenting, id)
+    };
+    let Some(_guard) = _guard else {
         return;
     };
     let Some(note) = taker.note(id) else { return };
@@ -816,9 +1084,35 @@ fn maybe_generate_auto_comments(app: &AppHandle, id: &str, force_refresh: bool) 
     if active.is_empty() {
         return;
     }
+    let already_top_level: HashSet<String> = note
+        .comments
+        .iter()
+        .filter(|c| c.reply_to_id.is_none() && c.author_kind != "user")
+        .map(|c| c.character_id.clone())
+        .collect();
+    let candidates: Vec<&personas::PersonaProfile> = active
+        .iter()
+        .copied()
+        .filter(|p| !already_top_level.contains(&p.id))
+        .collect();
+    if candidates.is_empty() {
+        return;
+    }
+    let effective_max = state.settings.max_comment_characters.clamp(1, active.len());
+    let slots = if force_refresh {
+        effective_max
+    } else {
+        effective_max.saturating_sub(already_top_level.len())
+    };
+    if slots == 0 {
+        return;
+    }
     let Some(settings) = app.try_state::<crate::Shared>().map(|s| s.settings.lock().unwrap().clone()) else {
         return;
     };
+    let summary_engine = crate::flow::get(app)
+        .map(|f| f.store.lock().unwrap().prefs.summary_engine)
+        .unwrap_or_default();
 
     taker.working.lock().unwrap().push(id.to_string());
     let _ = app.emit_to(crate::HUB_LABEL, "notes-changed", id);
@@ -826,18 +1120,15 @@ fn maybe_generate_auto_comments(app: &AppHandle, id: &str, force_refresh: bool) 
     let summary_text = note.summary.clone();
     let mut existing = note.comments.clone();
     let title = note.title.clone();
-    let comment_settings = if force_refresh {
-        personas::CommentSettings {
-            enable_character_comment: true,
-            ..state.settings.clone()
-        }
-    } else {
-        state.settings.clone()
+    let personas_dir = personas::store_dir();
+    let comment_settings = personas::CommentSettings {
+        enable_character_comment: if force_refresh { true } else { state.settings.enable_character_comment },
+        max_comment_characters: slots,
     };
 
-    let generated = tauri::async_runtime::block_on(async {
+    let (produced_count, last_error) = tauri::async_runtime::block_on(async {
         let selected = personas::select_characters_with(
-            &active,
+            &candidates,
             &body,
             &body,
             &existing,
@@ -846,15 +1137,31 @@ fn maybe_generate_auto_comments(app: &AppHandle, id: &str, force_refresh: bool) 
             |sys, usr| {
                 let cfg = settings.clone();
                 async move {
-                    crate::chat::complete_oneshot(&cfg, &sys, &usr, 256, Duration::from_secs(45)).await
+                    complete_persona_llm(&cfg, summary_engine, &sys, &usr, 256, Duration::from_secs(45)).await
                 }
             },
         )
         .await;
 
-        let mut produced = Vec::new();
+        let mut ctx = GroupRoundContext {
+            app,
+            taker: &taker,
+            note_id: id,
+            title: &title,
+            body: &body,
+            summary_text: summary_text.as_deref(),
+            trigger_user_comment: None,
+            settings: &settings,
+            summary_engine,
+            personas_dir: &personas_dir,
+            active: &active,
+            existing: &mut existing,
+        };
+
+        let mut wave1 = Vec::new();
+        let mut last_err: Option<String> = None;
         for item in selected {
-            let already_commented = existing.iter().any(|c| {
+            let already_commented = ctx.existing.iter().any(|c| {
                 c.reply_to_id.is_none()
                     && c.author_kind != "user"
                     && c.character_id == item.persona.id
@@ -862,40 +1169,57 @@ fn maybe_generate_auto_comments(app: &AppHandle, id: &str, force_refresh: bool) 
             if already_commented {
                 continue;
             }
-            let (sys, usr) = personas::build_comment_prompt(
+            match invoke_persona_subagent(
+                &mut ctx,
                 item.persona,
-                &title,
-                &body,
-                summary_text.as_deref(),
-                None,
-                &existing,
                 item.force_reply,
-            );
-            let Ok(raw) = crate::chat::complete_oneshot(&settings, &sys, &usr, 512, Duration::from_secs(60)).await else {
-                continue;
-            };
-            let Some(text) = personas::parse_comment_output(&raw, item.force_reply) else {
-                continue;
-            };
-            let comment = personas::NoteComment {
-                id: crate::flow::text::new_id(),
-                character_id: item.persona.id.clone(),
-                character_name: item.persona.name.clone(),
-                author_kind: "persona".to_string(),
-                content: text,
-                reply_to_id: None,
-                created_at: now_ms(),
-            };
-            existing.push(comment.clone());
-            produced.push(comment);
+                None,
+                Some(hash.as_str()),
+                None,
+            )
+            .await
+            {
+                Ok(Some(comment)) => wave1.push(comment),
+                Ok(None) => {}
+                Err(err) => last_err = Some(err),
+            }
         }
-        produced
+
+        // Marca o hash mesmo quando o roteamento foi silencioso, evitando reprocessar a mesma nota em loop.
+        taker.change(app, id, |n| {
+            apply_auto_comments_dedup(n, &hash, Vec::new());
+        });
+
+        let cross_budget = slots
+            .saturating_sub(wave1.len())
+            .min(personas::MAX_CROSS_TALK_REPLIES_PER_WAVE);
+        let mut spoken_followup = HashSet::new();
+        if let Some(err) = run_cross_persona_followup_wave(
+            &mut ctx,
+            &wave1,
+            &mut spoken_followup,
+            cross_budget,
+        )
+        .await
+        {
+            if wave1.is_empty() {
+                last_err = Some(err);
+            }
+        }
+
+        (wave1.len(), last_err)
     });
 
     taker.working.lock().unwrap().retain(|w| w != id);
-    taker.change(app, id, |n| {
-        apply_auto_comments_dedup(n, &hash, generated);
-    });
+    if produced_count == 0 {
+        if let Some(err) = last_error {
+            taker.change(app, id, |n| {
+                n.error = Some(err);
+            });
+            return;
+        }
+    }
+    let _ = app.emit_to(crate::HUB_LABEL, "notes-changed", id);
 }
 
 fn handle_user_comment_replies(
@@ -906,7 +1230,7 @@ fn handle_user_comment_replies(
     parent_reply_to: Option<&str>,
 ) {
     let Some(taker) = get(app) else { return };
-    let Some(_guard) = CommentRunGuard::acquire(&taker.commenting, note_id) else {
+    let Some(_guard) = CommentRunGuard::acquire_wait(&taker.commenting, note_id, Duration::from_secs(30)) else {
         return;
     };
     let Some(note) = taker.note(note_id) else { return };
@@ -915,9 +1239,10 @@ fn handle_user_comment_replies(
     if active.is_empty() {
         return;
     }
-    let has_direct_target = personas::extract_mention(user_text, &active).is_some()
+    let has_direct_target = !personas::extract_all_mentions(user_text, &active).is_empty()
         || personas::resolve_reply_target_character(&note.comments, parent_reply_to, &active).is_some();
-    if !has_direct_target {
+    let has_persona_history = note.comments.iter().any(|c| c.author_kind != "user");
+    if !has_direct_target && !state.settings.enable_character_comment && !has_persona_history {
         return;
     }
     let remaining = personas::remaining_persona_turns(&note.comments, personas::MAX_PERSONA_TURNS_PER_USER_MESSAGE);
@@ -927,63 +1252,108 @@ fn handle_user_comment_replies(
     let Some(settings) = app.try_state::<crate::Shared>().map(|s| s.settings.lock().unwrap().clone()) else {
         return;
     };
+    let summary_engine = crate::flow::get(app)
+        .map(|f| f.store.lock().unwrap().prefs.summary_engine)
+        .unwrap_or_default();
     let body = plain_transcript(&note);
     let summary_text = note.summary.clone();
     let title = note.title.clone();
-    let existing = note.comments.clone();
+    let mut existing = note.comments.clone();
+    let personas_dir = personas::store_dir();
 
     taker.working.lock().unwrap().push(note_id.to_string());
     let _ = app.emit_to(crate::HUB_LABEL, "notes-changed", note_id);
 
-    let reply = tauri::async_runtime::block_on(async {
-        let selected = personas::select_characters_with(
+    let (produced_count, last_error) = tauri::async_runtime::block_on(async {
+        let reply_settings = personas::CommentSettings {
+            enable_character_comment: state.settings.enable_character_comment,
+            max_comment_characters: state
+                .settings
+                .max_comment_characters
+                .clamp(1, active.len())
+                .min(remaining),
+        };
+        let selected = personas::select_reply_characters_with(
             &active,
             &body,
             user_text,
             &existing,
             parent_reply_to,
-            &state.settings,
+            &reply_settings,
             |sys, usr| {
                 let cfg = settings.clone();
                 async move {
-                    crate::chat::complete_oneshot(&cfg, &sys, &usr, 256, Duration::from_secs(45)).await
+                    complete_persona_llm(&cfg, summary_engine, &sys, &usr, 256, Duration::from_secs(45)).await
                 }
             },
         )
         .await;
-        let Some(first) = selected.into_iter().next() else {
-            return None;
+
+        let mut ctx = GroupRoundContext {
+            app,
+            taker: &taker,
+            note_id,
+            title: &title,
+            body: &body,
+            summary_text: summary_text.as_deref(),
+            trigger_user_comment: Some(user_text),
+            settings: &settings,
+            summary_engine,
+            personas_dir: &personas_dir,
+            active: &active,
+            existing: &mut existing,
         };
-        let (sys, usr) = personas::build_comment_prompt(
-            first.persona,
-            &title,
-            &body,
-            summary_text.as_deref(),
-            Some(user_text),
-            &existing,
-            true,
-        );
-        let raw = crate::chat::complete_oneshot(&settings, &sys, &usr, 512, Duration::from_secs(60)).await.ok()?;
-        let text = personas::parse_comment_output(&raw, true)?;
-        Some(personas::NoteComment {
-            id: crate::flow::text::new_id(),
-            character_id: first.persona.id.clone(),
-            character_name: first.persona.name.clone(),
-            author_kind: "persona".to_string(),
-            content: text,
-            reply_to_id: Some(user_comment_id.to_string()),
-            created_at: now_ms(),
-        })
+
+        let mut wave1 = Vec::new();
+        let mut last_err: Option<String> = None;
+        let mut seen_speakers = HashSet::new();
+        for item in selected {
+            if wave1.len() >= remaining || !seen_speakers.insert(item.persona.id.clone()) {
+                continue;
+            }
+            match invoke_persona_subagent(
+                &mut ctx,
+                item.persona,
+                item.force_reply,
+                None,
+                None,
+                Some(user_comment_id),
+            )
+            .await
+            {
+                Ok(Some(comment)) => wave1.push(comment),
+                Ok(None) => {}
+                Err(err) => last_err = Some(err),
+            }
+        }
+
+        let cross_budget = remaining
+            .saturating_sub(wave1.len())
+            .min(personas::MAX_CROSS_TALK_REPLIES_PER_WAVE);
+        if state.settings.enable_character_comment && cross_budget > 0 && !wave1.is_empty() {
+            let mut spoken_followup = seen_speakers;
+            let _ = run_cross_persona_followup_wave(
+                &mut ctx,
+                &wave1,
+                &mut spoken_followup,
+                cross_budget,
+            )
+            .await;
+        }
+
+        (wave1.len(), last_err)
     });
 
     taker.working.lock().unwrap().retain(|w| w != note_id);
-    if let Some(comment) = reply {
-        taker.change(app, note_id, |n| {
-            n.comments.push(comment);
-        });
-    } else {
-        let _ = app.emit_to(crate::HUB_LABEL, "notes-changed", note_id);
+    if produced_count == 0 {
+        if let Some(err) = last_error {
+            taker.change(app, note_id, |n| {
+                n.error = Some(err);
+            });
+            return;
+        }
     }
+    let _ = app.emit_to(crate::HUB_LABEL, "notes-changed", note_id);
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────

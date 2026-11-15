@@ -42,7 +42,7 @@ const SYNTHETIC_PERSONA_SAMPLE = JSON.stringify(
 function defaultPersonasState(): PersonasState {
   return {
     personas: [],
-    settings: { enableCharacterComment: true, maxCommentCharacters: 2 },
+    settings: { enableCharacterComment: true, maxCommentCharacters: 15 },
   };
 }
 
@@ -316,7 +316,7 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
       class: "hub-input",
       type: "number",
       min: "1",
-      max: "6",
+      max: "15",
       value: String(settings.maxCommentCharacters),
       style: "width:76px",
     }) as HTMLInputElement;
@@ -324,7 +324,7 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
     const updateSettings = async () => {
       personaError = "";
       personaFeedback = "";
-      const maxChars = Math.min(6, Math.max(1, Number(maxInput.value) || 2));
+      const maxChars = Math.min(15, Math.max(1, Number(maxInput.value) || 15));
       try {
         personasState = await FlowBridge.setCommentSettings(enableBox.checked, maxChars);
         personaFeedback = "Regras de comentário atualizadas.";
@@ -443,7 +443,7 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
           h("span", { text: "Permitir comentários automáticos após criar ou ditar uma nota" }),
         ),
         h("div", { class: "hub-row", style: "gap:10px;align-items:center" },
-          h("span", { class: "hub-note", text: "Máximo de personas por nota (roteamento inteligente):" }),
+          h("span", { class: "hub-note", text: "Máximo de personas por nota (até 15 no chat em grupo, se pertinente):" }),
           maxInput,
           h("span", { class: "hub-note", text: "Dica: @nome sempre responde mesmo se o automático estiver desligado." }),
         ),
