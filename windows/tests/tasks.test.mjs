@@ -576,3 +576,35 @@ test("L6.3: task-dismiss dispensa lembrete ativo na Ilha apenas para o taskId co
     State.view = oldView;
   }
 });
+
+test("L6.4: taskSyncState aciona gesto P3 (saved vs synced) na Bússola e fallback seguro", () => {
+  const island = Object.create(Island.prototype);
+  let syncStateCalled = null;
+  let ensured = 0;
+  island.ensureRunning = () => { ensured++; };
+  island.engine = {
+    triggerTaskSync: (state) => { syncStateCalled = state; },
+    triggerEmote: () => {},
+  };
+
+  island.taskSyncState("saved");
+  assert.equal(syncStateCalled, "saved");
+  assert.equal(ensured, 1);
+
+  island.taskSyncState("synced");
+  assert.equal(syncStateCalled, "synced");
+  assert.equal(ensured, 2);
+
+  // Fallback quando triggerTaskSync não existe na engine
+  let emoteCalled = null;
+  island.engine = {
+    triggerEmote: (emote) => { emoteCalled = emote; },
+  };
+  island.taskSyncState("synced");
+  assert.equal(emoteCalled, "happy");
+  assert.equal(ensured, 3);
+
+  island.taskSyncState("saved");
+  assert.equal(emoteCalled, "wink");
+  assert.equal(ensured, 4);
+});

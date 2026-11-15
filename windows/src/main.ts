@@ -206,6 +206,11 @@ async function main() {
   await onEvent<string>("task-snoozed", () => island.taskSnoozed());
   await onEvent<string>("task-completed", () => island.taskCompleted());
   await onEvent<string>("task-dismiss", (taskId) => island.taskDismiss(taskId));
+  await onEvent<"saved" | "synced" | { state?: string }>("task-sync-state", (payload) => {
+    const rawState = typeof payload === "string" ? payload : payload?.state;
+    const state = rawState === "synced" ? "synced" : "saved";
+    island.taskSyncState(state);
+  });
   await onEvent<{ count?: number; unread?: number }>("mail-inbox-summarized", () => island.mailInboxSummarized());
 
   island.launch();

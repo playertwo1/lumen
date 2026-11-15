@@ -709,6 +709,13 @@ export class Island {
     this.ensureRunning();
   }
 
+  taskSyncState(state: "saved" | "synced") {
+    const compass = this.engine as BotEngine & { triggerTaskSync?: (state: "saved" | "synced", duration?: number) => void };
+    if (compass.triggerTaskSync) compass.triggerTaskSync(state);
+    else this.engine.triggerEmote(state === "synced" ? "happy" : "wink", 1.2);
+    this.ensureRunning();
+  }
+
   /** Ctrl+P: keep the open island from folding away, or let it fold again. */
   setPinned(on: boolean) {
     State.isPinned = on;

@@ -334,6 +334,9 @@ export class CompassEngine {
   private taskCheckDuration = 0;
   private mailInHandStart = -1;
   private mailInHandDuration = 0;
+  private taskSyncStart = -1;
+  private taskSyncDuration = 0;
+  private taskSyncMode: "saved" | "synced" = "saved";
   private badgePopStart = -1;
   private gulpStart = -1;
   private gulpChewStarted = false;
@@ -577,6 +580,21 @@ export class CompassEngine {
     this.blink();
     this.markBusyFor(dur);
   }
+  /** P3 (L6): dois pontos de luz em órbita/pulso sinalizando conexão e sincronia com a Segunda Mente. */
+  triggerTaskSync(state: "saved" | "synced", duration = 1.5) {
+    if (reducedMotion()) {
+      this.taskSyncStart = -1;
+      this.taskSyncDuration = 0;
+      return;
+    }
+    const dur = Math.max(0.4, duration);
+    this.taskSyncStart = this.elapsed;
+    this.taskSyncDuration = dur;
+    this.taskSyncMode = state;
+    this.squash();
+    this.blink();
+    this.markBusyFor(dur);
+  }
   get busy() {
     if (reducedMotion()) return false;
     const moodActive = !this.isMini && (
@@ -604,6 +622,7 @@ export class CompassEngine {
       this.taskSnoozeStart >= 0 ||
       this.taskCheckStart >= 0 ||
       this.mailInHandStart >= 0 ||
+      this.taskSyncStart >= 0 ||
       this.rollDuration > 0 ||
       this.elapsed < this.busyUntil ||
       this.pendingSparkAt >= 0 ||
@@ -832,6 +851,10 @@ export class CompassEngine {
     if (this.mailInHandStart >= 0 && this.elapsed >= this.mailInHandStart + this.mailInHandDuration) {
       this.mailInHandStart = -1;
       this.mailInHandDuration = 0;
+    }
+    if (this.taskSyncStart >= 0 && this.elapsed >= this.taskSyncStart + this.taskSyncDuration) {
+      this.taskSyncStart = -1;
+      this.taskSyncDuration = 0;
     }
 
     // Continuous active-state P1 motion
@@ -1125,6 +1148,9 @@ export class CompassEngine {
     }
     if (!reduced && this.mailInHandStart >= 0 && this.elapsed < this.mailInHandStart + this.mailInHandDuration) {
       this.drawMailInHandGesture(ctx, compact);
+    }
+    if (!reduced && this.taskSyncStart >= 0 && this.elapsed < this.taskSyncStart + this.taskSyncDuration) {
+      this.drawTaskSyncGesture(ctx, compact);
     }
     if (!reduced && this.particles.length > 0) this.drawParticles(ctx);
     ctx.restore();
@@ -2383,6 +2409,67 @@ export class CompassEngine {
       ctx.lineJoin = "round";
       ctx.stroke();
       ctx.restore();
+    });
+    ctx.restore();
+  }
+
+  /** P3 (L6): dois pontos orbitais representando PC e Segunda Mente (celular). */
+  private drawTaskSyncGesture(ctx: CanvasRenderingContext2D, compact: boolean) {
+    const dur = Math.max(0.3, this.taskSyncDuration);
+    const p = Math.min(1, Math.max(0, (this.elapsed - this.taskSyncStart) / dur));
+    const pop = Math.min(1, p / 0.15);
+    const fade = p > 0.82 ? Math.max(0, (1 - p) / 0.18) : 1;
+    const cx = compact ? 74 : 76;
+    const cy = compact ? 26 : 28;
+    const isSynced = this.taskSyncMode === "synced";
+
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    this.drawScaledAccent(ctx, cx, cy, 0.72 + pop * 0.28, () => {
+      const baseDist = compact ? 9 : 11;
+      const angle = isSynced ? p * Math.PI * 1.5 : Math.sin(p * Math.PI * 2) * 0.4;
+      const converge = isSynced ? Math.sin(p * Math.PI) * 3 : 0;
+      const dist = Math.max(4, baseDist - converge);
+
+      const x1 = cx - Math.cos(angle) * dist;
+      const y1 = cy - Math.sin(angle) * dist;
+      const x2 = cx + Math.cos(angle) * dist;
+      const y2 = cy + Math.sin(angle) * dist;
+
+      if (isSynced) {
+        const pulseAlpha = Math.sin(p * Math.PI);
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = rgbCss(TEAL);
+        ctx.lineWidth = 1.8;
+        ctx.lineCap = "round";
+        ctx.globalAlpha *= 0.4 + 0.6 * pulseAlpha;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      const r1 = compact ? 3.2 : 3.8;
+      const r2 = compact ? 2.6 : 3.2;
+      const dotColor: RGB = isSynced ? CHATGPT_GREEN : APPROVAL_AMBER;
+      const peerColor: RGB = isSynced ? TEAL : SAND;
+
+      ctx.beginPath();
+      ctx.arc(x1, y1, r1, 0, Math.PI * 2);
+      ctx.fillStyle = rgbCss(dotColor);
+      ctx.fill();
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(x2, y2, r2, 0, Math.PI * 2);
+      ctx.fillStyle = rgbCss(peerColor);
+      ctx.fill();
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     });
     ctx.restore();
   }
