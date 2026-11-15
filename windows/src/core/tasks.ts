@@ -66,6 +66,43 @@ export interface TodoProposal {
   priority: TodoPriority;
 }
 
+export type TaskSyncState =
+  | "local_only"
+  | "saved_on_pc"
+  | "waiting_phone"
+  | "synced"
+  | "revoked"
+  | "error";
+
+export interface TaskTextConflict {
+  id: string;
+  entity_id: string;
+  field: string;
+  local_text: string;
+  remote_text: string;
+  winner_side: "local" | "remote";
+  winner_text: string;
+  loser_text: string;
+  local_updated_at: string;
+  remote_updated_at: string;
+  conflict_state: "pending_review";
+}
+
+export interface TaskSyncStatus {
+  state: TaskSyncState;
+  paired: boolean;
+  device_id: string;
+  pending_outbox: number;
+  pending_peer: number | null;
+  last_synced_at: string | null;
+  last_error: string | null;
+  quarantined_count: number;
+  poison_count: number;
+  revoked: boolean;
+  conflicts: TaskTextConflict[];
+  unsynced_item_ids: string[];
+}
+
 export interface TasksSnapshot {
   items: TodoItem[];
   shortcuts: TodoShortcutSettings;
@@ -73,6 +110,11 @@ export interface TasksSnapshot {
   voice_ready: boolean;
   recording: boolean;
   quarantined_file: string | null;
+  sync?: TaskSyncStatus;
+}
+
+export function isTaskItemSynced(sync: TaskSyncStatus | undefined, itemId: string): boolean {
+  return Boolean(sync && sync.state === "synced" && !(sync.unsynced_item_ids ?? []).includes(itemId));
 }
 
 export interface TaskReminderPayload {

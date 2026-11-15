@@ -1257,6 +1257,8 @@ pub fn run() {
             tasks::tasks_save_shortcut_settings,
             tasks::tasks_open_page,
             tasks::tasks_preview_reminder,
+            tasks::tasks_sync_now,
+            tasks::tasks_resolve_conflict,
             voice::voice_done,
             voice::voice_say_native,
             update::update_status,

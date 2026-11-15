@@ -670,6 +670,9 @@ export const TasksBridge = {
     call<void>("tasks_open_page", { taskId: taskId ?? null }),
   previewReminder: (id: string) =>
     callOrThrow<void>("tasks_preview_reminder", { id }),
+  syncNow: () => callOrThrow<TasksSnapshot>("tasks_sync_now"),
+  resolveConflict: (conflictId: string, choice: "local" | "remote") =>
+    callOrThrow<TasksSnapshot>("tasks_resolve_conflict", { conflictId, choice }),
 };
 
 export type SpotifyAction = "playPause" | "next" | "previous" | "seek" | "shuffle" | "repeat" | "volume";

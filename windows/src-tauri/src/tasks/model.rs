@@ -161,6 +161,48 @@ impl TodoItem {
             && self.due_time.as_deref().is_some_and(is_valid_time)
     }
 
+    pub fn same_content_ignoring_version(&self, other: &Self) -> bool {
+        let Self {
+            id,
+            text,
+            due,
+            due_date,
+            due_time,
+            time_zone,
+            alert_minutes,
+            priority,
+            subtasks,
+            recurrence,
+            series_id,
+            done,
+            created_at,
+            done_at,
+            snoozed_until,
+            source,
+            source_stale,
+            version: _,
+            deleted_at,
+        } = self;
+        id == &other.id
+            && text == &other.text
+            && due == &other.due
+            && due_date == &other.due_date
+            && due_time == &other.due_time
+            && time_zone == &other.time_zone
+            && alert_minutes == &other.alert_minutes
+            && priority == &other.priority
+            && subtasks == &other.subtasks
+            && recurrence == &other.recurrence
+            && series_id == &other.series_id
+            && done == &other.done
+            && created_at == &other.created_at
+            && done_at == &other.done_at
+            && snoozed_until == &other.snoozed_until
+            && source == &other.source
+            && source_stale == &other.source_stale
+            && deleted_at == &other.deleted_at
+    }
+
     pub fn sanitize(&mut self) {
         self.time_zone = known_time_zone(Some(&self.time_zone));
         if self.alert_minutes < 0 {

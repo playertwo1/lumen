@@ -452,6 +452,205 @@ pub fn base64url_decode(text: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+// ── persistent mailbox (`coucou-mailbox/v1`) ────────────────────────────────────
+
+#[allow(dead_code)]
+pub const MAILBOX_VERSION: u8 = 1;
+#[allow(dead_code)]
+pub const MAILBOX_BLOCK_SIZE: usize = 128;
+#[allow(dead_code)]
+pub const MAILBOX_MAX_JSON: usize = 65_536;
+#[allow(dead_code)]
+pub const MAILBOX_MIN_BODY: usize = 1 + 12 + 128 + 16;
+const MAILBOX_LABEL: &[u8; 17] = b"coucou-mailbox/v1";
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MailboxRole {
+    Pc = 1,
+    Phone = 2,
+}
+
+#[allow(dead_code)]
+impl MailboxRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pc => "pc",
+            Self::Phone => "phone",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "pc" => Some(Self::Pc),
+            "phone" => Some(Self::Phone),
+            _ => None,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MailboxError {
+    TooShort,
+    BadVersion,
+    BadTag,
+    BadLength,
+    BadPadding,
+    BadJson,
+    InvalidRoom,
+}
+
+#[allow(dead_code)]
+impl MailboxError {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::TooShort => "too_short",
+            Self::BadVersion => "bad_version",
+            Self::BadTag => "bad_tag",
+            Self::BadLength => "bad_length",
+            Self::BadPadding => "bad_padding",
+            Self::BadJson => "bad_json",
+            Self::InvalidRoom => "invalid_room",
+        }
+    }
+}
+
+impl std::fmt::Display for MailboxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.code())
+    }
+}
+
+impl std::error::Error for MailboxError {}
+
+/// Builds the 41-byte AAD: `"coucou-mailbox/v1"` (17 B) || `room` (22 B) || `[to, ver]`.
+#[allow(dead_code)]
+pub fn mailbox_aad(room: &str, to: MailboxRole, ver: u8) -> Result<[u8; 41], MailboxError> {
+    if room.len() != 22 || !base64url_decode(room).is_some_and(|b| b.len() == 16) {
+        return Err(MailboxError::InvalidRoom);
+    }
+    let mut out = [0u8; 41];
+    out[..17].copy_from_slice(MAILBOX_LABEL);
+    out[17..39].copy_from_slice(room.as_bytes());
+    out[39] = to as u8;
+    out[40] = ver;
+    Ok(out)
+}
+
+/// Pads UTF-8 JSON as `u32_be(len) || utf8 || 0x00*` to a multiple of 128 bytes.
+#[allow(dead_code)]
+pub fn pad_mailbox_plaintext(utf8: &[u8]) -> Result<Vec<u8>, MailboxError> {
+    if utf8.len() > MAILBOX_MAX_JSON {
+        return Err(MailboxError::BadLength);
+    }
+    let total = (4 + utf8.len()).div_ceil(MAILBOX_BLOCK_SIZE).max(1) * MAILBOX_BLOCK_SIZE;
+    let mut out = Vec::with_capacity(total);
+    out.extend_from_slice(&(utf8.len() as u32).to_be_bytes());
+    out.extend_from_slice(utf8);
+    out.resize(total, 0);
+    Ok(out)
+}
+
+/// Unpads a decrypted mailbox block, enforces strict zero padding, and validates UTF-8 JSON.
+#[allow(dead_code)]
+pub fn unpad_mailbox_plaintext(padded: &[u8]) -> Result<String, MailboxError> {
+    if padded.len() < MAILBOX_BLOCK_SIZE || padded.len() % MAILBOX_BLOCK_SIZE != 0 {
+        return Err(MailboxError::TooShort);
+    }
+    let len = u32::from_be_bytes(padded[..4].try_into().unwrap()) as usize;
+    if len > MAILBOX_MAX_JSON || 4 + len > padded.len() {
+        return Err(MailboxError::BadLength);
+    }
+    if padded[4 + len..].iter().any(|&b| b != 0) {
+        return Err(MailboxError::BadPadding);
+    }
+    let text = std::str::from_utf8(&padded[4..4 + len]).map_err(|_| MailboxError::BadJson)?;
+    serde_json::from_str::<serde_json::Value>(text).map_err(|_| MailboxError::BadJson)?;
+    Ok(text.to_string())
+}
+
+/// Seals a mailbox JSON envelope with an explicit 12-byte nonce (`ver || nonce || ciphertext || tag`).
+#[allow(dead_code)]
+pub fn seal_mailbox_with_nonce(
+    k_mailbox: &Secret32,
+    room: &str,
+    to: MailboxRole,
+    json_utf8: &str,
+    nonce: [u8; 12],
+) -> Result<Vec<u8>, MailboxError> {
+    let aad_bytes = mailbox_aad(room, to, MAILBOX_VERSION)?;
+    let mut buf = pad_mailbox_plaintext(json_utf8.as_bytes())?;
+    let key = key_for(k_mailbox.as_bytes());
+    let tag = match key.seal_in_place_separate_tag(
+        aead::Nonce::assume_unique_for_key(nonce),
+        aead::Aad::from(&aad_bytes),
+        &mut buf,
+    ) {
+        Ok(tag) => tag,
+        Err(_) => {
+            wipe(&mut buf);
+            return Err(MailboxError::BadTag);
+        }
+    };
+    let mut out = Vec::with_capacity(1 + 12 + buf.len() + TAG);
+    out.push(MAILBOX_VERSION);
+    out.extend_from_slice(&nonce);
+    out.extend_from_slice(&buf);
+    out.extend_from_slice(tag.as_ref());
+    wipe(&mut buf);
+    Ok(out)
+}
+
+/// Seals a mailbox JSON envelope with a fresh CSPRNG 12-byte nonce.
+#[allow(dead_code)]
+pub fn seal_mailbox(
+    k_mailbox: &Secret32,
+    room: &str,
+    to: MailboxRole,
+    json_utf8: &str,
+) -> Result<Vec<u8>, MailboxError> {
+    use ring::rand::SecureRandom;
+    let mut nonce = [0u8; 12];
+    ring::rand::SystemRandom::new()
+        .fill(&mut nonce)
+        .map_err(|_| MailboxError::BadTag)?;
+    seal_mailbox_with_nonce(k_mailbox, room, to, json_utf8, nonce)
+}
+
+/// Verifies and decrypts a mailbox envelope (`ver || nonce || ciphertext || tag`).
+#[allow(dead_code)]
+pub fn open_mailbox(
+    k_mailbox: &Secret32,
+    room: &str,
+    to: MailboxRole,
+    body: &[u8],
+) -> Result<String, MailboxError> {
+    if body.len() < MAILBOX_MIN_BODY {
+        return Err(MailboxError::TooShort);
+    }
+    let ver = body[0];
+    if ver != MAILBOX_VERSION {
+        return Err(MailboxError::BadVersion);
+    }
+    if (body.len() - 29) % MAILBOX_BLOCK_SIZE != 0 {
+        return Err(MailboxError::TooShort);
+    }
+    let aad_bytes = mailbox_aad(room, to, ver)?;
+    let nonce: [u8; 12] = body[1..13].try_into().unwrap();
+    let mut ct_and_tag = body[13..].to_vec();
+    let res = match key_for(k_mailbox.as_bytes()).open_in_place(
+        aead::Nonce::assume_unique_for_key(nonce),
+        aead::Aad::from(&aad_bytes),
+        &mut ct_and_tag,
+    ) {
+        Ok(plain) => unpad_mailbox_plaintext(plain),
+        Err(_) => Err(MailboxError::BadTag),
+    };
+    wipe(&mut ct_and_tag);
+    res
+}
+
 // ── tests ───────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -782,5 +981,72 @@ mod tests {
         for forbidden in ["println!", "eprintln!", "dbg!", "log::", "tracing::", "std::fs", "std::env", "File::"] {
             assert!(!code.contains(forbidden), "relay_crypto.rs uses {forbidden}");
         }
+    }
+
+    #[test]
+    fn mailbox_cipher_matches_all_official_test_vectors() {
+        let v: Value = serde_json::from_str(include_str!("../../../../android/relay/test-vectors-mailbox.json")).unwrap();
+        let k = PairingKey::from_bytes(unhex(text(&v, &["inputs", "key"])).try_into().unwrap());
+        let room = text(&v, &["inputs", "room"]);
+        let km = k_mailbox(&k);
+        assert_eq!(hexs(km.as_bytes()), text(&v, &["kMailbox"]));
+
+        for (idx, m) in v["messages"].as_array().unwrap().iter().enumerate() {
+            let to = MailboxRole::parse(text(m, &["to"])).unwrap();
+            let nonce: [u8; 12] = unhex(text(m, &["nonce"])).try_into().unwrap();
+            let json = text(m, &["json"]);
+            let aad = mailbox_aad(room, to, MAILBOX_VERSION).unwrap();
+            assert_eq!(hexs(&aad), text(m, &["aad"]), "message {idx} aad");
+            let padded = pad_mailbox_plaintext(json.as_bytes()).unwrap();
+            assert_eq!(hexs(&padded), text(m, &["plaintextPadded"]), "message {idx} padded");
+            let sealed = seal_mailbox_with_nonce(&km, room, to, json, nonce).unwrap();
+            assert_eq!(hexs(&sealed), text(m, &["body"]), "message {idx} body");
+            let opened = open_mailbox(&km, room, to, &sealed).unwrap();
+            assert_eq!(opened, json, "message {idx} open");
+        }
+
+        for n in v["mustRefuse"].as_array().unwrap() {
+            let name = text(n, &["name"]);
+            let expect = text(n, &["expect"]);
+            let to = MailboxRole::parse(text(n, &["to"])).unwrap();
+            let n_room = text(n, &["room"]);
+            let body = unhex(text(n, &["body"]));
+            let err = open_mailbox(&km, n_room, to, &body).expect_err(name);
+            assert_eq!(err.code(), expect, "{name}");
+        }
+    }
+
+    #[test]
+    fn mailbox_cipher_handles_random_nonces_and_edge_cases() {
+        assert_eq!(MAILBOX_MIN_BODY, 157);
+        assert_eq!(MailboxRole::Pc.as_str(), "pc");
+        assert_eq!(MailboxRole::Phone.as_str(), "phone");
+        assert_eq!(MailboxRole::parse("pc"), Some(MailboxRole::Pc));
+        assert_eq!(MailboxRole::parse("phone"), Some(MailboxRole::Phone));
+        assert_eq!(MailboxRole::parse("other"), None);
+
+        let room = base64url_encode(&[0x42; 16]);
+        let km = k_mailbox(&PairingKey::from_bytes([0x11; 32]));
+        let payload = r#"{"ok":true,"text":"olá mundo"}"#;
+        let a = seal_mailbox(&km, &room, MailboxRole::Phone, payload).unwrap();
+        let b = seal_mailbox(&km, &room, MailboxRole::Phone, payload).unwrap();
+        assert_ne!(a[1..13], b[1..13], "fresh CSPRNG nonces must differ");
+        assert_eq!(open_mailbox(&km, &room, MailboxRole::Phone, &a).unwrap(), payload);
+        assert_eq!(open_mailbox(&km, &room, MailboxRole::Phone, &b).unwrap(), payload);
+
+        // Invalid rooms fail cleanly.
+        assert_eq!(mailbox_aad("short", MailboxRole::Pc, 1), Err(MailboxError::InvalidRoom));
+        assert_eq!(mailbox_aad(&"!".repeat(22), MailboxRole::Pc, 1), Err(MailboxError::InvalidRoom));
+        assert_eq!(mailbox_aad("AAAAAAAAAAAAAAAAAAAAAB", MailboxRole::Pc, 1), Err(MailboxError::InvalidRoom));
+
+        // Plaintext boundaries and invalid block lengths.
+        assert_eq!(pad_mailbox_plaintext(&vec![b'a'; MAILBOX_MAX_JSON]).unwrap().len(), 65_664);
+        assert_eq!(pad_mailbox_plaintext(&vec![b'a'; MAILBOX_MAX_JSON + 1]), Err(MailboxError::BadLength));
+        assert_eq!(unpad_mailbox_plaintext(&[0u8; 127]), Err(MailboxError::TooShort));
+        assert_eq!(unpad_mailbox_plaintext(&[0u8; 129]), Err(MailboxError::TooShort));
+        let mut bad_body = a.clone();
+        bad_body.push(0);
+        assert_eq!(open_mailbox(&km, &room, MailboxRole::Phone, &bad_body), Err(MailboxError::TooShort));
+        assert_eq!(MailboxError::InvalidRoom.to_string(), "invalid_room");
     }
 }
