@@ -35,6 +35,14 @@ export function flowKeyId(prefs: { key: FlowKey; keyCombo?: string[] }): FlowKey
 }
 export type Edge = "bottom" | "bottom-left" | "bottom-right" | "left" | "right";
 export type Style = "verbatim" | "natural" | "polished";
+export type SummaryEngine = "claude" | "chatgpt" | "gemini" | "chat" | "off";
+
+export interface SummaryBackends {
+  claude: string | null;
+  chatgpt: string | null;
+  gemini: string | null;
+  chat: string | null;
+}
 
 export interface FlowPrefs {
   enabled: boolean;
@@ -48,7 +56,7 @@ export interface FlowPrefs {
   keepDays: number;
   cleanup: boolean;
   defaultStyle: Style;
-  summaryEngine: "claude" | "off";
+  summaryEngine: SummaryEngine;
   openAtLaunch: boolean;
   /** « OK Coucou »: listen for it and answer with Claude. */
   voice: boolean;
@@ -77,6 +85,7 @@ export interface FlowStatus {
   /** "ok", or why the key can't be watched ("wayland", "no-display"). */
   keys: string;
   hasClaudeKey: boolean;
+  summaryBackends?: SummaryBackends;
   mics: { name: string; default: boolean }[];
   platform: "windows" | "linux";
   autostarted: boolean;

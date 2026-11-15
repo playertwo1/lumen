@@ -183,6 +183,12 @@ pub fn status() -> Result<AccountStatus, String> {
     status_with(&SystemCredentialStore)
 }
 
+/// Indica se existe uma conta ChatGPT OAuth ativa e autorizada no cofre do sistema.
+pub fn has_usable_account() -> bool {
+    let _guard = STORAGE_LOCK.lock().unwrap();
+    read_active_session(&SystemCredentialStore).is_ok()
+}
+
 pub fn activate(profile_id: &str) -> Result<AccountStatus, String> {
     let _guard = STORAGE_LOCK.lock().unwrap();
     let store = SystemCredentialStore;

@@ -465,6 +465,7 @@ pub struct FlowStatus {
     /// "ok", or why the key can't be watched here ("wayland", "no-display").
     keys: String,
     has_claude_key: bool,
+    summary_backends: crate::chat::SummaryBackends,
     mics: Vec<audio::InputDevice>,
     platform: &'static str,
     /// Coucou started with the computer.
@@ -474,7 +475,8 @@ pub struct FlowStatus {
 }
 
 #[tauri::command]
-pub fn flow_status(flow: State<Arc<Flow>>) -> FlowStatus {
+pub fn flow_status(flow: State<Arc<Flow>>, shared: State<crate::Shared>) -> FlowStatus {
+    let settings = shared.settings.lock().unwrap().clone();
     FlowStatus {
         prefs: flow.store.lock().unwrap().prefs.clone(),
         models: speech::status(),
@@ -483,6 +485,7 @@ pub fn flow_status(flow: State<Arc<Flow>>) -> FlowStatus {
             Err(why) => why.into(),
         },
         has_claude_key: cleanup::has_key(),
+        summary_backends: crate::chat::summary_backends(&settings),
         mics: audio::input_devices(),
         platform: if cfg!(windows) { "windows" } else { "linux" },
         autostarted: crate::launched_at_login(),

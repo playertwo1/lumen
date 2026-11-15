@@ -81,6 +81,11 @@ pub enum Edge {
 pub enum SummaryEngine {
     #[default]
     Claude,
+    #[serde(alias = "openai", alias = "codex")]
+    ChatGpt,
+    #[serde(alias = "google", alias = "antigravity")]
+    Gemini,
+    Chat,
     Off,
 }
 
@@ -608,5 +613,24 @@ mod tests {
         assert_eq!(p.key, FlowKey::RightAlt);
         assert_eq!(p.keep_days, 30);
         assert!(p.open_at_launch);
+        assert_eq!(p.summary_engine, SummaryEngine::Claude);
+    }
+
+    #[test]
+    fn summary_engine_round_trips_and_accepts_provider_aliases() {
+        for (engine, wire) in [
+            (SummaryEngine::Claude, "\"claude\""),
+            (SummaryEngine::ChatGpt, "\"chatgpt\""),
+            (SummaryEngine::Gemini, "\"gemini\""),
+            (SummaryEngine::Chat, "\"chat\""),
+            (SummaryEngine::Off, "\"off\""),
+        ] {
+            assert_eq!(serde_json::to_string(&engine).unwrap(), wire);
+            assert_eq!(serde_json::from_str::<SummaryEngine>(wire).unwrap(), engine);
+        }
+        assert_eq!(serde_json::from_str::<SummaryEngine>("\"openai\"").unwrap(), SummaryEngine::ChatGpt);
+        assert_eq!(serde_json::from_str::<SummaryEngine>("\"codex\"").unwrap(), SummaryEngine::ChatGpt);
+        assert_eq!(serde_json::from_str::<SummaryEngine>("\"google\"").unwrap(), SummaryEngine::Gemini);
+        assert_eq!(serde_json::from_str::<SummaryEngine>("\"antigravity\"").unwrap(), SummaryEngine::Gemini);
     }
 }

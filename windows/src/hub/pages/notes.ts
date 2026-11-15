@@ -799,6 +799,9 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
       } else {
         el.append(h("div", { class: "hub-note", text: busy ? "Gerando resumo…" : "Ainda sem resumo automático." }));
       }
+      if (note.error) {
+        el.append(h("div", { class: "hub-warn", role: "alert", text: note.error }));
+      }
       if (!busy) el.append(button("Gerar resumo", () => void FlowBridge.summarize(note.id), "primary", true));
       return el;
     }
@@ -817,6 +820,9 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
         const extra = [todo.owner, todo.due].filter(Boolean).join(" · ");
         el.append(h("label", { class: "hub-todo" }, box, h("span", {}, h("span", { text: todo.text, style: todo.done ? "text-decoration:line-through;opacity:.6" : "" }), extra ? h("div", { class: "who", text: extra }) : null)));
       }
+    }
+    if (note.error) {
+      el.append(h("div", { class: "hub-warn", role: "alert", text: note.error }));
     }
     el.append(button(busy ? "Gerando resumo…" : "Regerar resumo", () => void FlowBridge.summarize(note.id), "", true));
     return el;
