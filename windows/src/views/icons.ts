@@ -85,6 +85,8 @@ export const ICONS = {
   volume3: "M3.5 9.5h3L11 5.8v12.4l-4.5-3.7h-3zM14.5 9.6a3.4 3.4 0 0 1 0 4.8M17 7.2a6.8 6.8 0 0 1 0 9.6M19.4 4.8a10.2 10.2 0 0 1 0 14.4",
   // terminal (stroked): the header tab of a new Claude Code session
   terminal: "M5 4.5h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2zM7.2 9.2 10 12l-2.8 2.8M12.5 15h4.3",
+  // checkmark.square (stroked): aba rápida de nova tarefa no header
+  taskCheck: "M6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11A2.5 2.5 0 0 1 6.5 4zM8.4 12.2l2.4 2.4 4.8-4.8",
   // folder
   folder: "M3 6.6a2 2 0 0 1 2-2h4.3l2 2.2H19a2 2 0 0 1 2 2v8.6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6.6z",
   // chevron.down (stroked)

@@ -134,6 +134,17 @@ export function buildHeader(actions: ViewActions): ViewHost {
     { class: "tab", title: tl("New Claude Code session"), onclick: () => go("launch") },
     svg(ICONS.terminal, 17, { stroke: 1.7 }),
   );
+  // Captura rápida de tarefas direto pela barra superior (apenas ícone no padrão .tab).
+  const tabTasks = h(
+    "button",
+    {
+      class: "tab",
+      title: "Nova tarefa",
+      "aria-label": "Nova tarefa",
+      onclick: () => go("taskCapture"),
+    },
+    svg(ICONS.taskCheck, 16, { stroke: 1.75 }),
+  );
 
   const gearBtn = h("button", { title: tl("Settings"), onclick: () => go("settings") }, svg(ICONS.gearLine, 18, { stroke: 1.6 }));
   const soundBtn = h("button", { title: tl("Mute"), onclick: () => actions.toggleSound() }, svg(ICONS.speakerLine, 18, { stroke: 1.6 }));
@@ -151,13 +162,13 @@ export function buildHeader(actions: ViewActions): ViewHost {
     actions.setView(v);
   }
 
+  const headerActions = h("div", { class: "header-actions" }, planPills, gearBtn, soundBtn, closeBtn);
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, tabHome, tabChat, tabDrop, tabLaunch),
-    h("div", { class: "header-actions" }, planPills, gearBtn, soundBtn, closeBtn),
+    h("div", { class: "tabs" }, tabHome, tabChat, tabDrop, tabLaunch, tabTasks),
+    headerActions,
   );
-  const headerActions = el.lastElementChild as HTMLElement;
 
   return {
     el,
@@ -167,6 +178,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
       tabLaunch.classList.toggle("on", v === "launch");
+      tabTasks.classList.toggle("on", v === "taskCapture" || v === "taskConfirm");
       gearBtn.classList.toggle("on", v === "settings");
       clear(gearBtn);
       gearBtn.append(v === "settings" ? svg(ICONS.gearFill, 18) : svg(ICONS.gearLine, 18, { stroke: 1.6 }));
