@@ -13,6 +13,7 @@ import {
   DATE_SHORTCUT_LABELS,
   DEFAULT_SHORTCUT_SETTINGS,
   PRIORITY_LABELS,
+  buildRecurrence,
   dateForShortcut,
   formatDueLabel,
   formatTimeMinutes,
@@ -23,7 +24,6 @@ import {
   type TodoItem,
   type TodoPriority,
   type TodoProposal,
-  type TodoRepeatFrequency,
   type TodoShortcutSettings,
 } from "../core/tasks";
 import type { ViewActions, ViewHost } from "./views";
@@ -57,18 +57,6 @@ function taskCard(wash: "amber" | "green" | "cyan", body: HTMLElement): HTMLElem
     { class: "card task-island-card", style: `--wash:${washRGBA(wash)}` },
     body,
   );
-}
-
-function buildRecurrence(freq: string, dueDate: string | null) {
-  if (freq !== "daily" && freq !== "weekly" && freq !== "monthly") return null;
-  if (freq === "daily") return { frequency: "daily" as TodoRepeatFrequency };
-  const ref = dueDate ? new Date(`${dueDate}T12:00:00`) : new Date();
-  if (freq === "weekly") {
-    const jsDay = ref.getDay(); // 0=Dom..6=Sab -> 1=Seg..7=Dom
-    const weekday = jsDay === 0 ? 7 : jsDay;
-    return { frequency: "weekly" as TodoRepeatFrequency, weekdays: [weekday] };
-  }
-  return { frequency: "monthly" as TodoRepeatFrequency, day_of_month: ref.getDate() };
 }
 
 export interface ProposalEditorOptions {
@@ -603,7 +591,7 @@ export function buildTaskConfirmView(actions: ViewActions): ViewHost {
 
 export function buildTaskReminderView(actions: ViewActions): ViewHost {
   const heading = h("div", { class: "task-island-head" });
-  const titleEl = h("div", { class: "title one-line" });
+  const titleEl = h("div", { class: "title task-reminder-title" });
   const subEl = h("div", { class: "sub" });
 
   const snoozeBtn = h("button", {
@@ -678,7 +666,7 @@ export function chatTodoProposalCard(initialProposal: TodoProposal): HTMLElement
   const head = h(
     "div",
     { class: "chat-todo-head" },
-    h("span", { class: "chat-todo-kicker", text: "Proposta de tarefa" }),
+    h("span", { class: "chat-todo-title", text: "Proposta de tarefa" }),
   );
   const slot = h("div");
   wrap.append(head, slot);

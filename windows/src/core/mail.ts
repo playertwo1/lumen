@@ -165,6 +165,7 @@ export interface MailCardData {
   messages: MailMessage[];
   shown: number;
   maxShown: number;
+  error?: string | null;
 }
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {

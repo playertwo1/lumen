@@ -160,6 +160,56 @@ pub fn settings_dir() -> Option<PathBuf> {
     }
 }
 
+pub fn default_mailbox_path(override_dir: Option<&Path>) -> Option<PathBuf> {
+    let dir = override_dir.map(PathBuf::from).or_else(settings_dir)?;
+    let path = dir.join("mailbox.mailcraft");
+    path.is_file().then_some(path)
+}
+
+/// Resolve `mailcraft-cli` fora do PATH usando os locais padrão de instalação no Windows.
+pub fn resolve_cli_binary(bin: &str) -> PathBuf {
+    let trimmed = bin.trim();
+    let p = Path::new(trimmed);
+    if p.components().count() > 1 || p.is_file() {
+        return PathBuf::from(trimmed);
+    }
+    #[cfg(windows)]
+    if trimmed.eq_ignore_ascii_case("mailcraft-cli") || trimmed.eq_ignore_ascii_case("mailcraft-cli.exe") {
+        if let Some(found) = find_windows_mailcraft_cli() {
+            return found;
+        }
+    }
+    PathBuf::from(trimmed)
+}
+
+#[cfg(windows)]
+fn find_windows_mailcraft_cli() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    for var in ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"] {
+        if let Some(root) = std::env::var_os(var) {
+            candidates.push(PathBuf::from(root).join("MailCraft").join("mailcraft-cli.exe"));
+        }
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(&local).join("Programs").join("MailCraft").join("mailcraft-cli.exe"));
+        candidates.push(PathBuf::from(local).join("MailCraft").join("mailcraft-cli.exe"));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+#[cfg(not(windows))]
+fn find_windows_mailcraft_cli() -> Option<PathBuf> {
+    None
+}
+
+fn is_read_only_command(cmd: &str) -> bool {
+    matches!(cmd, "app.status" | "folder.list" | "mail.list" | "mail.get")
+}
+
+fn mailcraft_gui_running() -> bool {
+    cfg!(windows) && crate::platform::process_running("mailcraft.exe")
+}
+
 pub fn key_path(settings: &Path, port: u16) -> PathBuf {
     settings.join(format!("control-key.local-{port}"))
 }
@@ -425,8 +475,13 @@ struct McpSession {
 impl McpSession {
     async fn spawn(cmdline: &str) -> Result<Self, String> {
         let (bin, args) = parse_mcp_command(cmdline)?;
-        let mut cmd = Command::new(&bin);
-        cmd.args(&args)
+        Self::spawn_parts(&bin, &args).await
+    }
+
+    async fn spawn_parts(bin: &str, args: &[String]) -> Result<Self, String> {
+        let resolved = resolve_cli_binary(bin);
+        let mut cmd = Command::new(&resolved);
+        cmd.args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -438,7 +493,7 @@ impl McpSession {
         }
         let mut child = cmd
             .spawn()
-            .map_err(|e| format!("Não foi possível iniciar `{bin}`: {e}"))?;
+            .map_err(|e| format!("Não foi possível iniciar `{}`: {e}", resolved.display()))?;
         let stdin = child.stdin.take().ok_or("stdin MCP indisponível")?;
         let stdout = child.stdout.take().ok_or("stdout MCP indisponível")?;
         let mut sess = Self {
@@ -568,29 +623,89 @@ impl McpSession {
 
 enum Transport {
     Control(ControlSession),
-    Mcp(McpSession),
+    Mcp {
+        session: McpSession,
+        endpoint: String,
+        read_only_fallback: bool,
+        control_port: u16,
+    },
+}
+
+fn local_file_mcp_args() -> Option<(String, Vec<String>, String)> {
+    let cli = find_windows_mailcraft_cli()?;
+    let mailbox = default_mailbox_path(None)?;
+    let cli_str = cli.to_string_lossy().to_string();
+    let mb_str = mailbox.to_string_lossy().to_string();
+    Some((cli_str, vec!["mcp".to_string(), "--file".to_string(), mb_str.clone()], mb_str))
 }
 
 impl Transport {
     async fn connect(cfg: &BackendConfig, key_dir: Option<&Path>) -> Result<Self, String> {
         let cfg = cfg.clone().normalized();
         if cfg.mode == "mcp" {
-            Ok(Self::Mcp(McpSession::spawn(&cfg.mcp_command).await?))
-        } else {
-            Ok(Self::Control(ControlSession::connect(&cfg.host, cfg.port, key_dir).await?))
+            if cfg.mcp_command.trim().is_empty() && key_dir.is_none() {
+                if let Some((bin, args, mb)) = local_file_mcp_args() {
+                    return Ok(Self::Mcp {
+                        session: McpSession::spawn_parts(&bin, &args).await?,
+                        endpoint: mb,
+                        read_only_fallback: mailcraft_gui_running(),
+                        control_port: cfg.port,
+                    });
+                }
+            }
+            return Ok(Self::Mcp {
+                session: McpSession::spawn(&cfg.mcp_command).await?,
+                endpoint: cfg.mcp_command.clone(),
+                read_only_fallback: false,
+                control_port: cfg.port,
+            });
+        }
+
+        match ControlSession::connect(&cfg.host, cfg.port, key_dir).await {
+            Ok(c) => Ok(Self::Control(c)),
+            Err(ctrl_err) => {
+                // Em uso real sem `--control <port>`, cai para leitura local via `mailcraft-cli mcp --file`
+                // quando instalado, sem esconder falhas de autenticação HMAC em portas ativas.
+                let auth_mismatch = ctrl_err.contains("auth.challenge");
+                if key_dir.is_none() && !auth_mismatch {
+                    if let Some((bin, args, mb)) = local_file_mcp_args() {
+                        if let Ok(sess) = McpSession::spawn_parts(&bin, &args).await {
+                            return Ok(Self::Mcp {
+                                session: sess,
+                                endpoint: mb,
+                                read_only_fallback: true,
+                                control_port: cfg.port,
+                            });
+                        }
+                    }
+                }
+                Err(ctrl_err)
+            }
         }
     }
 
     async fn execute(&mut self, command: &str, params: Value) -> Result<Value, String> {
         match self {
             Self::Control(c) => c.execute(command, params).await,
-            Self::Mcp(m) => m.execute(command, params).await,
+            Self::Mcp {
+                session,
+                read_only_fallback,
+                control_port,
+                ..
+            } => {
+                if *read_only_fallback && !is_read_only_command(command) {
+                    return Err(format!(
+                        "MailCraft conectado só para leitura local (sem `--control {control_port}`): para salvar rascunhos ou alterar mensagens, inicie o MailCraft com `--control {control_port}`."
+                    ));
+                }
+                session.execute(command, params).await
+            }
         }
     }
 
     async fn close(self) {
-        if let Self::Mcp(m) = self {
-            m.close().await;
+        if let Self::Mcp { session, .. } = self {
+            session.close().await;
         }
     }
 }
@@ -629,13 +744,33 @@ pub async fn status_with_key_dir(cfg: &BackendConfig, key_dir: Option<&Path>) ->
             };
         }
     };
+    let (resolved_mode, resolved_endpoint, is_fallback) = match &tr {
+        Transport::Control(_) => ("control".to_string(), endpoint, false),
+        Transport::Mcp {
+            endpoint: ep,
+            read_only_fallback,
+            ..
+        } => (
+            if *read_only_fallback {
+                "mcp-local".to_string()
+            } else {
+                "mcp".to_string()
+            },
+            ep.clone(),
+            *read_only_fallback,
+        ),
+    };
     let st = tr.execute("app.status", json!({})).await;
-    let mailbox_state = st
+    let raw_state = st
         .as_ref()
         .ok()
         .and_then(|v| v.get("mailbox").and_then(Value::as_str))
-        .unwrap_or("unknown")
-        .to_string();
+        .unwrap_or("unknown");
+    let mailbox_state = if is_fallback && raw_state == "open" {
+        format!("open (leitura local; use --control {} para rascunhos)", cfg.port)
+    } else {
+        raw_state.to_string()
+    };
     let accounts = match tr.execute("folder.list", json!({})).await {
         Ok(v) => count_accounts(&v),
         Err(_) => 0,
@@ -643,8 +778,8 @@ pub async fn status_with_key_dir(cfg: &BackendConfig, key_dir: Option<&Path>) ->
     tr.close().await;
     MailCraftStatus {
         connected: st.is_ok(),
-        mode: cfg.mode,
-        endpoint,
+        mode: resolved_mode,
+        endpoint: resolved_endpoint,
         key_found,
         key_path: key_path_str,
         accounts,
@@ -700,29 +835,67 @@ pub async fn list_messages_with_key_dir(
 ) -> Result<(Vec<Message>, i64, Vec<(String, String)>), String> {
     let mut tr = Transport::connect(cfg, key_dir).await?;
     let folders_val = tr.execute("folder.list", json!({})).await.ok();
-    let mut params = json!({
-        "folder": folder,
-        "limit": limit.max(1).min(200),
-    });
-    if !query.trim().is_empty() {
-        params["query"] = json!(query.trim());
-    }
-    let list_val = tr.execute("mail.list", params).await;
-    tr.close().await;
-
-    let v = list_val?;
     let accounts = folders_val.as_ref().map(parse_accounts).unwrap_or_default();
-    let account_label = accounts
+    let default_label = accounts
         .first()
         .map(|(_, email)| if email.is_empty() { "MailCraft".to_string() } else { email.clone() })
         .unwrap_or_else(|| "MailCraft".to_string());
-    let mut msgs = parse_messages(&v, &account_label);
+
+    let bounded_limit = limit.max(1).min(200);
+    let inbox_targets = if folder.eq_ignore_ascii_case("inbox") {
+        folders_val.as_ref().map(extract_inbox_folders).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let mut msgs = Vec::new();
+    if inbox_targets.is_empty() {
+        let mut params = json!({
+            "folder": folder,
+            "limit": bounded_limit,
+        });
+        if !query.trim().is_empty() {
+            params["query"] = json!(query.trim());
+        }
+        let list_val = tr.execute("mail.list", params).await;
+        tr.close().await;
+        let v = list_val?;
+        msgs = parse_messages(&v, &default_label);
+    } else {
+        let mut last_err: Option<String> = None;
+        let mut any_ok = false;
+        for (folder_id, acc_label) in &inbox_targets {
+            let mut params = json!({
+                "folder": folder_id,
+                "limit": bounded_limit,
+            });
+            if !query.trim().is_empty() {
+                params["query"] = json!(query.trim());
+            }
+            match tr.execute("mail.list", params).await {
+                Ok(v) => {
+                    any_ok = true;
+                    let label = if acc_label.is_empty() { &default_label } else { acc_label };
+                    msgs.extend(parse_messages(&v, label));
+                }
+                Err(e) => last_err = Some(e),
+            }
+        }
+        tr.close().await;
+        if !any_ok {
+            if let Some(e) = last_err {
+                return Err(e);
+            }
+        }
+    }
+
     if matches!(filter, Filter::Unread) {
         msgs.retain(|m| m.unread);
     } else if matches!(filter, Filter::Flagged) {
         msgs.retain(|m| m.flagged);
     }
     msgs.sort_by(|a, b| b.date.cmp(&a.date));
+    msgs.truncate(bounded_limit);
     let unread_from_folders = folders_val
         .as_ref()
         .map(sum_inbox_unread)
@@ -919,19 +1092,85 @@ fn count_accounts(folders_val: &Value) -> usize {
         .unwrap_or(0)
 }
 
+fn extract_inbox_folders(folders_val: &Value) -> Vec<(u64, String)> {
+    let Some(accounts) = folders_val.get("accounts").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for acc in accounts {
+        let email = acc
+            .get("email")
+            .and_then(Value::as_str)
+            .map(strip_untrusted_frame)
+            .unwrap_or_default();
+        if let Some(folders) = acc.get("folders").and_then(Value::as_array) {
+            collect_kind_inbox(folders, &email, &mut out);
+        }
+    }
+    out
+}
+
+fn collect_kind_inbox(folders: &[Value], account_email: &str, out: &mut Vec<(u64, String)>) {
+    for f in folders {
+        let kind = f.get("kind").and_then(Value::as_str).unwrap_or("");
+        if kind.eq_ignore_ascii_case("inbox") {
+            if let Some(id) = f.get("id").and_then(Value::as_u64) {
+                out.push((id, account_email.to_string()));
+            }
+        }
+        if let Some(children) = f.get("folders").and_then(Value::as_array) {
+            collect_kind_inbox(children, account_email, out);
+        }
+    }
+}
+
+fn sum_kind_inbox_unread(folders: &[Value]) -> Option<i64> {
+    let mut total = 0i64;
+    let mut found = false;
+    for f in folders {
+        if f.get("kind").and_then(Value::as_str).is_some_and(|k| k.eq_ignore_ascii_case("inbox")) {
+            if let Some(u) = f.get("unread").and_then(Value::as_i64) {
+                total += u;
+                found = true;
+            }
+        }
+        if let Some(children) = f.get("folders").and_then(Value::as_array) {
+            if let Some(sub) = sum_kind_inbox_unread(children) {
+                total += sub;
+                found = true;
+            }
+        }
+    }
+    found.then_some(total)
+}
+
 fn sum_inbox_unread(folders_val: &Value) -> i64 {
     let Some(accounts) = folders_val.get("accounts").and_then(Value::as_array) else {
         return -1;
     };
-    let mut sum = 0i64;
-    let mut found = false;
+    let mut inbox_sum = 0i64;
+    let mut found_inbox = false;
+    let mut acc_sum = 0i64;
+    let mut found_acc = false;
     for acc in accounts {
+        if let Some(folders) = acc.get("folders").and_then(Value::as_array) {
+            if let Some(u) = sum_kind_inbox_unread(folders) {
+                inbox_sum += u;
+                found_inbox = true;
+            }
+        }
         if let Some(u) = acc.get("unread").and_then(Value::as_i64) {
-            sum += u;
-            found = true;
+            acc_sum += u;
+            found_acc = true;
         }
     }
-    if found { sum } else { -1 }
+    if found_inbox {
+        inbox_sum
+    } else if found_acc {
+        acc_sum
+    } else {
+        -1
+    }
 }
 
 fn parse_messages(v: &Value, default_account: &str) -> Vec<Message> {
@@ -1200,5 +1439,35 @@ mod tests {
 
         drop(server);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_inbox_folders_and_unread_support_localized_inbox_names() {
+        let folders_val = json!({
+            "accounts": [
+                {
+                    "id": 10,
+                    "email": "eu@live.example",
+                    "unread": 1766,
+                    "folders": [
+                        { "id": 11, "kind": "inbox", "name": "Caixa de Entrada", "unread": 130, "folders": [] },
+                        { "id": 16, "kind": "junk", "name": "Lixo Eletrônico", "unread": 718, "folders": [] }
+                    ]
+                },
+                {
+                    "id": 3600,
+                    "email": "eu@gmail.example",
+                    "unread": 1418,
+                    "folders": [
+                        { "id": 3601, "kind": "inbox", "name": "Inbox", "unread": 202, "folders": [] }
+                    ]
+                }
+            ]
+        });
+        assert_eq!(
+            extract_inbox_folders(&folders_val),
+            vec![(11, "eu@live.example".to_string()), (3601, "eu@gmail.example".to_string())]
+        );
+        assert_eq!(sum_inbox_unread(&folders_val), 332);
     }
 }
