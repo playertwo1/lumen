@@ -367,6 +367,18 @@ export function recurrenceLabel(rec: TodoRecurrence | null | undefined): string 
   }
 }
 
+export function buildRecurrence(freq: string, dueDate: string | null): TodoRecurrence | null {
+  if (freq !== "daily" && freq !== "weekly" && freq !== "monthly") return null;
+  if (freq === "daily") return { frequency: "daily" };
+  const ref = dueDate ? new Date(`${dueDate}T12:00:00`) : new Date();
+  if (freq === "weekly") {
+    const jsDay = ref.getDay(); // 0=Dom..6=Sab -> 1=Seg..7=Dom
+    const weekday = jsDay === 0 ? 7 : jsDay;
+    return { frequency: "weekly", weekdays: [weekday] };
+  }
+  return { frequency: "monthly", day_of_month: ref.getDate() };
+}
+
 export function isAmbiguousProposal(proposal: Pick<TodoProposal, "date_state" | "time_state">): boolean {
   return proposal.date_state === "ambiguous" || proposal.time_state === "ambiguous";
 }

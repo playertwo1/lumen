@@ -486,6 +486,7 @@ function hexCast(overrides: Record<number, Partial<MochiSpec>> = {}): MochiSpec[
 export const THEMES: Record<string, Theme> = {
   dictation: { color: "#FB923C", cast: hexCast({ 5: { outfit: "bow" } }) },
   notes: { color: "#3B9EFF", cast: hexCast({ 0: { outfit: "roundGlasses" } }) },
+  tasks: { color: "#E99A3D", cast: hexCast({ 0: { state: "working" }, 2: { outfit: "roundGlasses" } }) },
   insights: { color: "#34D399", cast: hexCast({ 0: { outfit: "crown" } }) },
   dictionary: { color: "#A78BFA", cast: hexCast({ 0: { outfit: "roundGlasses" }, 3: { outfit: "beanie" } }) },
   snippets: { color: "#F7B32B", cast: hexCast({ 0: { state: "working" } }) },

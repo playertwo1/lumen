@@ -15,7 +15,12 @@ import {
   splitTodoProposal,
   timeChipLabel,
 } from "../src/core/tasks.ts";
-import { chatTodoProposalCard } from "../src/views/tasks.ts";
+import {
+  buildTaskReminderView,
+  chatTodoProposalCard,
+  setActiveTaskReminder,
+} from "../src/views/tasks.ts";
+import { PANEL_H, VIEW_LAYOUTS } from "../src/core/layout.ts";
 
 Object.defineProperty(globalThis, "navigator", { configurable: true, value: { userAgent: "Windows NT" } });
 globalThis.__TAURI_EVENT_PLUGIN_INTERNALS__ ??= { unregisterListener() {} };
@@ -356,9 +361,8 @@ test("L6.3: waiting_phone mantém item em 'Salvo neste PC' até 'Sincronizar ago
   assert.equal(sent("tasks_sync_now").length, 1);
   assert.ok(bar.textContent.includes("Sincronizado"));
   assert.equal(bar.textContent.includes("Salvo neste PC"), false);
-  for (const pill of page.find(".tasks-item-sync")) {
-    assert.equal(pill.textContent, "Sincronizado");
-  }
+  // Quiet Row Rule: itens sincronizados não repetem selo "Sincronizado" em toda linha
+  assert.equal(page.find(".tasks-item-sync").length, 0);
 
   // Mesmo em state === "synced", item ainda listado em unsynced_item_ids continua "Salvo neste PC"
   const partialPage = await openTasksPage(
@@ -373,11 +377,11 @@ test("L6.3: waiting_phone mantém item em 'Salvo neste PC' até 'Sincronizar ago
   );
   const pills = partialPage.find(".tasks-item").map((card) => ({
     id: card.getAttribute("data-task-id"),
-    syncText: card.querySelector(".tasks-item-sync").textContent,
+    syncText: card.querySelector(".tasks-item-sync")?.textContent ?? null,
   }));
   assert.deepEqual(pills, [
     { id: "t-recente", syncText: "Salvo neste PC" },
-    { id: "t-antigo", syncText: "Sincronizado" },
+    { id: "t-antigo", syncText: null },
   ]);
 });
 
@@ -607,4 +611,142 @@ test("L6.4: taskSyncState aciona gesto P3 (saved vs synced) na Bússola e fallba
   island.taskSyncState("saved");
   assert.equal(emoteCalled, "wink");
   assert.equal(ensured, 4);
+});
+
+test("Ilha taskReminder: altura evita corte dos botões e título quebra sem truncar em 1 linha", () => {
+  // #content padding (18) + #header (34) + borda (2) = 54px fora da área útil do card
+  assert.ok(VIEW_LAYOUTS.taskReminder.height >= 200);
+  assert.ok(VIEW_LAYOUTS.taskCapture.height >= 190);
+  assert.ok(VIEW_LAYOUTS.taskConfirm.height >= 285);
+  assert.ok(VIEW_LAYOUTS.taskReminder.height <= PANEL_H);
+  assert.ok(VIEW_LAYOUTS.taskCapture.height <= PANEL_H);
+  assert.ok(VIEW_LAYOUTS.taskConfirm.height <= PANEL_H);
+
+  setActiveTaskReminder({
+    id: "rem-wrap-1",
+    text: "Teste de lembrete com texto bem longo para confirmar quebra em duas linhas",
+    due_date: "2026-11-15",
+    due_time: "05:59",
+    priority: "normal",
+    alert_minutes: 20,
+  });
+
+  const view = buildTaskReminderView({
+    collapse: () => {},
+    holdOpen: () => {},
+    setView: () => {},
+  });
+  view.sync();
+
+  const titleEl = view.el.querySelector(".task-reminder-title");
+  assert.ok(titleEl, "título do lembrete deve usar classe de até 2 linhas");
+  assert.equal(view.el.querySelector(".title.one-line"), null);
+
+  const actionsEl = view.el.querySelector(".actions");
+  assert.ok(actionsEl);
+  const buttons = actionsEl.children.map((b) => b.textContent);
+  assert.deepEqual(buttons, ["Concluir", "Adiar 10m", "Abrir"]);
+});
+
+test("Hub Tarefas: inspetor de proposta da IA preserva ambiguidade e só grava no clique de confirmar", async () => {
+  const page = await openTasksPage(makeSnapshot(), {
+    tasks_propose_from_text: () => ({
+      id: "prop-hub-1",
+      title: "Enviar guia fiscal",
+      date_state: "ambiguous",
+      due_date: null,
+      date_phrase: "sexta",
+      time_state: "unspecified",
+      due_time: null,
+      time_phrase: null,
+      priority: "high",
+    }),
+    tasks_confirm_proposal: ({ input }) =>
+      fakeTodo({
+        id: "t-confirmed-1",
+        text: input.text,
+        due_date: input.due_date,
+        due_time: input.due_time,
+        alert_minutes: input.alert_minutes,
+        priority: input.priority,
+      }),
+  });
+
+  const inspector = page.querySelector(".tasks-inspector");
+  assert.ok(inspector);
+  assert.equal(inspector.hidden, true);
+  assert.equal(page.querySelector(".tasks-workspace.has-inspector"), null);
+
+  const captureInput = page.querySelector(".tasks-capture-input");
+  const proposeBtn = page.find("BUTTON").find((b) => b.textContent === "Propor");
+  assert.ok(captureInput && proposeBtn);
+  captureInput.value = "Enviar guia fiscal sexta";
+  proposeBtn.fire("click");
+  await flush();
+
+  assert.equal(sent("tasks_propose_from_text").length, 1);
+  assert.equal(sent("tasks_confirm_proposal").length, 0);
+  assert.equal(inspector.hidden, false);
+  assert.ok(page.querySelector(".tasks-workspace.has-inspector"));
+  assert.equal(inspector.querySelector("H2")?.textContent ?? inspector.find("H2")[0]?.textContent, "Confirmar proposta");
+  const alertEl = inspector.querySelector(".tasks-inspector-alert");
+  assert.ok(alertEl?.textContent.includes("sexta"));
+
+  const chips = inspector.find(".tasks-chip");
+  const amanha = chips.find((b) => b.textContent === "Amanhã");
+  const h14 = chips.find((b) => b.textContent === "14h");
+  assert.ok(amanha && h14);
+  amanha.fire("click");
+  h14.fire("click");
+
+  const confirmBtn = inspector.find("BUTTON").find((b) => b.textContent === "Confirmar tarefa");
+  assert.ok(confirmBtn);
+  confirmBtn.fire("click");
+  await flush();
+
+  const confirmed = sent("tasks_confirm_proposal");
+  assert.equal(confirmed.length, 1);
+  assert.equal(confirmed[0].input.text, "Enviar guia fiscal");
+  assert.equal(confirmed[0].input.due_date, dateForShortcut("tomorrow"));
+  assert.equal(confirmed[0].input.due_time, "14:00");
+  assert.equal(inspector.hidden, true);
+});
+
+test("Hub Tarefas: Editar abre inspetor lateral sem injetar editor inline no card e salva via tasks_update", async () => {
+  const item = fakeTodo({ id: "t-edit-1", text: "Revisar orçamento" });
+  const updated = fakeTodo({ id: "t-edit-1", text: "Revisar orçamento Q4" });
+  let currentSnap = makeSnapshot({ items: [item] });
+
+  const page = await openTasksPage(currentSnap, {
+    tasks_state: () => currentSnap,
+    tasks_update: ({ input }) => {
+      currentSnap = makeSnapshot({ items: [{ ...updated, text: input.text }] });
+      return { ...updated, text: input.text };
+    },
+  });
+
+  const editBtn = page.find(".tasks-item")[0].find("BUTTON").find((b) => b.textContent === "Editar");
+  assert.ok(editBtn);
+  editBtn.fire("click");
+  await flush();
+
+  const inspector = page.querySelector(".tasks-inspector");
+  assert.equal(inspector.hidden, false);
+  assert.equal(inspector.find("H2")[0]?.textContent, "Editar tarefa");
+  assert.equal(page.querySelector(".tasks-edit-panel"), null);
+
+  const titleInput = inspector.querySelector(".hub-input");
+  titleInput.value = "Revisar orçamento Q4";
+  titleInput.fire("input");
+
+  const saveBtn = inspector.find("BUTTON").find((b) => b.textContent === "Salvar alterações");
+  assert.ok(saveBtn);
+  saveBtn.fire("click");
+  await flush();
+
+  const updates = sent("tasks_update");
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].input.id, "t-edit-1");
+  assert.equal(updates[0].input.text, "Revisar orçamento Q4");
+  assert.equal(inspector.hidden, true);
 });
