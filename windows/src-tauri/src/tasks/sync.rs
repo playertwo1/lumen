@@ -2586,6 +2586,178 @@ mod tests {
     }
 
     #[test]
+    fn remote_done_delete_and_snooze_emit_dismiss_ids_and_update_scheduler() {
+        use crate::tasks::due_trigger_for_now;
+        use crate::tasks::model::utc_ms_from_local;
+        use crate::tasks::store::UpdateTaskInput;
+
+        let dir = temp_dir("ac08-dismiss");
+        let t_create = utc_ms_from_local(2026, 11, 15, 8, 0, TODO_TIME_ZONE);
+        let trigger_09_40 = utc_ms_from_local(2026, 11, 15, 9, 40, TODO_TIME_ZONE);
+        let now_alarm = trigger_09_40 + 10_000; // 09:40:10 local
+        let snooze_09_55 = utc_ms_from_local(2026, 11, 15, 9, 55, TODO_TIME_ZONE);
+
+        let mut store = TaskStore::load_at(dir.clone());
+        let mut sync = SyncStore::load_at(dir.clone());
+        let (target, creds) = test_creds(77);
+        let mailbox = MemMailbox::default();
+
+        let mk_input = |text: &str| CreateTaskInput {
+            text: text.into(),
+            due: None,
+            due_date: Some("2026-11-15".into()),
+            due_time: Some("10:00".into()),
+            time_zone: Some(TODO_TIME_ZONE.into()),
+            alert_minutes: Some(20),
+            priority: None,
+            subtasks: Vec::new(),
+            recurrence: None,
+            source: None,
+        };
+
+        let t_done = store.create(mk_input("Tarefa concluída no S25"), t_create).unwrap();
+        let t_del = store.create(mk_input("Tarefa excluída no S25"), t_create).unwrap();
+        let t_snooze = store.create(mk_input("Tarefa adiada no S25"), t_create).unwrap();
+        let t_text = store.create(mk_input("Tarefa editada no S25"), t_create).unwrap();
+        for item in [&t_done, &t_del, &t_snooze, &t_text] {
+            sync.enqueue_local_mutation(item, 0, t_create).unwrap();
+            assert_eq!(due_trigger_for_now(item, now_alarm, None), Some(trigger_09_40));
+        }
+
+        // Sincroniza v1 inicial para estabelecer `base_copies` e limpar a outbox.
+        let initial_out = run_local_sync(&mut store, &mut sync, &target, &creds, &mailbox, t_create + 1_000);
+        assert!(initial_out.dismiss_ids.is_empty());
+
+        let push_phone_v2 = |item: &TodoItem, mut_id: &str| {
+            let env = SyncEnvelope {
+                contract_version: 1,
+                mutation_id: mut_id.into(),
+                device_id: "dev-phone-s25".into(),
+                origin_role: "phone".into(),
+                entity_type: "task".into(),
+                entity_id: item.id.clone(),
+                base_version: 1,
+                new_version: 2,
+                updated_at: iso_utc(now_alarm + 5_000),
+                payload: serde_json::to_value(item).unwrap(),
+            };
+            mailbox.push_for_pc_envelope(&creds, &env);
+        };
+
+        let mut r_done = t_done.clone();
+        r_done.done = true;
+        r_done.done_at = Some(iso_utc(now_alarm + 5_000));
+        r_done.version = 2;
+        push_phone_v2(&r_done, "mut-phone-done");
+
+        let mut r_del = t_del.clone();
+        r_del.deleted_at = Some(iso_utc(now_alarm + 5_000));
+        r_del.version = 2;
+        push_phone_v2(&r_del, "mut-phone-del");
+
+        let mut r_snooze = t_snooze.clone();
+        r_snooze.snoozed_until = Some(iso_utc(snooze_09_55));
+        r_snooze.version = 2;
+        push_phone_v2(&r_snooze, "mut-phone-snooze");
+
+        let mut r_text = t_text.clone();
+        r_text.text = "Tarefa editada no S25 (novo título)".into();
+        r_text.priority = TodoPriority::High;
+        r_text.version = 2;
+        push_phone_v2(&r_text, "mut-phone-text");
+
+        let out = run_local_sync(&mut store, &mut sync, &target, &creds, &mailbox, now_alarm + 10_000);
+        assert!(out.changed_tasks);
+        assert!(out.dismiss_ids.contains(&t_done.id));
+        assert!(out.dismiss_ids.contains(&t_del.id));
+        assert!(out.dismiss_ids.contains(&t_snooze.id));
+        assert!(!out.dismiss_ids.contains(&t_text.id));
+
+        // Concluída e excluída não disparam nunca mais no scheduler (nem com `last_fired = None`).
+        let done_item = store.find_any(&t_done.id).unwrap();
+        assert!(done_item.done);
+        assert_eq!(due_trigger_for_now(done_item, now_alarm + 20_000, None), None);
+        assert_eq!(
+            due_trigger_for_now(done_item, utc_ms_from_local(2026, 11, 15, 10, 0, TODO_TIME_ZONE), None),
+            None
+        );
+
+        let del_item = store.find_any(&t_del.id).unwrap();
+        assert!(del_item.is_tombstoned());
+        assert_eq!(due_trigger_for_now(del_item, now_alarm + 20_000, None), None);
+
+        // Adiada cancela alerta anterior (não dispara antes das 09:55) e reagenda para `snoozed_until`.
+        let snoozed_item = store.find_any(&t_snooze.id).unwrap();
+        assert_eq!(due_trigger_for_now(snoozed_item, now_alarm + 20_000, None), None);
+        assert_eq!(
+            due_trigger_for_now(snoozed_item, snooze_09_55 + 5_000, None),
+            Some(snooze_09_55)
+        );
+
+        // Edição remota só de texto/prioridade não re-dispara alarme já disparado às 09:40.
+        let edited_item = store.find_any(&t_text.id).unwrap();
+        assert_eq!(edited_item.version, 2);
+        assert_eq!(
+            due_trigger_for_now(edited_item, now_alarm + 20_000, Some((1, trigger_09_40))),
+            None
+        );
+
+        // Também em reconciliação concorrente (3 vias): `snoozed_until` ou `done` remoto gera `dismiss_ids`.
+        let local_edited = store
+            .update(UpdateTaskInput {
+                id: t_text.id.clone(),
+                text: None,
+                due: None,
+                due_date: None,
+                due_time: None,
+                time_zone: None,
+                alert_minutes: None,
+                priority: Some(TodoPriority::Urgent),
+                recurrence: None,
+                clear_snooze: false,
+            })
+            .unwrap();
+        sync.enqueue_local_mutation(&local_edited, 2, now_alarm + 25_000)
+            .unwrap();
+
+        let snooze_10_05 = utc_ms_from_local(2026, 11, 15, 10, 5, TODO_TIME_ZONE);
+        let mut r_concurrent_snooze = r_text.clone();
+        r_concurrent_snooze.snoozed_until = Some(iso_utc(snooze_10_05));
+        r_concurrent_snooze.version = 3;
+        let concurrent_env = SyncEnvelope {
+            contract_version: 1,
+            mutation_id: "mut-phone-concurrent-snooze".into(),
+            device_id: "dev-phone-s25".into(),
+            origin_role: "phone".into(),
+            entity_type: "task".into(),
+            entity_id: t_text.id.clone(),
+            base_version: 2,
+            new_version: 3,
+            updated_at: iso_utc(now_alarm + 30_000),
+            payload: serde_json::to_value(&r_concurrent_snooze).unwrap(),
+        };
+        mailbox.push_for_pc_envelope(&creds, &concurrent_env);
+
+        let concurrent_out = run_local_sync(
+            &mut store,
+            &mut sync,
+            &target,
+            &creds,
+            &mailbox,
+            now_alarm + 35_000,
+        );
+        assert!(concurrent_out.dismiss_ids.contains(&t_text.id));
+        let merged = store.find_any(&t_text.id).unwrap();
+        assert_eq!(merged.priority, TodoPriority::Urgent);
+        assert_eq!(
+            due_trigger_for_now(merged, snooze_10_05 + 5_000, Some((1, trigger_09_40))),
+            Some(snooze_10_05)
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn sync_module_never_logs_or_prints() {
         let src = include_str!("sync.rs");
         let code = src.split("#[cfg(test)]").next().unwrap();
