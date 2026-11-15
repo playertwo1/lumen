@@ -61,7 +61,7 @@ Pesquisas de projetos externos ficam em `docs/research/`; as ideias aproveitadas
 | 4 | L — Lumen + Segunda Mente | [fase-l-lumen.md](roadmap/fase-l-lumen.md) | Em andamento (0.6.15 publicada; avaliação real da migração, L1.4 e L2 pendentes; L1.4a e L1.4d-1/d-2/d-3/d-4 com aceite visual; L1.4b entregue; Canvas escolhido na L1.4c em 2026-11-13; L2.1 e L2.2 aprovadas sinteticamente; próxima: L3) |
 | — | 2B — Paridade entre agentes e ambientes | [fase-2b-paridade-agentes.md](roadmap/fase-2b-paridade-agentes.md) | Pausada (D-053) |
 | — | 2C — Pílulas configuráveis e posição livre | [fase-2c-pilulas-posicao.md](roadmap/fase-2c-pilulas-posicao.md) | Pausada (D-053) |
-| 6 | M0 — Mochi: descoberta e licenças | [m0-descoberta.md](roadmap/m0-descoberta.md) | Pendente |
+| 6 | M0 — Mochi: descoberta e licenças | [m0-descoberta.md](roadmap/m0-descoberta.md) | Concluída em 2026-11-15 (sem código de produto; specs `docs/superpowers/specs/2026-11-15-mochi-m0-*.md`) |
 | 7 | M1 — Mochi: fundação | [m1-fundacao.md](roadmap/m1-fundacao.md) | Pendente |
 | 8 | M2 — Mochi: controle nativo do Windows | [m2-windows-nativo.md](roadmap/m2-windows-nativo.md) | Pendente |
 | 9 | M3 — Mochi: Obsidian | [m3-obsidian.md](roadmap/m3-obsidian.md) | Pendente |
@@ -76,7 +76,7 @@ Pesquisas de projetos externos ficam em `docs/research/`; as ideias aproveitadas
 | — | Parqueado | [parqueado.md](roadmap/parqueado.md) | Estudo de personagens assumido pela L1.4; L1.4a aprovada; L1.4b em andamento |
 | — | Checklist de release (só com pedido explícito) | [release-checklist.md](roadmap/release-checklist.md) | — |
 
-As fases M ("Lumen assistente") só começam depois do Checkpoint L7. A dependência antiga dos Checkpoints 2B.8 e 2C.3 deve ser reavaliada antes da M0, porque as fases 2B e 2C estão pausadas. Dentro das fases M, a ordem é M0 → M10; uma fase não começa antes do fechamento da anterior, salvo onde o arquivo da fase disser o contrário.
+As fases M de execução em produto (`M1–M10`) só começam depois do Checkpoint L7. A dependência antiga dos Checkpoints `2B.8` e `2C.3` para a M0 foi **reavaliada em 2026-11-15** (base entregue na Fase L até `windows-v0.7.4`) e a **M0 foi concluída sem código de produto** em `2026-11-15`. Dentro das fases M, a ordem é M0 → M10; uma fase não começa antes do fechamento da anterior, salvo onde o arquivo da fase disser o contrário.
 
 ## Regras das fases M (assistente Mochi)
 
