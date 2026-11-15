@@ -574,6 +574,8 @@ test("animações P3 de tarefas (lembrete, soneca e conclusão) animam, respeita
     engine.triggerTaskSnooze(1.0);
     engine.triggerTaskCheck(1.0);
     engine.triggerMailInboxSummary(1.0);
+    engine.triggerTaskSync("saved", 1.0);
+    engine.triggerTaskSync("synced", 1.0);
     assert.equal(engine.busy, false);
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
@@ -601,6 +603,33 @@ test("animação P3 de e-mail (carta na mão ao resumir) pousa na palma, nunca s
   assert.ok(tRest && tRest.args[1] > tEarly.args[1], "carta apenas desce até a mão (nunca sobe/sai sugerindo envio)");
   assert.ok(midRest.ops.some((o) => o.op === "ellipse" && o.args[0] === 74 && o.args[1] === 66), "mão aberta acolhe a carta");
 
+  for (let i = 0; i < 20; i++) engine.update(0.06);
+  assert.equal(engine.busy, false);
+});
+
+test("animação P3 da L6 (sincronização de tarefas: saved vs synced) desenha dois pontos luminosos e retorna ao repouso", () => {
+  const engine = new BotEngine();
+  engine.setAgent("agent_claude");
+
+  // Modo "saved": brilho âmbar suave/local sem pulso completo
+  engine.triggerTaskSync("saved", 0.8);
+  assert.equal(engine.busy, true);
+  engine.update(0.2);
+  const savedProbe = canvasProbe();
+  engine.draw(savedProbe.ctx, 96, 96);
+  // Deve ter desenhado arcos (pontos luminosos)
+  const arcOps = savedProbe.ops.filter((o) => o.op === "arc");
+  assert.ok(arcOps.length >= 2, "deve desenhar pelo menos dois pontos luminosos para PC e celular");
+  for (let i = 0; i < 20; i++) engine.update(0.06);
+  assert.equal(engine.busy, false);
+
+  // Modo "synced": convergência e pulso entre os dois pontos
+  engine.triggerTaskSync("synced", 0.9);
+  assert.equal(engine.busy, true);
+  engine.update(0.25);
+  const syncedProbe = canvasProbe();
+  engine.draw(syncedProbe.ctx, 96, 96);
+  assert.ok(syncedProbe.ops.some((o) => o.op === "lineTo"), "modo synced deve traçar feixe/pulso conectando PC e celular");
   for (let i = 0; i < 20; i++) engine.update(0.06);
   assert.equal(engine.busy, false);
 });
