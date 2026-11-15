@@ -15,8 +15,8 @@
         },
         {
           "icon": "bell",
-          "title": { "pt-BR": "Cancelamento cruzado de avisos e Toast" },
-          "detail": { "pt-BR": "Concluir, adiar ou excluir uma tarefa cancela lembretes e fecha o Toast do Windows no outro aparelho." }
+          "title": { "pt-BR": "Cancelamento cruzado e animação P3 de tarefas" },
+          "detail": { "pt-BR": "Ações em tarefas fecham avisos cruzados no Windows e a Bússola anima o estado salvo neste PC vs sincronizado." }
         }
       ]
     },

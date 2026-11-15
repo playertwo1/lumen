@@ -481,7 +481,7 @@ mod tests {
         use lopdf::content::{Content, Operation};
         use lopdf::{dictionary, Document, Object, Stream};
 
-        let dir = std::env::temp_dir().join(format!("coucou-pdf-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("coucou-pdf-openai-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let pdf_path = dir.join("exercises.pdf");
 

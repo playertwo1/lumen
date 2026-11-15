@@ -4,7 +4,8 @@
 
 - **Pareamento via relay com a Segunda Mente (`L6.2`)** — geração de QR/código efêmero no Lumen e troca segura de chaves + segredo do relay com o Android.
 - **Sync de tarefas E2EE pela caixa de correio (`L6.3`)** — envio e recebimento de snapshots/deltas criptografados no relay DO SQLite mesmo quando o outro aparelho está offline.
-- **Cancelamento cruzado de avisos (`L6.4`)** — concluir, adiar ou excluir uma tarefa propaga o novo estado e fecha o Toast WinRT ativo sem re-disparar no mesmo horário.
+- **Cancelamento cruzado de avisos e reagendamento (`L6.4`)** — concluir, adiar, reagendar (T05) ou excluir uma tarefa fecha o WinRT Toast ativo no Windows e evita re-disparo indevido de avisos.
+- **Animação P3 de sincronização de tarefas** — gesto no `CompassEngine` indicando visualmente quando a tarefa foi salva apenas neste PC (âmbar suave) ou sincronizada com a Segunda Mente (convergência luminosa verde/teal).
 
 ## Windows 0.7.2 — 14 de novembro de 2026 *(Lumen; validação real pendente)*
 

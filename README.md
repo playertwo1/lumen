@@ -71,7 +71,7 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 
 | Versão | Data | Destaques |
 |---|---|---|
-| [`windows-v0.7.3`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.3) | 15 nov. 2026 | Pareamento via relay com a Segunda Mente (`L6.2`), sync E2EE de tarefas pela caixa de correio (`L6.3`) e cancelamento cruzado de avisos (`L6.4`) |
+| [`windows-v0.7.3`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.3) | 15 nov. 2026 | Pareamento via relay com a Segunda Mente (`L6.2`), sync E2EE de tarefas pela caixa de correio (`L6.3`), cancelamento cruzado de avisos e animação P3 (`L6.4`) |
 | [`windows-v0.7.2`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.2) | 14 nov. 2026 | Tarefas com captura `Ctrl+Alt+K` e WinRT Toast (`L4`), e-mail MailCraft/Outlook sem envio automático (`L5`), caixa persistente E2EE no relay (`L6.1`) e heróis Lumen no Hub |
 | [`windows-v0.7.1`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.1) | 14 nov. 2026 | 15 personas oficiais da Segunda Mente com avatares e Tavern (`L3.2`), sync via celular Android (ADB) e personagens Grok, Hermes Desktop e ajustes no Canvas |
 | [`windows-v0.7.0`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.0) | 14 nov. 2026 | Anotador só no microfone e texto rápido (`L3.1`), comentários locais de personas com `@menção` (`L3.2`), animação P3 e identidade `playertwo1/lumen` |
