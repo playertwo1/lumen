@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-15T06:08:00-03:00",
+  "title": "Design System: Lumen Desktop (Segunda Mente Companion)",
+  "extensions": {
+    "colorMeta": {
+      "hub-void": {
+        "role": "neutral",
+        "displayName": "Preto Absoluto",
+        "canonical": "oklch(0% 0 0)",
+        "tonalRamp": ["#000000", "#0b0b0c", "#141518", "#1d1e22", "#2b2c31", "#484950", "#7c7d84", "#d6d4cf"]
+      },
+      "hub-panel": {
+        "role": "neutral",
+        "displayName": "Ardósia Escura",
+        "canonical": "oklch(16.5% 0.004 260)",
+        "tonalRamp": ["#060708", "#0e0f11", "#16181c", "#202227", "#30333a", "#52555d", "#8d9098", "#e6e4df"]
+      },
+      "hub-surface": {
+        "role": "neutral",
+        "displayName": "Obsidiana Base",
+        "canonical": "oklch(19.5% 0.006 260)",
+        "tonalRamp": ["#090a0c", "#141518", "#1d1e23", "#282a30", "#3a3c43", "#5b5e66", "#95979e", "#eae7e1"]
+      },
+      "hub-card": {
+        "role": "neutral",
+        "displayName": "Obsidiana Elevada",
+        "canonical": "oklch(21.2% 0.006 260)",
+        "tonalRamp": ["#0c0d0f", "#18191c", "#222429", "#2d3036", "#40434b", "#62656d", "#9a9ca3", "#eceae4"]
+      },
+      "hub-field": {
+        "role": "neutral",
+        "displayName": "Grafite de Campo",
+        "canonical": "oklch(24% 0.008 260)",
+        "tonalRamp": ["#111215", "#1f2024", "#292b30", "#35373d", "#484b52", "#696c74", "#a0a2a8", "#efede8"]
+      },
+      "hub-line": {
+        "role": "neutral",
+        "displayName": "Divisor Sutil",
+        "canonical": "oklch(94.8% 0.012 75 / 0.08)",
+        "tonalRamp": ["#141312", "#1e1d1b", "#2a2825", "#3a3733", "#56524c", "#7f7a72", "#b3aea5", "#f3eee6"]
+      },
+      "hub-line-strong": {
+        "role": "neutral",
+        "displayName": "Contorno de Campo",
+        "canonical": "oklch(94.8% 0.012 75 / 0.14)",
+        "tonalRamp": ["#181715", "#242220", "#33302c", "#44403b", "#615c55", "#8a847b", "#bdb7ae", "#f3eee6"]
+      },
+      "hub-ink": {
+        "role": "neutral",
+        "displayName": "Marfim Quente",
+        "canonical": "oklch(94.8% 0.012 75)",
+        "tonalRamp": ["#201e1b", "#393631", "#57524b", "#78726a", "#9b958d", "#beb9b0", "#dcd7cf", "#f3eee6"]
+      },
+      "hub-body": {
+        "role": "neutral",
+        "displayName": "Marfim Suave",
+        "canonical": "oklch(88.6% 0.012 75)",
+        "tonalRamp": ["#1c1b19", "#34322e", "#504d47", "#6f6b64", "#918c85", "#b4afa7", "#cec9c1", "#ded9d1"]
+      },
+      "hub-secondary": {
+        "role": "neutral",
+        "displayName": "Cinza Quente",
+        "canonical": "oklch(72.6% 0.009 75)",
+        "tonalRamp": ["#181715", "#2b2a27", "#43413d", "#5e5b56", "#7a7771", "#96928c", "#aaa6a0", "#e2ded8"]
+      },
+      "hub-muted": {
+        "role": "neutral",
+        "displayName": "Cinza Mudo Quente",
+        "canonical": "oklch(53.5% 0.008 75)",
+        "tonalRamp": ["#141312", "#22211f", "#34322f", "#484542", "#5d5a55", "#706d68", "#94908a", "#d2cec8"]
+      },
+      "hub-accent": {
+        "role": "primary",
+        "displayName": "Âmbar Cobre",
+        "canonical": "oklch(74.8% 0.145 64)",
+        "tonalRamp": ["#2c1803", "#4c2b07", "#73420c", "#9e5d15", "#c87b24", "#e99a3d", "#f4b96e", "#fbe4c2"]
+      },
+      "hub-accent-soft": {
+        "role": "tertiary",
+        "displayName": "Âmbar Suave",
+        "canonical": "oklch(74.8% 0.145 64 / 0.14)",
+        "tonalRamp": ["#201408", "#35200c", "#523214", "#74471d", "#9a6029", "#c27c36", "#e99a3d", "#f8dcb5"]
+      },
+      "hub-on-accent": {
+        "role": "primary",
+        "displayName": "Carvão sobre Âmbar",
+        "canonical": "oklch(16.2% 0.032 60)",
+        "tonalRamp": ["#0c0701", "#160d02", "#271806", "#3d270c", "#5c3c16", "#835927", "#b5854c", "#e8ccb0"]
+      },
+      "hub-green": {
+        "role": "secondary",
+        "displayName": "Verde Sincronia",
+        "canonical": "oklch(77.3% 0.149 163)",
+        "tonalRamp": ["#062419", "#0c3c2b", "#145b42", "#1d7e5b", "#27a679", "#34d399", "#74e4ba", "#c7f7e4"]
+      },
+      "hub-red": {
+        "role": "secondary",
+        "displayName": "Coral Alerta",
+        "canonical": "oklch(67.2% 0.21 27)",
+        "tonalRamp": ["#2e0b08", "#4e1410", "#76201a", "#a52d25", "#d43f34", "#ff5a4e", "#ff8d84", "#ffd2ce"]
+      },
+      "island-card": {
+        "role": "neutral",
+        "displayName": "Obsidiana da Ilha",
+        "canonical": "oklch(19.5% 0.006 260)",
+        "tonalRamp": ["#090a0c", "#141518", "#1d1e23", "#282a30", "#3a3c43", "#5b5e66", "#95979e", "#eae7e1"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Heróis e faixas introdutórias com o elenco do Lumen." },
+      "headline": { "displayName": "Headline", "purpose": "Títulos de páginas operacionais e do painel inspetor." },
+      "title": { "displayName": "Title", "purpose": "Títulos de tarefa, nota, regra e cartão." },
+      "body": { "displayName": "Body", "purpose": "Texto principal de leitura, notas, descrições e campos." },
+      "label": { "displayName": "Label", "purpose": "Marcadores de grupo de navegação e cabeçalhos de seção." },
+      "mono": { "displayName": "Mono", "purpose": "Códigos de pareamento, atalhos e identificadores técnicos." }
+    },
+    "shadows": [
+      {
+        "name": "popover-shadow",
+        "value": "0 12px 32px rgba(0, 0, 0, 0.52)",
+        "purpose": "Exclusivo para overlays reais (popovers, seletores e modais), mantendo cartões planos em repouso."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "120ms ease-out",
+        "purpose": "Transição discreta de hover, seleção de linha e foco de campo."
+      },
+      {
+        "name": "drawer-slide",
+        "value": "180ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Entrada e saída do painel inspetor direito em telas Master-Detail (respeitando prefers-reduced-motion)."
+      }
+    ],
+    "breakpoints": [
+      { "name": "compact-hub", "value": "960px" },
+      { "name": "wide-hub", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ação principal única por contexto (Propor, Confirmar, Salvar) em âmbar cobre.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Confirmar</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 14px; border: 0; border-radius: 10px; background: #E99A3D; color: #160D02; font: 600 13px/1.2 'Inter', 'Segoe UI Variable Text', system-ui, sans-serif; cursor: pointer; transition: filter 120ms ease-out, transform 120ms ease-out; } .ds-btn-primary:hover { filter: brightness(1.06); } .ds-btn-primary:focus-visible { outline: 2px solid #E99A3D; outline-offset: 2px; } .ds-btn-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Ação complementar neutra em marfim translúcido sobre escuro.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">Sincronizar agora</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 14px; border: 1px solid rgba(243, 238, 230, 0.14); border-radius: 10px; background: rgba(243, 238, 230, 0.08); color: #F3EEE6; font: 500 13px/1.2 'Inter', 'Segoe UI Variable Text', system-ui, sans-serif; cursor: pointer; transition: background 120ms ease-out, border-color 120ms ease-out; } .ds-btn-secondary:hover { background: rgba(243, 238, 230, 0.13); border-color: rgba(243, 238, 230, 0.22); } .ds-btn-secondary:focus-visible { outline: 2px solid #E99A3D; outline-offset: 2px; }"
+    },
+    {
+      "name": "Quick Capture Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Campo de entrada editorial com foco único em âmbar cobre.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Nova tarefa… ex.: ligar pro contador amanhã 9h\" />",
+      "css": ".ds-input { width: 100%; padding: 9px 12px; border: 1px solid rgba(243, 238, 230, 0.14); border-radius: 10px; background: #1f2024; color: #F3EEE6; font: 400 13.5px/1.4 'Inter', 'Segoe UI Variable Text', system-ui, sans-serif; color-scheme: dark; transition: border-color 120ms ease-out, box-shadow 120ms ease-out; } .ds-input::placeholder { color: #706D68; } .ds-input:focus { outline: none; border-color: #E99A3D; box-shadow: 0 0 0 2px rgba(233, 154, 61, 0.22); }"
+    },
+    {
+      "name": "Filter Pill",
+      "kind": "chip",
+      "description": "Filtro segmentado para alternar visão (Todas, Hoje, Próximas) ou atalho rápido no inspetor.",
+      "html": "<div class=\"ds-filter-row\"><button class=\"ds-pill ds-pill-on\" type=\"button\">Hoje</button><button class=\"ds-pill\" type=\"button\">Próximas</button><button class=\"ds-pill\" type=\"button\">Atrasadas</button></div>",
+      "css": ".ds-filter-row { display: inline-flex; gap: 6px; padding: 4px; border-radius: 999px; background: #141518; border: 1px solid rgba(243, 238, 230, 0.08); } .ds-pill { padding: 5px 12px; border: 0; border-radius: 999px; background: transparent; color: #AAA6A0; font: 500 12.5px/1.2 'Inter', 'Segoe UI Variable Text', system-ui, sans-serif; cursor: pointer; transition: background 120ms ease-out, color 120ms ease-out; } .ds-pill:hover { color: #F3EEE6; } .ds-pill-on { background: rgba(233, 154, 61, 0.16); color: #F3EEE6; box-shadow: inset 0 0 0 1px rgba(233, 154, 61, 0.35); }"
+    },
+    {
+      "name": "Quiet Task Row",
+      "kind": "card",
+      "refersTo": "card-surface",
+      "description": "Linha de tarefa editorial em container único, sem pílulas repetitivas para estados padrão.",
+      "html": "<div class=\"ds-list-group\"><div class=\"ds-task-row\"><button class=\"ds-check\" type=\"button\" aria-label=\"Concluir\"></button><div class=\"ds-task-main\"><div class=\"ds-task-title\">Revisar proposta do contador</div><div class=\"ds-task-meta\">Hoje · 09:00</div></div><div class=\"ds-task-actions\"><button class=\"ds-ghost-btn\" type=\"button\">Editar</button></div></div></div>",
+      "css": ".ds-list-group { background: #18191c; border: 1px solid rgba(243, 238, 230, 0.08); border-radius: 14px; overflow: hidden; } .ds-task-row { display: flex; align-items: center; gap: 12px; padding: 14px 18px; transition: background 120ms ease-out; } .ds-task-row:hover { background: rgba(243, 238, 230, 0.03); } .ds-check { width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid rgba(243, 238, 230, 0.28); background: transparent; cursor: pointer; flex: 0 0 auto; } .ds-check:hover { border-color: #E99A3D; } .ds-task-main { flex: 1 1 auto; min-width: 0; } .ds-task-title { color: #F3EEE6; font: 600 14px/1.35 'Inter', 'Segoe UI Variable Text', system-ui, sans-serif; } .ds-task-meta { color: #AAA6A0; font: 400 12px/1.4 'Inter', 'Segoe UI Variable Text', system-ui, sans-serif; font-variant-numeric: tabular-nums; margin-top: 2px; } .ds-task-actions { opacity: 0.65; transition: opacity 120ms ease-out; } .ds-task-row:hover .ds-task-actions { opacity: 1; } .ds-ghost-btn { border: 0; background: transparent; color: #AAA6A0; padding: 5px 8px; border-radius: 8px; font: 500 12.5px 'Inter', system-ui, sans-serif; cursor: pointer; } .ds-ghost-btn:hover { background: rgba(243, 238, 230, 0.08); color: #F3EEE6; }"
+    },
+    {
+      "name": "Proposal Inspector Drawer",
+      "kind": "custom",
+      "refersTo": "inspector-drawer",
+      "description": "Painel direito do Master-Detail para confirmar propostas da IA ou editar item sem espremer controles.",
+      "html": "<aside class=\"ds-inspector\"><div class=\"ds-inspector-head\"><span class=\"ds-kicker\">Confirmar proposta</span><button class=\"ds-ghost-close\" type=\"button\" aria-label=\"Fechar\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\"><path d=\"M4 4l8 8M12 4l-8 8\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg></button></div><div class=\"ds-inspector-title\">Teste PC 2</div><div class=\"ds-inspector-grid\"><div class=\"ds-field-box\"><span class=\"ds-field-label\">Quando</span><span class=\"ds-field-val\">Hoje · 09:00</span></div><div class=\"ds-field-box\"><span class=\"ds-field-label\">Prioridade</span><span class=\"ds-field-val\">Normal</span></div></div></aside>",
+      "css": ".ds-inspector { background: #141518; border: 1px solid rgba(243, 238, 230, 0.14); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; } .ds-inspector-head { display: flex; align-items: center; justify-content: space-between; } .ds-kicker { color: #E99A3D; font: 600 11px/1.2 'Inter', system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; } .ds-ghost-close { border: 0; background: transparent; color: #AAA6A0; padding: 4px; border-radius: 8px; cursor: pointer; } .ds-ghost-close:hover { background: rgba(243, 238, 230, 0.08); color: #F3EEE6; } .ds-inspector-title { color: #F3EEE6; font: 600 15px/1.35 'Inter', system-ui, sans-serif; } .ds-inspector-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .ds-field-box { background: #1f2024; border: 1px solid rgba(243, 238, 230, 0.08); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; } .ds-field-label { color: #706D68; font: 600 10.5px 'Inter', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; } .ds-field-val { color: #F3EEE6; font: 500 13px 'Inter', system-ui, sans-serif; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "description": "Item da sidebar lateral em preto absoluto com seleção suave em marfim.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-active\" href=\"#\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\"><path d=\"M3 8.5l3 3 7-7\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg><span>Tarefas</span></a></nav>",
+      "css": ".ds-nav { background: #000000; padding: 8px; width: 204px; } .ds-nav-item { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #AAA6A0; font: 500 13px/1.2 'Inter', system-ui, sans-serif; transition: background 120ms ease-out, color 120ms ease-out; } .ds-nav-item:hover { background: rgba(243, 238, 230, 0.06); color: #F3EEE6; } .ds-nav-active { background: rgba(243, 238, 230, 0.1); color: #F3EEE6; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "O Diário de Mesa — Calmo, Editorial e Preciso",
+    "overview": "Lumen é o irmão desktop da Segunda Mente: um instrumento silencioso de trabalho diário em escuro profundo, onde a leitura respira e a interface nunca disputa atenção com o pensamento do usuário. A direção visual preserva a base sólida que já funciona bem nas telas originais do Hub e eleva tudo o que foi adicionado no fork — a começar por Tarefas, e depois as adições de Anotador/Personas, MailCraft, Celular Android e cartões de tarefa no Chat — para o mesmo padrão editorial.\n\nO desktop adapta a calma editorial do mobile para uso real com mouse, teclado e janelas largas no Windows: menos caixas dentro de caixas, contraste quente em marfim sobre fundos escuros, e um único ponto de foco quando uma proposta de IA ou detalhe de item exige decisão humana.",
+    "keyCharacteristics": [
+      "Preto puro na moldura lateral e painéis escuros neutros de baixo ruído, sem sombras pesadas nem gradientes decorativos.",
+      "Texto em marfim quente (#F3EEE6) e secundários quentes (#AAA6A0) para conforto prolongado de leitura no Windows.",
+      "Cobre/âmbar (#E99A3D) reservado exclusivamente para seleção ativa, confirmação e ação principal da tela.",
+      "Arquitetura Master-Detail em telas operacionais para ocupar janelas largas com propósito (lista respirando no centro + inspetor/revisor à direita apenas quando necessário).",
+      "Zero poluição repetitiva por item: metadados óbvios ficam no cabeçalho ou grupo, jamais repetidos em três pílulas coloridas por linha."
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "Apenas o cobre/âmbar (hub-accent) funciona como cor de foco e ação principal no Hub; resquícios de roxo ou azul em busca, foco de campo ou botões neutros estão banidos.",
+        "section": "colors"
+      },
+      {
+        "name": "The Quiet Row Rule",
+        "body": "Nenhuma linha de lista carrega selos para estados padrão (Normal, Sem data, Sincronizado); badges em linha só aparecem quando algo exige atenção (atraso, prioridade elevada, conflito ou pendência local real).",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Time Rule",
+        "body": "Horários, contagens, prazos e alertas usam font-variant-numeric: tabular-nums para alinhamento vertical impecável em listas e tabelas.",
+        "section": "typography"
+      },
+      {
+        "name": "The Surface Boundary Rule",
+        "body": "A Ilha (<= 640px) e o Hub (janela larga desktop) compartilham tokens de cor e voz, nunca o mesmo HTML/CSS de formulário comprimido.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Cartões e painéis em repouso nunca projetam sombra; contraste de superfície + borda sutil (1px) bastam para separar regiões.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do preservar a estrutura base de navegação, os heróis com personagens do Lumen e o nível de acabamento das páginas originais (Ditado, Estatísticas, Flow) ao reformular as telas adicionadas no fork.",
+      "Do exibir propostas da IA (\"IA propõe, usuário confirma\") e edição de tarefas no Hub dentro de um painel inspetor/revisor desktop estruturado em grade alinhada, nunca no componente compacto da Ilha.",
+      "Do garantir que a janela maximizada distribua o espaço com equilíbrio (Master-Detail ou grade de colunas), sem deixar metade da tela vazia à direita.",
+      "Do manter acessibilidade plena (prefers-reduced-motion, foco de teclado nítido em âmbar, contraste forte de #F3EEE6 em fundos escuros e color-scheme: dark)."
+    ],
+    "donts": [
+      "Don't repetir selos redundantes (Sem data, Normal, Sincronizado) em toda linha quando a seção ou a barra superior já comunicam esse estado.",
+      "Don't empilhar 5+ chips arredondados e <select> nativos comprimidos lado a lado dentro de um único card largo, nem usar botão branco sólido em formulários do Hub.",
+      "Don't misturar focos roxos (#6e56cf), banners azuis (#3b82f6) e acentos laranja na mesma visão operacional.",
+      "Don't quebrar o layout da Ilha (taskReminder / taskCapture / taskConfirm em 640px) ao estilizar o Hub: mantenha CSS da Ilha e do Hub estritamente isolados."
+    ]
+  }
+}
