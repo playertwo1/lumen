@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.3",
+      "items": [
+        {
+          "icon": "phone",
+          "title": { "pt-BR": "Pareamento via relay com a Segunda Mente" },
+          "detail": { "pt-BR": "Gere QR ou código efêmero e receba a chave do relay direto no celular pelo protocolo L6.2." }
+        },
+        {
+          "icon": "checklist",
+          "title": { "pt-BR": "Sincronização E2EE de tarefas pelo relay" },
+          "detail": { "pt-BR": "Envie e receba tarefas com criptografia ponta a ponta na caixa de correio mesmo com o PC ou celular offline." }
+        },
+        {
+          "icon": "bell",
+          "title": { "pt-BR": "Cancelamento cruzado de avisos e Toast" },
+          "detail": { "pt-BR": "Concluir, adiar ou excluir uma tarefa cancela lembretes e fecha o Toast do Windows no outro aparelho." }
+        }
+      ]
+    },
+    {
       "version": "0.7.2",
       "items": [
         {

@@ -415,6 +415,7 @@ fn run_sync_once_for_app(
     if outcome.changed_tasks || outcome.status_changed {
         emit_tasks_changed(app);
     }
+    emit_task_sync_state(app, mgr);
 
     Ok(Some((outcome, next_wait)))
 }
@@ -588,6 +589,7 @@ pub fn handle_toast_action(
                 let _ = mgr.wake_tx.send(());
                 let _ = mgr.sync_wake_tx.send(());
                 emit_tasks_changed(app);
+                emit_task_sync_state(app, &mgr);
                 let _ = app.emit_to(crate::island::WINDOW_LABEL, "task-snoozed", &item.id);
             }
         }
@@ -604,6 +606,7 @@ pub fn handle_toast_action(
                     let _ = mgr.sync_wake_tx.send(());
                 }
                 emit_tasks_changed(app);
+                emit_task_sync_state(app, &mgr);
                 let _ = app.emit_to(crate::island::WINDOW_LABEL, "task-completed", &outcome.item.id);
             }
         }
@@ -616,6 +619,26 @@ pub fn handle_toast_action(
 
 fn emit_tasks_changed(app: &AppHandle) {
     let _ = app.emit("tasks-changed", ());
+}
+
+fn emit_task_sync_state(app: &AppHandle, mgr: &TaskManager) {
+    let creds = crate::phone_link::mailbox_credentials(app);
+    let paired = creds.is_some();
+    let status = {
+        let local = mgr.local.lock().unwrap();
+        local.sync.status(paired)
+    };
+    let payload = if status.paired
+        && status.pending_outbox == 0
+        && status.pending_peer == Some(0)
+        && status.state == TaskSyncState::Synced
+    {
+        "synced"
+    } else {
+        "saved"
+    };
+    let _ = app.emit_to(crate::island::WINDOW_LABEL, "task-sync-state", payload);
+    let _ = app.emit_to(crate::HUB_LABEL, "task-sync-state", payload);
 }
 
 fn build_snapshot(app: &AppHandle, mgr: &TaskManager) -> TasksSnapshot {
@@ -804,6 +827,7 @@ pub fn tasks_confirm_proposal(
     let _ = mgr.wake_tx.send(());
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     Ok(item)
 }
 
@@ -821,6 +845,7 @@ pub fn tasks_create(
     let _ = mgr.wake_tx.send(());
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     Ok(item)
 }
 
@@ -839,6 +864,7 @@ pub fn tasks_update(
     let _ = mgr.wake_tx.send(());
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     Ok(item)
 }
 
@@ -860,6 +886,7 @@ pub fn tasks_toggle_done(
         let _ = mgr.sync_wake_tx.send(());
     }
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     if outcome.item.done {
         let _ = app.emit_to(crate::island::WINDOW_LABEL, "task-completed", &outcome.item.id);
     }
@@ -882,6 +909,7 @@ pub fn tasks_snooze(
     let _ = mgr.wake_tx.send(());
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     let _ = app.emit_to(crate::island::WINDOW_LABEL, "task-snoozed", &item.id);
     Ok(item)
 }
@@ -901,6 +929,7 @@ pub fn tasks_delete(
     let _ = mgr.wake_tx.send(());
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     Ok(item)
 }
 
@@ -918,6 +947,7 @@ pub fn tasks_restore(
     let _ = mgr.wake_tx.send(());
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     Ok(item)
 }
 
@@ -935,6 +965,7 @@ pub fn tasks_add_subtask(
         .add_subtask_and_enqueue(&task_id, &text, now_utc_ms())?;
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     Ok(item)
 }
 
@@ -952,6 +983,7 @@ pub fn tasks_toggle_subtask(
     )?;
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     Ok(item)
 }
 
@@ -969,6 +1001,7 @@ pub fn tasks_remove_subtask(
     )?;
     let _ = mgr.sync_wake_tx.send(());
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     Ok(item)
 }
 
@@ -1044,6 +1077,7 @@ pub fn tasks_resolve_conflict(
         let _ = mgr.sync_wake_tx.send(());
     }
     emit_tasks_changed(&app);
+    emit_task_sync_state(&app, &mgr);
     Ok(build_snapshot(&app, &mgr))
 }
 

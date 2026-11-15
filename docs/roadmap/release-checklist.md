@@ -12,6 +12,18 @@
 - [x] Comparar os SHA-256 dos instaladores publicados com o preflight. Os hashes diferiram; os assets finais foram baixados, conferidos com os digests do GitHub e examinados diretamente pelo Defender sem detecções (evento 1001, exame `{9AD2DD74-E9E4-4DCE-8E77-D2954870AA9F}`).
 - Nunca executar esta lista de publicação sem o proprietário pedir release.
 
+## Windows 0.7.3 — L6.2 pareamento via relay, L6.3 sync E2EE de tarefas e L6.4 cancelamento cruzado (build local)
+
+- [x] Pedido explícito do proprietário em 2026-11-15 para gerar o `.exe` release versionado localmente (`no-github-actions`) para validação do relay com a Segunda Mente (`v1.0.48+133`).
+- [x] Validações locais: `python.exe scripts/test-whats-new.py windows` (`0.7.3: 3 items in 1 languages`), `npx tsc --noEmit`, `npm test` (`697/697`), `npm run build` (`tsc --noEmit && vite build`), `cargo test --lib` (`726` passaram, `9` ignorados), `cargo test` em `windows/hook/` (`37/37`) e `npm run pack`.
+- [x] Microsoft Defender (`MpCmdRun.exe -Scan -ScanType 3 -File <arquivo> -DisableRemediation`) examinou individualmente os quatro artefatos gerados: código 0 e `found no threats`.
+- [x] SHA-256 dos artefatos:
+  - Setup `Lumen-Windows-0.7.3-setup.exe`: `4A0B855B6393F6390C3E0D09EB4F8AF2E1B3A1E7661E9CD45CCEE4CCF9F1885F`.
+  - MSI `Lumen-Windows-0.7.3.msi`: `03643012C46E7F103FA030A5B4CFE76FD2B5C9B4977D09AB651A2A379F28AE22`.
+  - App portátil `lumen.exe`: `36F027B4645EA21419F30545CAB3652881E79C4F1515C8CF2924445600842B0F`.
+  - Hook `lumen-hook.exe`: `982A7356E5E3333D7C817E7CC3FE458B8D02C296306630AD77CE550D157B91EA`.
+- [ ] Proprietário instalar a `0.7.3` no notebook e validar ponta a ponta o pareamento e sync de tarefas via relay com o Galaxy S25 Ultra (`v1.0.48+133`). Continua **NOT_RUN**.
+
 ## Windows 0.7.2 — L4 Tarefas, L5 MailCraft/Outlook, L6.1 Relay DO SQLite e heróis Lumen (publicação local)
 
 - [x] Pedido explícito do proprietário em 2026-11-14 para criar e publicar a release `0.7.2` localmente (`no-github-actions`).

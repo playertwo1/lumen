@@ -7,7 +7,7 @@
 **Ilha flutuante inteligente para Windows que acompanha seus agentes de IA, permissões, ditado offline, anotações e integrações sem tirar você do foco.**
 
 <p>
-  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.2"><img src="https://img.shields.io/badge/release-windows--v0.7.2-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.2"></a>
+  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.3"><img src="https://img.shields.io/badge/release-windows--v0.7.3-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.3"></a>
   <a href="https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 e 11"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=black" alt="Tauri 2">
   <img src="https://img.shields.io/badge/Rust-TypeScript-F74C00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust e TypeScript">
@@ -67,10 +67,11 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 > Os instaladores ainda não possuem certificado Authenticode, então o SmartScreen pode exibir aviso de editor desconhecido; clique em **Mais informações → Executar mesmo assim**. Após instalar, novas versões podem ser verificadas em **Ajustes → Geral → Atualizações** com conferência de SHA-256.
 
 <details>
-<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.2</code></summary>
+<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.3</code></summary>
 
 | Versão | Data | Destaques |
 |---|---|---|
+| [`windows-v0.7.3`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.3) | 15 nov. 2026 | Pareamento via relay com a Segunda Mente (`L6.2`), sync E2EE de tarefas pela caixa de correio (`L6.3`) e cancelamento cruzado de avisos (`L6.4`) |
 | [`windows-v0.7.2`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.2) | 14 nov. 2026 | Tarefas com captura `Ctrl+Alt+K` e WinRT Toast (`L4`), e-mail MailCraft/Outlook sem envio automático (`L5`), caixa persistente E2EE no relay (`L6.1`) e heróis Lumen no Hub |
 | [`windows-v0.7.1`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.1) | 14 nov. 2026 | 15 personas oficiais da Segunda Mente com avatares e Tavern (`L3.2`), sync via celular Android (ADB) e personagens Grok, Hermes Desktop e ajustes no Canvas |
 | [`windows-v0.7.0`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.0) | 14 nov. 2026 | Anotador só no microfone e texto rápido (`L3.1`), comentários locais de personas com `@menção` (`L3.2`), animação P3 e identidade `playertwo1/lumen` |

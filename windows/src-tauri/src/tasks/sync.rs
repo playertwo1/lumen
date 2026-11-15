@@ -960,6 +960,34 @@ fn parse_pulled_json(seq: u64, json_text: &str) -> PulledItem {
     }
 }
 
+/// Helper puro que decide se um lembrete ativo no PC deve ser dispensado
+/// após uma alteração remota puxada da caixa de correio (AC-08 e T05).
+pub fn should_dismiss_reminder_on_remote_change(
+    old_item: Option<&TodoItem>,
+    new_item: &TodoItem,
+) -> bool {
+    if new_item.done || new_item.is_tombstoned() {
+        return true;
+    }
+    if !new_item.has_alarm_time() {
+        return old_item.is_some_and(|o| o.has_alarm_time());
+    }
+    match old_item {
+        None => new_item.snoozed_until.is_some(),
+        Some(old) => {
+            let became_done = new_item.done && !old.done;
+            let became_deleted = new_item.is_tombstoned() && !old.is_tombstoned();
+            let snooze_changed = new_item.snoozed_until != old.snoozed_until;
+            let schedule_changed = old.has_alarm_time()
+                && (new_item.due_date != old.due_date
+                    || new_item.due_time != old.due_time
+                    || new_item.time_zone != old.time_zone
+                    || new_item.alert_minutes != old.alert_minutes);
+            became_done || became_deleted || snooze_changed || schedule_changed
+        }
+    }
+}
+
 struct ApplyBatchResult {
     max_seq: u64,
     changed_tasks: bool,
@@ -1049,10 +1077,7 @@ fn apply_pulled_batch(
                             },
                         );
                         sync.clear_conflicts_for_entity(id);
-                        if remote_item.done
-                            || remote_item.is_tombstoned()
-                            || remote_item.snoozed_until.is_some()
-                        {
+                        if should_dismiss_reminder_on_remote_change(None, remote_item) {
                             dismiss_ids.push(id.clone());
                         }
                         changed_tasks = true;
@@ -1063,10 +1088,8 @@ fn apply_pulled_batch(
                             && !in_outbox
                             && (!is_unsynced || base_matches_local) =>
                     {
-                        let became_done = remote_item.done && !local.done;
-                        let became_deleted = remote_item.is_tombstoned() && !local.is_tombstoned();
-                        let snooze_changed = remote_item.snoozed_until.is_some()
-                            && remote_item.snoozed_until != local.snoozed_until;
+                        let should_dismiss =
+                            should_dismiss_reminder_on_remote_change(Some(&local), remote_item);
 
                         store.upsert_remote(remote_item.clone())?;
                         sync.state
@@ -1082,7 +1105,7 @@ fn apply_pulled_batch(
                             },
                         );
                         sync.clear_conflicts_for_entity(id);
-                        if became_done || became_deleted || snooze_changed {
+                        if should_dismiss {
                             dismiss_ids.push(id.clone());
                         }
                         changed_tasks = true;
@@ -1104,16 +1127,14 @@ fn apply_pulled_batch(
                             &envelope.device_id,
                             envelope.new_version,
                         );
-                        let became_done = merge.item.done && !local.done;
-                        let became_deleted = merge.item.is_tombstoned() && !local.is_tombstoned();
-                        let snooze_changed = merge.item.snoozed_until.is_some()
-                            && merge.item.snoozed_until != local.snoozed_until;
+                        let should_dismiss =
+                            should_dismiss_reminder_on_remote_change(Some(&local), &merge.item);
 
                         store.upsert_remote(merge.item.clone())?;
                         for c in merge.conflicts {
                             sync.state.conflicts.insert(c.id.clone(), c);
                         }
-                        if became_done || became_deleted || snooze_changed {
+                        if should_dismiss {
                             dismiss_ids.push(id.clone());
                         }
                         let diverges_from_remote = !merge.item.same_content_ignoring_version(remote_item)
@@ -2755,6 +2776,79 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_should_dismiss_reminder_on_remote_change_cases() {
+        let base = sample_item("t-eval-1", "Comprar café", 1);
+        assert!(base.has_alarm_time());
+
+        // 1. Conclusão remota (done: true)
+        let mut done_item = base.clone();
+        done_item.done = true;
+        assert!(should_dismiss_reminder_on_remote_change(Some(&base), &done_item));
+        assert!(should_dismiss_reminder_on_remote_change(None, &done_item));
+
+        // 2. Exclusão remota (tombstone)
+        let mut tombstoned = base.clone();
+        tombstoned.deleted_at = Some("2026-11-15T10:00:00Z".into());
+        assert!(should_dismiss_reminder_on_remote_change(Some(&base), &tombstoned));
+        assert!(should_dismiss_reminder_on_remote_change(None, &tombstoned));
+
+        // 3. Perda de alarme (!has_alarm_time)
+        let mut no_alarm = base.clone();
+        no_alarm.due_date = None;
+        no_alarm.due_time = None;
+        assert!(!no_alarm.has_alarm_time());
+        // Se tinha alarme no PC e perdeu -> deve dispensar
+        assert!(should_dismiss_reminder_on_remote_change(Some(&base), &no_alarm));
+        // Se não tinha alarme no PC nem remoto -> false
+        let mut base_no_alarm = base.clone();
+        base_no_alarm.due_date = None;
+        base_no_alarm.due_time = None;
+        assert!(!should_dismiss_reminder_on_remote_change(Some(&base_no_alarm), &no_alarm));
+        // Se não havia cópia local e remoto veio sem alarme e sem snooze -> false
+        assert!(!should_dismiss_reminder_on_remote_change(None, &no_alarm));
+
+        // 4. Alteração de adiamento (snoozed_until)
+        let mut snoozed = base.clone();
+        snoozed.snoozed_until = Some("2026-11-20T10:30:00Z".into());
+        // Novo item vindo com snooze sem cópia local prévia
+        assert!(should_dismiss_reminder_on_remote_change(None, &snoozed));
+        // Cópia local sem snooze e remoto com snooze
+        assert!(should_dismiss_reminder_on_remote_change(Some(&base), &snoozed));
+        // Ambos com mesmo snooze -> false
+        assert!(!should_dismiss_reminder_on_remote_change(Some(&snoozed), &snoozed));
+        // Remoto com snooze diferente
+        let mut snoozed_again = snoozed.clone();
+        snoozed_again.snoozed_until = Some("2026-11-20T11:00:00Z".into());
+        assert!(should_dismiss_reminder_on_remote_change(Some(&snoozed), &snoozed_again));
+
+        // 5. Reagendamento (T05)
+        let mut resched_date = base.clone();
+        resched_date.due_date = Some("2026-11-21".into());
+        assert!(should_dismiss_reminder_on_remote_change(Some(&base), &resched_date));
+
+        let mut resched_time = base.clone();
+        resched_time.due_time = Some("15:00".into());
+        assert!(should_dismiss_reminder_on_remote_change(Some(&base), &resched_time));
+
+        let mut resched_tz = base.clone();
+        resched_tz.time_zone = "UTC".into();
+        assert!(should_dismiss_reminder_on_remote_change(Some(&base), &resched_tz));
+
+        let mut resched_alert = base.clone();
+        resched_alert.alert_minutes = 10;
+        assert!(should_dismiss_reminder_on_remote_change(Some(&base), &resched_alert));
+
+        // 6. Edição de título apenas ou prioridade -> false
+        let mut text_edit = base.clone();
+        text_edit.text = "Comprar café torrado especial".into();
+        assert!(!should_dismiss_reminder_on_remote_change(Some(&base), &text_edit));
+
+        let mut prio_edit = base.clone();
+        prio_edit.priority = TodoPriority::Urgent;
+        assert!(!should_dismiss_reminder_on_remote_change(Some(&base), &prio_edit));
     }
 
     #[test]
