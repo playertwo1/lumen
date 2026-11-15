@@ -181,8 +181,7 @@ impl TaskStore {
     }
 
     pub fn set_shortcut_settings(&mut self, settings: TodoShortcutSettings) -> Result<(), String> {
-        settings.validate()?;
-        self.shortcuts = settings;
+        self.shortcuts = settings.normalized()?;
         self.persist_shortcuts()
     }
 

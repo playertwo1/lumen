@@ -50,7 +50,7 @@ export interface TodoItem {
 
 export interface TodoShortcutSettings {
   enabled_date_shortcuts: TodoDateShortcut[];
-  time_shortcuts_minutes: [number, number, number];
+  time_shortcuts_minutes: number[];
   default_alert_minutes: number;
 }
 
@@ -256,6 +256,66 @@ export function timeChipLabel(totalMinutes: number): string {
   const hh = Math.floor(clamped / 60);
   const mm = clamped % 60;
   return mm === 0 ? `${hh}h` : `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+const WEEKDAY_SHORT_PT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
+const MONTH_NAMES_PT = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+] as const;
+
+export function monthYearTitle(year: number, monthIndex0: number): string {
+  const name = MONTH_NAMES_PT[((monthIndex0 % 12) + 12) % 12] ?? "";
+  return `${name} ${year}`;
+}
+
+export interface CalendarCell {
+  iso: string;
+  day: number;
+  inMonth: boolean;
+}
+
+/** Grade semanal (Dom..Sáb) de 42 dias para renderizar um mês de calendário sem digitação. */
+export function buildMonthGrid(year: number, monthIndex0: number): CalendarCell[] {
+  const firstDay = new Date(year, monthIndex0, 1);
+  const startOffset = firstDay.getDay(); // 0=Dom..6=Sab
+  const start = new Date(year, monthIndex0, 1 - startOffset);
+  const cells: CalendarCell[] = [];
+  for (let i = 0; i < 42; i++) {
+    const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    cells.push({
+      iso: formatLocalDate(cur),
+      day: cur.getDate(),
+      inMonth: cur.getMonth() === monthIndex0 && cur.getFullYear() === year,
+    });
+  }
+  return cells;
+}
+
+export function formatCalendarButtonLabel(isoDate: string | null, now = new Date()): string {
+  if (!isValidIsoDate(isoDate)) return "Abrir calendário";
+  const today = todayIsoLocal(now);
+  const tomorrow = dateForShortcut("tomorrow", now);
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const ddmm = `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+  if (isoDate === today) return `Hoje · ${ddmm}`;
+  if (isoDate === tomorrow) return `Amanhã · ${ddmm}`;
+  const dow = WEEKDAY_SHORT_PT[new Date(y, m - 1, d).getDay()] ?? "";
+  return `${dow}, ${ddmm}`;
+}
+
+export function formatClockButtonLabel(hhmm: string | null): string {
+  return isValidClockTime(hhmm) ? hhmm : "Abrir relógio";
 }
 
 /** Normaliza texto para busca em português ignorando maiúsculas e acentos. */

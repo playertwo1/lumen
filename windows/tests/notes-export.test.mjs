@@ -280,3 +280,96 @@ test("Avatares com fallback onerror, exibição de firstMessage/mesExample e flu
   await flush();
   assert.match(page.textContent, /1 personas padrão restauradas\./);
 });
+
+test("Anotador valida nota vazia, adapta contraste de avatar, marca persona desativada e responde comentário sem side-tab", async t => {
+  t.mock.method(globalThis, "setInterval", () => 1);
+  t.mock.method(globalThis, "clearInterval", () => {});
+  const personas = [
+    {
+      id: "clara",
+      name: "Clara",
+      role: "Estrategista",
+      avatar: "",
+      identity: "Direta",
+      userProfile: "",
+      rules: "",
+      persona: "",
+      firstMessage: "",
+      mesExample: "",
+      tags: ["foco"],
+      interestFilter: "",
+      isPrimaryCompanion: true,
+      enabled: true,
+      color: "#E99A3D",
+    },
+    {
+      id: "noite",
+      name: "Noite",
+      role: "Revisora",
+      avatar: "",
+      identity: "Calma",
+      userProfile: "",
+      rules: "",
+      persona: "",
+      firstMessage: "",
+      mesExample: "",
+      tags: [],
+      interestFilter: "",
+      isPrimaryCompanion: false,
+      enabled: false,
+      color: "#312E81",
+    },
+  ];
+  const note = {
+    id: "n-reply",
+    title: "Ideia editorial",
+    titleEdited: true,
+    start: Date.now() - 1000,
+    status: "ready",
+    speakers: [],
+    lines: [{ id: "l1", speaker: "me", start: 0, end: 2, text: "Testar fluxo de resposta." }],
+    summary: "Resumo sintético.",
+    keyPoints: [],
+    todos: [],
+    comments: [
+      { id: "c1", characterId: "clara", characterName: "Clara", authorKind: "persona", content: "Revise o escopo.", createdAt: 1 },
+    ],
+  };
+
+  t.mock.method(internals, "invoke", async (cmd, args) => {
+    if (cmd === "notes_state") return { notes: [note], recording: null, working: [] };
+    if (cmd === "personas_state") return { personas, settings: { enableCharacterComment: true, maxCommentCharacters: 2 } };
+    return originalInvoke(cmd, args);
+  });
+
+  const page = root();
+  const ctx = { hero: () => root(), status: { models: { parakeet: { state: "ready" } } } };
+  await notesPage(page, ctx);
+  t.after(() => ctx.onLeave());
+
+  // Salvar ideia vazia exibe aviso sem disparar IPC.
+  page.find("button").find((b) => b.textContent === "Salvar ideia em texto").fire("click");
+  assert.match(page.textContent, /Escreva uma ideia antes de salvar\./);
+
+  // Avatar claro usa tinta escura (#0b0c0e) e comentário não usa border-inline-start inline.
+  const claraAv = page.find(".av").find((el) => el.textContent === "C");
+  assert.match(claraAv.getAttribute("style") ?? "", /color:#0b0c0e/);
+  const commentNode = page.find(".notes-comment")[0];
+  assert.doesNotMatch(commentNode.getAttribute("style") ?? "", /border-inline-start/);
+
+  // Fluxo de responder e cancelar resposta.
+  page.find("button").find((b) => b.textContent === "Responder").fire("click");
+  assert.match(page.textContent, /Respondendo a Clara/);
+  page.find("button").find((b) => b.textContent === "Cancelar resposta").fire("click");
+  assert.doesNotMatch(page.textContent, /Respondendo a Clara/);
+
+  // Abre Personas: exibe badge "Desativada" e avatar escuro (#312E81) usa tinta clara (#F3EEE6).
+  page.find("button").find((b) => b.textContent.startsWith("Personas (")).fire("click");
+  assert.match(page.textContent, /Desativada/);
+  const noiteAv = page.find(".av").find((el) => el.textContent === "N");
+  assert.match(noiteAv.getAttribute("style") ?? "", /color:#F3EEE6/);
+
+  // Volta às notas pelo cabeçalho do gerenciador.
+  page.find("button").find((b) => b.textContent === "← Voltar à nota").fire("click");
+  assert.match(page.textContent, /Comentários das personas \(1\)/);
+});

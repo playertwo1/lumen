@@ -4,7 +4,13 @@
 // edição completa de tarefas sem vazar controles comprimidos da Ilha.
 
 import { clear, h } from "../../views/dom";
-import { TasksBridge, onEvent } from "../../core/bridge";
+import {
+  GoogleBridge,
+  TasksBridge,
+  onEvent,
+  type GoogleCalendarEvent,
+  type GoogleStatus,
+} from "../../core/bridge";
 import { Sound } from "../../core/sound";
 import {
   DATE_SHORTCUT_LABELS,
@@ -12,10 +18,11 @@ import {
   PRIORITY_LABELS,
   buildRecurrence,
   dateForShortcut,
+  formatCalendarButtonLabel,
+  formatClockButtonLabel,
   formatDueLabel,
   formatTimeMinutes,
   groupTasks,
-  isTaskItemSynced,
   recurrenceLabel,
   searchTodos,
   timeChipLabel,
@@ -30,6 +37,7 @@ import {
 } from "../../core/tasks";
 import type { HubContext } from "../shell";
 import { button, icon, segmented } from "../ui";
+import { createCalendarPopover, createClockPopover } from "../schedule-picker";
 
 type FilterKind = "all" | TodoBucket;
 
@@ -96,24 +104,33 @@ interface ScheduleFieldsHandle {
   el: HTMLElement;
   titleInput: HTMLInputElement;
   getValues(): ScheduleFieldValues;
+  setShortcuts(next: TodoShortcutSettings): void;
+  hasOpenPopover(): boolean;
+  closePopover(restoreFocus?: boolean): void;
   focusTitle(): void;
 }
 
 function createScheduleFields(
   initial: ScheduleFieldValues,
-  shortcuts: TodoShortcutSettings,
+  initialShortcuts: TodoShortcutSettings,
   opts: {
     onSubmitShortcut: () => void;
     onCancelShortcut: () => void;
     onTitleChange?: (title: string) => void;
+    onChange?: (values: ScheduleFieldValues) => void;
+    onSavePreset?: (minutes: number) => Promise<TodoShortcutSettings>;
+    onRemovePreset?: (minutes: number) => Promise<TodoShortcutSettings>;
   },
 ): ScheduleFieldsHandle {
+  let shortcuts = initialShortcuts;
   let title = initial.title;
   let dueDate = initial.dueDate;
   let dueTime = initial.dueTime;
   let priority = initial.priority;
   let alertMinutes = initial.alertMinutes;
   let recurrenceFreq = initial.recurrenceFreq;
+  let activePicker: "calendar" | "time" | "preset" | null = null;
+  let lastTriggerBtn: HTMLButtonElement | null = null;
 
   const titleInput = h("input", {
     type: "text",
@@ -125,21 +142,44 @@ function createScheduleFields(
   }) as HTMLInputElement;
   titleInput.value = title;
 
-  const dateInput = h("input", {
-    type: "date",
-    class: "hub-input",
-    "aria-label": "Data",
-    value: dueDate ?? "",
-  }) as HTMLInputElement;
-  dateInput.value = dueDate ?? "";
+  const calendarBtnLabel = h("span", { class: "tasks-picker-btn-label" });
+  const calendarBtn = h(
+    "button",
+    {
+      type: "button",
+      class: "hub-btn tasks-picker-btn",
+      "aria-expanded": "false",
+      onclick: () => togglePicker("calendar", calendarBtn),
+    },
+    icon("calendar"),
+    calendarBtnLabel,
+  ) as HTMLButtonElement;
 
-  const timeInput = h("input", {
-    type: "time",
-    class: "hub-input",
-    "aria-label": "Horário",
-    value: dueTime ?? "",
-  }) as HTMLInputElement;
-  timeInput.value = dueTime ?? "";
+  const clockBtnLabel = h("span", { class: "tasks-picker-btn-label" });
+  const clockBtn = h(
+    "button",
+    {
+      type: "button",
+      class: "hub-btn tasks-picker-btn",
+      "aria-expanded": "false",
+      onclick: () => togglePicker("time", clockBtn),
+    },
+    icon("clock"),
+    clockBtnLabel,
+  ) as HTMLButtonElement;
+
+  const addPresetBtn = h(
+    "button",
+    {
+      type: "button",
+      class: "hub-btn sm tasks-preset-add",
+      "aria-label": "Criar horário predefinido",
+      "aria-expanded": "false",
+      onclick: () => togglePicker("preset", addPresetBtn),
+    },
+    icon("plus"),
+    h("span", { text: "Predefinido" }),
+  ) as HTMLButtonElement;
 
   const prioSelect = h(
     "select",
@@ -160,6 +200,12 @@ function createScheduleFields(
   ) as HTMLSelectElement;
   alertSelect.value = String(alertMinutes);
 
+  const alertHint = h("span", {
+    class: "tasks-field-hint",
+    text: "Defina dia e horário para ativar o aviso",
+    hidden: true,
+  });
+
   const recSelect = h(
     "select",
     { class: "hub-select", "aria-label": "Repetição" },
@@ -172,84 +218,229 @@ function createScheduleFields(
 
   const dateChipsRow = h("div", { class: "tasks-chip-row" });
   const dateButtons = new Map<TodoDateShortcut | "none", HTMLButtonElement>();
-  for (const key of shortcuts.enabled_date_shortcuts) {
-    const btn = h("button", {
-      type: "button",
-      class: "tasks-chip",
-      text: DATE_SHORTCUT_LABELS[key],
-      onclick: () => {
-        dueDate = dateForShortcut(key);
-        dateInput.value = dueDate;
-        syncChips();
-      },
-    }) as HTMLButtonElement;
-    dateButtons.set(key, btn);
-    dateChipsRow.append(btn);
-  }
-  const noDateBtn = h("button", {
-    type: "button",
-    class: "tasks-chip",
-    text: "Sem data",
-    onclick: () => {
-      dueDate = null;
-      dueTime = null;
-      dateInput.value = "";
-      timeInput.value = "";
-      syncChips();
-    },
-  }) as HTMLButtonElement;
-  dateButtons.set("none", noDateBtn);
-  dateChipsRow.append(noDateBtn);
-
   const timeChipsRow = h("div", { class: "tasks-chip-row" });
   const timeButtons = new Map<string, HTMLButtonElement>();
-  for (const mins of shortcuts.time_shortcuts_minutes) {
-    const hhmm = formatTimeMinutes(mins);
-    const btn = h("button", {
+
+  const datePopoverSlot = h("div", { class: "tasks-picker-slot", hidden: true });
+  setElementHidden(datePopoverSlot, true);
+  const timePopoverSlot = h("div", { class: "tasks-picker-slot", hidden: true });
+  setElementHidden(timePopoverSlot, true);
+
+  function snapshotValues(): ScheduleFieldValues {
+    return {
+      title: titleInput.value.trim(),
+      dueDate,
+      dueTime: dueDate ? dueTime : null,
+      priority,
+      alertMinutes,
+      recurrenceFreq,
+    };
+  }
+
+  function emitChange() {
+    opts.onChange?.(snapshotValues());
+  }
+
+  function rebuildDateChips() {
+    clear(dateChipsRow);
+    dateButtons.clear();
+    for (const key of shortcuts.enabled_date_shortcuts) {
+      const btn = h("button", {
+        type: "button",
+        class: "tasks-chip",
+        text: DATE_SHORTCUT_LABELS[key],
+        "aria-pressed": "false",
+        onclick: () => {
+          dueDate = dateForShortcut(key);
+          syncUI();
+          emitChange();
+        },
+      }) as HTMLButtonElement;
+      dateButtons.set(key, btn);
+      dateChipsRow.append(btn);
+    }
+    const noDateBtn = h("button", {
       type: "button",
-      class: "tasks-chip",
-      text: timeChipLabel(mins),
+      class: "tasks-chip tasks-chip-neutral",
+      text: "Sem data",
+      "aria-pressed": "false",
       onclick: () => {
-        if (!dueDate) {
-          dueDate = dateForShortcut("today");
-          dateInput.value = dueDate;
-        }
-        dueTime = hhmm;
-        timeInput.value = hhmm;
-        syncChips();
+        dueDate = null;
+        dueTime = null;
+        syncUI();
+        emitChange();
       },
     }) as HTMLButtonElement;
-    timeButtons.set(hhmm, btn);
-    timeChipsRow.append(btn);
+    dateButtons.set("none", noDateBtn);
+    dateChipsRow.append(noDateBtn);
   }
-  const noTimeBtn = h("button", {
-    type: "button",
-    class: "tasks-chip",
-    text: "Sem hora",
-    onclick: () => {
-      dueTime = null;
-      timeInput.value = "";
-      syncChips();
-    },
-  }) as HTMLButtonElement;
-  timeButtons.set("none", noTimeBtn);
-  timeChipsRow.append(noTimeBtn);
 
-  function syncChips() {
+  function rebuildTimeChips() {
+    clear(timeChipsRow);
+    timeButtons.clear();
+    for (const mins of shortcuts.time_shortcuts_minutes) {
+      const hhmm = formatTimeMinutes(mins);
+      const btn = h("button", {
+        type: "button",
+        class: "tasks-chip",
+        text: timeChipLabel(mins),
+        "aria-pressed": "false",
+        onclick: () => {
+          if (!dueDate) {
+            dueDate = dateForShortcut("today");
+          }
+          dueTime = hhmm;
+          syncUI();
+          emitChange();
+        },
+      }) as HTMLButtonElement;
+      timeButtons.set(hhmm, btn);
+      timeChipsRow.append(btn);
+    }
+    const noTimeBtn = h("button", {
+      type: "button",
+      class: "tasks-chip tasks-chip-neutral",
+      text: "Sem hora",
+      "aria-pressed": "false",
+      onclick: () => {
+        dueTime = null;
+        syncUI();
+        emitChange();
+      },
+    }) as HTMLButtonElement;
+    timeButtons.set("none", noTimeBtn);
+    timeChipsRow.append(noTimeBtn, addPresetBtn);
+  }
+
+  function closePopover(restoreFocus = false) {
+    activePicker = null;
+    clear(datePopoverSlot);
+    clear(timePopoverSlot);
+    setElementHidden(datePopoverSlot, true);
+    setElementHidden(timePopoverSlot, true);
+    calendarBtn.setAttribute("aria-expanded", "false");
+    clockBtn.setAttribute("aria-expanded", "false");
+    addPresetBtn.setAttribute("aria-expanded", "false");
+    if (restoreFocus && lastTriggerBtn && lastTriggerBtn.isConnected) {
+      lastTriggerBtn.focus();
+    }
+    lastTriggerBtn = null;
+  }
+
+  function openCalendar() {
+    const pop = createCalendarPopover({
+      initialDate: dueDate,
+      onSelect: (iso) => {
+        dueDate = iso;
+        if (!dueDate) dueTime = null;
+        syncUI();
+        emitChange();
+      },
+      onClose: () => closePopover(true),
+    });
+    clear(datePopoverSlot);
+    datePopoverSlot.append(pop);
+    setElementHidden(datePopoverSlot, false);
+    calendarBtn.setAttribute("aria-expanded", "true");
+    scrollSlotInsideInspector(datePopoverSlot);
+  }
+
+  function scrollSlotInsideInspector(slot: HTMLElement) {
+    const body = typeof el.closest === "function"
+      ? (el.closest(".tasks-inspector-body") as HTMLElement | null)
+      : null;
+    if (!body) return;
+    requestAnimationFrame(() => {
+      const slotBottom = slot.offsetTop + slot.offsetHeight;
+      if (slotBottom > body.scrollTop + body.clientHeight) {
+        body.scrollTop = Math.max(0, slot.offsetTop - 12);
+      }
+    });
+  }
+
+  function openClock(mode: "time" | "preset") {
+    const pop = createClockPopover({
+      mode,
+      initialTime: dueTime,
+      presets: shortcuts.time_shortcuts_minutes,
+      onApplyTime: (hhmm) => {
+        dueTime = hhmm;
+        if (dueTime && !dueDate) dueDate = dateForShortcut("today");
+        syncUI();
+        emitChange();
+      },
+      onSavePreset: async (minutes) => {
+        if (!opts.onSavePreset) return;
+        const next = await opts.onSavePreset(minutes);
+        shortcuts = next;
+        rebuildTimeChips();
+        if (mode === "preset") {
+          dueTime = formatTimeMinutes(minutes);
+          if (!dueDate) dueDate = dateForShortcut("today");
+        }
+        syncUI();
+        emitChange();
+      },
+      onRemovePreset: async (minutes) => {
+        if (!opts.onRemovePreset) return;
+        const next = await opts.onRemovePreset(minutes);
+        shortcuts = next;
+        rebuildTimeChips();
+        syncUI();
+      },
+      onClose: () => closePopover(true),
+    });
+    clear(timePopoverSlot);
+    timePopoverSlot.append(pop);
+    setElementHidden(timePopoverSlot, false);
+    if (mode === "time") clockBtn.setAttribute("aria-expanded", "true");
+    else addPresetBtn.setAttribute("aria-expanded", "true");
+    scrollSlotInsideInspector(timePopoverSlot);
+  }
+
+  function togglePicker(kind: "calendar" | "time" | "preset", trigger: HTMLButtonElement) {
+    if (activePicker === kind) {
+      closePopover(false);
+      return;
+    }
+    closePopover(false);
+    activePicker = kind;
+    lastTriggerBtn = trigger;
+    if (kind === "calendar") openCalendar();
+    else openClock(kind);
+  }
+
+  function syncUI() {
     for (const [k, btn] of dateButtons) {
       const active = k === "none" ? dueDate === null : dueDate === dateForShortcut(k);
       btn.classList.toggle("on", active);
+      btn.setAttribute("aria-pressed", String(active));
     }
     for (const [k, btn] of timeButtons) {
       const active = k === "none" ? dueTime === null : dueTime === k;
       btn.classList.toggle("on", active);
+      btn.setAttribute("aria-pressed", String(active));
     }
-    alertSelect.disabled = !dueDate || !dueTime;
+
+    const calLabel = formatCalendarButtonLabel(dueDate);
+    calendarBtnLabel.textContent = calLabel;
+    calendarBtn.classList.toggle("on", dueDate !== null);
+    calendarBtn.setAttribute("aria-label", dueDate ? `Abrir calendário (${calLabel})` : "Abrir calendário");
+
+    const clkLabel = formatClockButtonLabel(dueTime);
+    clockBtnLabel.textContent = clkLabel;
+    clockBtn.classList.toggle("on", dueTime !== null);
+    clockBtn.setAttribute("aria-label", dueTime ? `Abrir relógio (${clkLabel})` : "Abrir relógio");
+
+    const alertDisabled = !dueDate || !dueTime;
+    alertSelect.disabled = alertDisabled;
+    setElementHidden(alertHint, !alertDisabled);
   }
 
   titleInput.addEventListener("input", () => {
     title = titleInput.value;
     opts.onTitleChange?.(title);
+    emitChange();
   });
   titleInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -257,36 +448,27 @@ function createScheduleFields(
       opts.onSubmitShortcut();
     } else if (e.key === "Escape") {
       e.preventDefault();
-      opts.onCancelShortcut();
+      e.stopPropagation();
+      if (activePicker) closePopover(true);
+      else opts.onCancelShortcut();
     }
-  });
-  dateInput.addEventListener("change", () => {
-    dueDate = dateInput.value || null;
-    if (!dueDate) {
-      dueTime = null;
-      timeInput.value = "";
-    }
-    syncChips();
-  });
-  timeInput.addEventListener("change", () => {
-    dueTime = timeInput.value || null;
-    if (dueTime && !dueDate) {
-      dueDate = dateForShortcut("today");
-      dateInput.value = dueDate;
-    }
-    syncChips();
   });
   prioSelect.addEventListener("change", () => {
     priority = prioSelect.value as TodoPriority;
+    emitChange();
   });
   alertSelect.addEventListener("change", () => {
     alertMinutes = Number(alertSelect.value) || 0;
+    emitChange();
   });
   recSelect.addEventListener("change", () => {
     recurrenceFreq = recSelect.value;
+    emitChange();
   });
 
-  syncChips();
+  rebuildDateChips();
+  rebuildTimeChips();
+  syncUI();
 
   const el = h(
     "div",
@@ -300,26 +482,38 @@ function createScheduleFields(
     h(
       "div",
       { class: "tasks-field-stack" },
-      h("span", { class: "tasks-field-label", text: "Dia" }),
+      h(
+        "div",
+        { class: "tasks-schedule-head" },
+        h("span", { class: "tasks-field-label", text: "Dia" }),
+        calendarBtn,
+      ),
       dateChipsRow,
+      datePopoverSlot,
     ),
     h(
       "div",
       { class: "tasks-field-stack" },
-      h("span", { class: "tasks-field-label", text: "Horário" }),
+      h(
+        "div",
+        { class: "tasks-schedule-head" },
+        h("span", { class: "tasks-field-label", text: "Horário" }),
+        clockBtn,
+      ),
       timeChipsRow,
-    ),
-    h(
-      "div",
-      { class: "tasks-inspector-grid" },
-      h("label", { class: "tasks-field-stack" }, h("span", { class: "tasks-field-label", text: "Data exata" }), dateInput),
-      h("label", { class: "tasks-field-stack" }, h("span", { class: "tasks-field-label", text: "Hora exata" }), timeInput),
+      timePopoverSlot,
     ),
     h(
       "div",
       { class: "tasks-inspector-grid" },
       h("label", { class: "tasks-field-stack" }, h("span", { class: "tasks-field-label", text: "Prioridade" }), prioSelect),
-      h("label", { class: "tasks-field-stack" }, h("span", { class: "tasks-field-label", text: "Pré-alerta" }), alertSelect),
+      h(
+        "label",
+        { class: "tasks-field-stack" },
+        h("span", { class: "tasks-field-label", text: "Pré-alerta" }),
+        alertSelect,
+        alertHint,
+      ),
     ),
     h(
       "label",
@@ -332,14 +526,14 @@ function createScheduleFields(
   return {
     el,
     titleInput,
-    getValues: () => ({
-      title: titleInput.value.trim(),
-      dueDate,
-      dueTime: dueDate ? dueTime : null,
-      priority,
-      alertMinutes,
-      recurrenceFreq,
-    }),
+    getValues: snapshotValues,
+    setShortcuts(next) {
+      shortcuts = next;
+      rebuildTimeChips();
+      syncUI();
+    },
+    hasOpenPopover: () => activePicker !== null,
+    closePopover,
     focusTitle() {
       titleInput.focus();
       titleInput.select();
@@ -357,6 +551,11 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
   let draftProposal: TodoProposal | null = null;
   let editingId: string | null = null;
   let focusTaskId: string | null = null;
+  let draftTargetKey: string | null = null;
+  let activeDraft: ScheduleFieldValues | null = null;
+  let activeFieldsHandle: ScheduleFieldsHandle | null = null;
+  let activeSubmit: (() => void) | null = null;
+  let lastInvokerKey: { kind: "capture" } | { kind: "edit"; taskId: string } | null = null;
   let undoItem: TodoItem | null = null;
   let statusError = "";
   let busy = false;
@@ -375,7 +574,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
   const searchInput = h("input", {
     type: "search",
     class: "hub-input tasks-search-input",
-    placeholder: "Buscar (sem acento)…",
+    placeholder: "Buscar tarefas…",
     "aria-label": "Buscar tarefas",
     value: query,
     spellcheck: "false",
@@ -385,15 +584,191 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
   const proposeBtn = button("Propor", () => void handleProposeText(), "primary");
   const micBtn = button(recording ? "Concluir voz" : "Ditar", () => void handleToggleVoice());
 
-  const syncBar = h("div", { class: "tasks-sync-bar" });
-  const errorBanner = h("div", { class: "tasks-banner warn", hidden: true });
-  const statusBanner = h("div", { class: "tasks-banner info", hidden: true });
-  const undoSlot = h("div");
+  const syncBar = h("div", { class: "tasks-sync-bar", role: "status", "aria-live": "polite" });
+  const errorBanner = h("div", { class: "tasks-banner warn", role: "alert", hidden: true });
+  const statusBanner = h("div", { class: "tasks-banner info", role: "status", "aria-live": "polite", hidden: true });
+  const undoSlot = h("div", { role: "status", "aria-live": "polite" });
   const filterSlot = h("div");
   const listSlot = h("div", { class: "tasks-sections" });
-  const inspectorSlot = h("aside", { class: "tasks-inspector", hidden: true });
+  const inspectorSlot = h("aside", { class: "tasks-inspector", hidden: true, tabindex: "-1" });
+  const googleSlot = h("section", { class: "tasks-google-panel", hidden: true });
   const workspaceEl = h("div", { class: "tasks-workspace" });
   let syncNowBtn: HTMLButtonElement | null = null;
+  let googleStatus: GoogleStatus | null = null;
+  let googleEvents: GoogleCalendarEvent[] = [];
+  let googleBusy = false;
+  let googleNotice = "";
+  let googleErr = "";
+  let googleConfirmRestore = false;
+
+  function formatCalendarTime(ev: GoogleCalendarEvent): string {
+    if (ev.allDay) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ev.start);
+      return m ? `${m[3]}/${m[2]} · Dia inteiro` : `${ev.start} · Dia inteiro`;
+    }
+    const parsed = new Date(ev.start);
+    if (Number.isNaN(parsed.getTime())) return ev.start;
+    const d = String(parsed.getDate()).padStart(2, "0");
+    const mo = String(parsed.getMonth() + 1).padStart(2, "0");
+    const hh = String(parsed.getHours()).padStart(2, "0");
+    const mm = String(parsed.getMinutes()).padStart(2, "0");
+    return `${d}/${mo} · ${hh}:${mm}`;
+  }
+
+  function renderGooglePanel() {
+    clear(googleSlot);
+    if (!googleStatus) {
+      setElementHidden(googleSlot, true);
+      return;
+    }
+    setElementHidden(googleSlot, false);
+
+    const headBadge = googleStatus.connected
+      ? h("span", { class: "tasks-sync-pill synced", text: googleStatus.email ?? "Google conectado" })
+      : h("span", { class: "tasks-sync-pill local", text: "Google desconectado" });
+    const head = h(
+      "div",
+      { class: "tasks-google-head" },
+      h("div", { class: "tasks-google-title-wrap" }, h("h3", { text: "Google Calendar e Backup" }), headBadge),
+    );
+
+    if (!googleStatus.connected) {
+      googleSlot.append(
+        head,
+        h("p", {
+          class: "tasks-privacy-caption",
+          text: googleStatus.configured
+            ? "Projeto OAuth configurado. Entre com sua conta Google em Ajustes → Integrações para ver sua agenda e ativar backup."
+            : "Configure sua conta Google em Ajustes → Integrações para ver eventos do Calendar e fazer backup em Segunda Mente/Lumen-PC.",
+        }),
+      );
+      return;
+    }
+
+    const actions = h("div", { class: "tasks-google-actions" });
+    const refreshEventsBtn = button("Atualizar agenda", () => void refreshGoogleState());
+    refreshEventsBtn.disabled = googleBusy;
+    const backupBtn = button(googleBusy ? "Sincronizando…" : "Fazer backup agora", () => {
+      void (async () => {
+        googleBusy = true;
+        googleErr = "";
+        googleNotice = "";
+        googleConfirmRestore = false;
+        renderGooglePanel();
+        try {
+          const res = await GoogleBridge.backupNow();
+          googleStatus = await GoogleBridge.status();
+          googleNotice = `Backup salvo em ${res.driveFolder} (${res.notesCount} notas).`;
+        } catch (err) {
+          googleErr = String(err).replace(/^Error:\s*/, "");
+        } finally {
+          googleBusy = false;
+          renderGooglePanel();
+        }
+      })();
+    });
+    backupBtn.disabled = googleBusy;
+
+    const restoreBtn = button("Restaurar backup", () => {
+      googleConfirmRestore = true;
+      googleNotice = "";
+      googleErr = "";
+      renderGooglePanel();
+    });
+    restoreBtn.disabled = googleBusy;
+    actions.append(refreshEventsBtn, backupBtn, restoreBtn);
+    head.append(actions);
+
+    const lastBakLabel = googleStatus.lastBackupAt
+      ? new Date(googleStatus.lastBackupAt).toLocaleString("pt-BR")
+      : "Ainda não realizado";
+    const metaRow = h("div", {
+      class: "tasks-privacy-caption",
+      text: `Drive: ${googleStatus.driveFolder} · Backup semanal: ${googleStatus.weeklyBackupEnabled ? "ativado" : "desativado"} · Último backup: ${lastBakLabel}`,
+    });
+
+    const eventsWrap = h("div", { class: "tasks-google-events" });
+    if (googleEvents.length === 0) {
+      eventsWrap.append(h("div", { class: "tasks-privacy-caption", text: "Nenhum evento próximo nos próximos 14 dias." }));
+    } else {
+      for (const ev of googleEvents) {
+        eventsWrap.append(
+          h(
+            "div",
+            { class: "tasks-google-event-row" },
+            h("span", { class: "tasks-google-event-time", text: formatCalendarTime(ev) }),
+            h("span", { class: "tasks-google-event-name", text: ev.summary }),
+          ),
+        );
+      }
+    }
+
+    let confirmRestoreBox: HTMLElement | null = null;
+    if (googleConfirmRestore) {
+      const confirmBtn = button(
+        "Confirmar restauração",
+        () => {
+          void (async () => {
+            googleBusy = true;
+            googleErr = "";
+            googleNotice = "";
+            renderGooglePanel();
+            try {
+              const res = await GoogleBridge.restoreBackup();
+              googleConfirmRestore = false;
+              await reload();
+              googleStatus = await GoogleBridge.status();
+              googleNotice = `Backup restaurado (${res.notesRestored} notas). Snapshot local salvo antes.`;
+            } catch (err) {
+              googleErr = String(err).replace(/^Error:\s*/, "");
+            } finally {
+              googleBusy = false;
+              renderGooglePanel();
+            }
+          })();
+        },
+        "primary",
+      );
+      confirmBtn.disabled = googleBusy;
+      const cancelBtn = button("Cancelar", () => {
+        googleConfirmRestore = false;
+        renderGooglePanel();
+      });
+      cancelBtn.disabled = googleBusy;
+      confirmRestoreBox = h(
+        "div",
+        { class: "tasks-google-confirm" },
+        h("span", {
+          class: "tasks-privacy-caption",
+          text: "Restaurar sobrescreve tarefas, notas (.json) e personas com a cópia da nuvem (um snapshot de segurança será gravado antes).",
+        }),
+        h("div", { class: "tasks-google-actions" }, confirmBtn, cancelBtn),
+      );
+    }
+
+    const noticeEl = googleNotice ? h("div", { class: "tasks-banner info", text: googleNotice }) : null;
+    const errEl = googleErr ? h("div", { class: "tasks-banner warn", text: googleErr }) : null;
+    googleSlot.append(head, metaRow, eventsWrap);
+    if (confirmRestoreBox) googleSlot.append(confirmRestoreBox);
+    if (noticeEl) googleSlot.append(noticeEl);
+    if (errEl) googleSlot.append(errEl);
+  }
+
+  async function refreshGoogleState() {
+    try {
+      const st = await GoogleBridge.status();
+      googleStatus = st;
+      if (st.connected) {
+        googleEvents = await GoogleBridge.listCalendarEvents({ maxResults: 6 });
+      } else {
+        googleEvents = [];
+      }
+      renderGooglePanel();
+      if (editingId) renderInspector();
+    } catch {
+      // Sem backend Google no ambiente de teste isolado ou falha transitória.
+    }
+  }
 
   function updateCaptureButtons() {
     proposeBtn.disabled = busy || recording || (captureInput.value ?? "").trim().length === 0;
@@ -511,14 +886,52 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     );
   }
 
-  function closeInspector() {
-    draftProposal = null;
-    editingId = null;
-    renderInspector();
-    renderList();
+  async function saveTimePreset(minutes: number): Promise<TodoShortcutSettings> {
+    const base = snap.shortcuts ?? { ...DEFAULT_SHORTCUT_SETTINGS };
+    const existing = base.time_shortcuts_minutes ?? [];
+    if (existing.includes(minutes)) return base;
+    const nextList = [...existing, minutes].sort((a, b) => a - b);
+    const saved = await TasksBridge.saveShortcutSettings({
+      ...base,
+      time_shortcuts_minutes: nextList,
+    });
+    snap = { ...snap, shortcuts: saved };
+    return saved;
   }
 
-  function buildProposalInspector(proposal: TodoProposal): HTMLElement[] {
+  async function removeTimePreset(minutes: number): Promise<TodoShortcutSettings> {
+    const base = snap.shortcuts ?? { ...DEFAULT_SHORTCUT_SETTINGS };
+    const nextList = (base.time_shortcuts_minutes ?? []).filter((m) => m !== minutes);
+    const saved = await TasksBridge.saveShortcutSettings({
+      ...base,
+      time_shortcuts_minutes: nextList,
+    });
+    snap = { ...snap, shortcuts: saved };
+    return saved;
+  }
+
+  function closeInspector(restoreFocus = false) {
+    const returnKey = restoreFocus ? lastInvokerKey : null;
+    draftProposal = null;
+    editingId = null;
+    draftTargetKey = null;
+    activeDraft = null;
+    activeFieldsHandle = null;
+    activeSubmit = null;
+    lastInvokerKey = null;
+    renderInspector();
+    renderList();
+    if (returnKey?.kind === "capture") {
+      captureInput.focus();
+    } else if (returnKey?.kind === "edit") {
+      const btn = listSlot.querySelector(
+        `[data-task-id="${returnKey.taskId}"] .tasks-edit-btn`,
+      ) as HTMLElement | null;
+      btn?.focus();
+    }
+  }
+
+  function buildProposalInspector(proposal: TodoProposal, key: string): HTMLElement[] {
     let saving = false;
     const ambHints: string[] = [];
     if (proposal.date_state === "ambiguous") {
@@ -536,33 +949,44 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
       );
     }
 
-    const errBox = h("div", { class: "tasks-banner warn", hidden: true });
+    const errBox = h("div", { class: "tasks-banner warn", role: "alert", hidden: true });
     setElementHidden(errBox, true);
 
     const confirmBtn = button("Confirmar tarefa", () => void submitProposal(), "primary");
-    const discardBtn = button("Descartar", () => closeInspector());
+    const discardBtn = button("Descartar", () => closeInspector(true));
 
     function syncSubmitState(titleValue: string) {
       confirmBtn.disabled = saving || titleValue.trim().length === 0;
       confirmBtn.textContent = saving ? "Salvando…" : "Confirmar tarefa";
     }
 
-    const fields = createScheduleFields(
-      {
-        title: proposal.title,
-        dueDate: proposal.date_state === "explicit" ? proposal.due_date : null,
-        dueTime: proposal.time_state === "explicit" ? proposal.due_time : null,
-        priority: proposal.priority ?? "normal",
-        alertMinutes: snap.shortcuts.default_alert_minutes,
-        recurrenceFreq: "",
+    const initialValues: ScheduleFieldValues =
+      draftTargetKey === key && activeDraft
+        ? activeDraft
+        : {
+            title: proposal.title,
+            dueDate: proposal.date_state === "explicit" ? proposal.due_date : null,
+            dueTime: proposal.time_state === "explicit" ? proposal.due_time : null,
+            priority: proposal.priority ?? "normal",
+            alertMinutes: snap.shortcuts.default_alert_minutes,
+            recurrenceFreq: "",
+          };
+    draftTargetKey = key;
+    activeDraft = { ...initialValues };
+
+    const fields = createScheduleFields(initialValues, snap.shortcuts, {
+      onSubmitShortcut: () => void submitProposal(),
+      onCancelShortcut: () => closeInspector(true),
+      onTitleChange: (val) => syncSubmitState(val),
+      onChange: (vals) => {
+        draftTargetKey = key;
+        activeDraft = vals;
       },
-      snap.shortcuts,
-      {
-        onSubmitShortcut: () => void submitProposal(),
-        onCancelShortcut: () => closeInspector(),
-        onTitleChange: (val) => syncSubmitState(val),
-      },
-    );
+      onSavePreset: saveTimePreset,
+      onRemovePreset: removeTimePreset,
+    });
+    activeFieldsHandle = fields;
+    activeSubmit = () => void submitProposal();
 
     async function submitProposal() {
       const vals = fields.getValues();
@@ -581,6 +1005,11 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
         });
         Sound.play("approve");
         draftProposal = null;
+        draftTargetKey = null;
+        activeDraft = null;
+        activeFieldsHandle = null;
+        activeSubmit = null;
+        lastInvokerKey = null;
         focusTaskId = item.id;
         await reload();
       } catch (err) {
@@ -593,63 +1022,78 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
       }
     }
 
-    syncSubmitState(proposal.title);
+    syncSubmitState(initialValues.title);
 
     const closeBtn = h("button", {
       type: "button",
       class: "hub-icon",
       title: "Descartar proposta",
       "aria-label": "Descartar proposta",
-      onclick: () => closeInspector(),
+      onclick: () => closeInspector(true),
     }, icon("x"));
 
-    return [
-      h(
-        "div",
-        { class: "tasks-inspector-head" },
-        h("h2", { text: "Confirmar proposta" }),
-        closeBtn,
-      ),
+    const body = h(
+      "div",
+      { class: "tasks-inspector-body" },
       ambHints.length > 0
         ? h("div", { class: "tasks-inspector-alert", text: ambHints.join(" · ") })
         : h("div", { class: "tasks-privacy-caption", text: "Revise dia, horário e prioridade antes de gravar." }),
       fields.el,
       errBox,
+    );
+
+    return [
+      h("div", { class: "tasks-inspector-head" }, h("h2", { text: "Confirmar proposta" }), closeBtn),
+      body,
       h("div", { class: "tasks-inspector-actions" }, discardBtn, confirmBtn),
     ];
   }
 
-  function buildEditInspector(item: TodoItem): HTMLElement[] {
+  function buildEditInspector(item: TodoItem, key: string): HTMLElement[] {
     let saving = false;
-    const errBox = h("div", { class: "tasks-banner warn", hidden: true });
+    const errBox = h("div", { class: "tasks-banner warn", role: "alert", hidden: true });
     setElementHidden(errBox, true);
 
     const saveBtn = button("Salvar alterações", () => void submitEdit(), "primary");
-    const cancelBtn = button("Cancelar", () => closeInspector());
+    const cancelBtn = button("Cancelar", () => closeInspector(true));
     const deleteBtn = button("Excluir", () => void handleDelete(item.id), "danger");
     deleteBtn.classList.add("tasks-inspector-delete");
+    const previewBtn = item.due_date
+      ? button("Testar aviso", () => void runMutation(() => TasksBridge.previewReminder(item.id)), "", true)
+      : null;
 
     function syncSaveState(titleValue: string) {
       saveBtn.disabled = saving || titleValue.trim().length === 0;
       saveBtn.textContent = saving ? "Salvando…" : "Salvar alterações";
     }
 
-    const fields = createScheduleFields(
-      {
-        title: item.text,
-        dueDate: item.due_date ?? null,
-        dueTime: item.due_time ?? null,
-        priority: item.priority,
-        alertMinutes: item.alert_minutes,
-        recurrenceFreq: item.recurrence?.frequency ?? "",
+    const initialValues: ScheduleFieldValues =
+      draftTargetKey === key && activeDraft
+        ? activeDraft
+        : {
+            title: item.text,
+            dueDate: item.due_date ?? null,
+            dueTime: item.due_time ?? null,
+            priority: item.priority,
+            alertMinutes: item.alert_minutes,
+            recurrenceFreq: item.recurrence?.frequency ?? "",
+          };
+    draftTargetKey = key;
+    activeDraft = { ...initialValues };
+
+    const fields = createScheduleFields(initialValues, snap.shortcuts, {
+      onSubmitShortcut: () => void submitEdit(),
+      onCancelShortcut: () => closeInspector(true),
+      onTitleChange: (val) => syncSaveState(val),
+      onChange: (vals) => {
+        draftTargetKey = key;
+        activeDraft = vals;
       },
-      snap.shortcuts,
-      {
-        onSubmitShortcut: () => void submitEdit(),
-        onCancelShortcut: () => closeInspector(),
-        onTitleChange: (val) => syncSaveState(val),
-      },
-    );
+      onSavePreset: saveTimePreset,
+      onRemovePreset: removeTimePreset,
+    });
+    activeFieldsHandle = fields;
+    activeSubmit = () => void submitEdit();
 
     async function submitEdit() {
       const vals = fields.getValues();
@@ -669,6 +1113,11 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
           clear_snooze: true,
         });
         editingId = null;
+        draftTargetKey = null;
+        activeDraft = null;
+        activeFieldsHandle = null;
+        activeSubmit = null;
+        lastInvokerKey = null;
         focusTaskId = item.id;
         await reload();
       } catch (err) {
@@ -680,7 +1129,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
       }
     }
 
-    syncSaveState(item.text);
+    syncSaveState(initialValues.title);
 
     const subInput = h("input", {
       type: "text",
@@ -689,55 +1138,170 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
       "aria-label": "Nova subtarefa",
       spellcheck: "false",
     }) as HTMLInputElement;
-    const addSubBtn = button("+ Subtarefa", () => {
-      const txt = subInput.value.trim();
-      if (!txt) return;
-      subInput.value = "";
-      void runMutation(() => TasksBridge.addSubtask(item.id, txt));
-    }, "", true);
+    const addSubBtn = button(
+      "+ Subtarefa",
+      () => {
+        const txt = subInput.value.trim();
+        if (!txt) return;
+        subInput.value = "";
+        void runMutation(() => TasksBridge.addSubtask(item.id, txt));
+      },
+      "",
+      true,
+    );
     subInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
+      if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
+        e.stopPropagation();
         addSubBtn.click();
       }
     });
 
-    const subtasksList = item.subtasks.length > 0
-      ? h(
-          "div",
-          { class: "tasks-inspector-subtasks" },
-          ...item.subtasks.map((sub) => {
-            const subCb = h("input", {
-              type: "checkbox",
-              onchange: () => void runMutation(() => TasksBridge.toggleSubtask(item.id, sub.id)),
-            }) as HTMLInputElement;
-            subCb.checked = sub.done;
-            return h(
-              "div",
-              { class: sub.done ? "tasks-subtask done" : "tasks-subtask" },
-              h("label", { class: "tasks-subtask-label" }, subCb, h("span", { text: sub.text })),
-              button("×", () => void runMutation(() => TasksBridge.removeSubtask(item.id, sub.id)), "", true),
-            );
-          }),
-        )
-      : null;
+    const subtasksList =
+      item.subtasks.length > 0
+        ? h(
+            "div",
+            { class: "tasks-inspector-subtasks" },
+            ...item.subtasks.map((sub) => {
+              const subCb = h("input", {
+                type: "checkbox",
+                "aria-label": `Subtarefa ${sub.text}`,
+                onchange: () => void runMutation(() => TasksBridge.toggleSubtask(item.id, sub.id)),
+              }) as HTMLInputElement;
+              subCb.checked = sub.done;
+              const removeBtn = button(
+                "×",
+                () => void runMutation(() => TasksBridge.removeSubtask(item.id, sub.id)),
+                "",
+                true,
+              );
+              removeBtn.setAttribute("aria-label", `Remover subtarefa ${sub.text}`);
+              return h(
+                "div",
+                { class: sub.done ? "tasks-subtask done" : "tasks-subtask" },
+                h("label", { class: "tasks-subtask-label" }, subCb, h("span", { text: sub.text })),
+                removeBtn,
+              );
+            }),
+          )
+        : null;
 
     const closeBtn = h("button", {
       type: "button",
       class: "hub-icon",
       title: "Fechar editor",
       "aria-label": "Fechar editor",
-      onclick: () => closeInspector(),
+      onclick: () => closeInspector(true),
     }, icon("x"));
 
-    return [
-      h(
-        "div",
-        { class: "tasks-inspector-head" },
-        h("h2", { text: "Editar tarefa" }),
-        closeBtn,
-      ),
+    const calStatusMsg = h("div", { class: "tasks-privacy-caption", hidden: true });
+    setElementHidden(calStatusMsg, true);
+    const calConfirmHost = h("div", { class: "tasks-calendar-confirm-host", hidden: true });
+    setElementHidden(calConfirmHost, true);
+
+    const openCalPreviewBtn = googleStatus?.connected
+      ? button("Agendar no Google Calendar", () => {
+          clear(calConfirmHost);
+          setElementHidden(errBox, true);
+          const live = fields.getValues();
+          if (!live.dueDate) {
+            errBox.textContent = "Defina uma data acima antes de enviar ao Google Calendar.";
+            setElementHidden(errBox, false);
+            return;
+          }
+          const durationSelect = h("select", { class: "hub-input tasks-cal-duration" }) as HTMLSelectElement;
+          for (const mins of [15, 30, 60, 90]) {
+            durationSelect.append(h("option", { value: String(mins), text: `${mins} min` }));
+          }
+          durationSelect.value = "30";
+
+          const titlePreview = fields.titleInput.value.trim() || item.text;
+          const timeLabel = live.dueTime ? `${live.dueTime}` : "Dia inteiro";
+          const confirmBtn = button(
+            "Confirmar evento no Calendar",
+            () => {
+              void (async () => {
+                confirmBtn.disabled = true;
+                cancelBtn.disabled = true;
+                setElementHidden(errBox, true);
+                try {
+                  const ev = await GoogleBridge.createEventFromTask({
+                    taskId: item.id,
+                    confirmed: true,
+                    overrideDate: live.dueDate,
+                    overrideTime: live.dueTime || null,
+                    durationMinutes: Number(durationSelect.value) || 30,
+                  });
+                  calConfirmHost.hidden = true;
+                  clear(calConfirmHost);
+                  calStatusMsg.textContent = `Evento criado no Calendar: ${ev.summary}.`;
+                  setElementHidden(calStatusMsg, false);
+                  void refreshGoogleState();
+                } catch (err) {
+                  errBox.textContent = String(err).replace(/^Error:\s*/, "");
+                  setElementHidden(errBox, false);
+                  confirmBtn.disabled = false;
+                  cancelBtn.disabled = false;
+                }
+              })();
+            },
+            "primary",
+          );
+          const cancelBtn = button("Cancelar", () => {
+            calConfirmHost.hidden = true;
+            clear(calConfirmHost);
+          });
+
+          calConfirmHost.append(
+            h("div", {
+              class: "tasks-calendar-preview",
+              text: `${titlePreview} · ${live.dueDate} (${timeLabel})`,
+            }),
+          );
+          if (live.dueTime) {
+            calConfirmHost.append(
+              h("div", { class: "tasks-google-actions" }, h("span", { class: "tasks-field-label", text: "Duração" }), durationSelect),
+            );
+          }
+          calConfirmHost.append(
+            h("div", {
+              class: "tasks-privacy-caption",
+              text: "Sem convidados · Criado somente com esta confirmação explícita.",
+            }),
+            h("div", { class: "tasks-google-actions" }, cancelBtn, confirmBtn),
+          );
+          setElementHidden(calConfirmHost, false);
+        })
+      : null;
+
+    const calendarSection = googleStatus
+      ? h(
+          "div",
+          { class: "tasks-inspector-section" },
+          h("span", { class: "tasks-field-label", text: "Google Calendar" }),
+          openCalPreviewBtn
+            ? openCalPreviewBtn
+            : h("span", {
+                class: "tasks-privacy-caption",
+                text: "Conecte sua conta Google em Ajustes → Integrações para enviar tarefas ao Calendar.",
+              }),
+          calConfirmHost,
+          calStatusMsg,
+        )
+      : null;
+
+    const body = h(
+      "div",
+      { class: "tasks-inspector-body" },
       fields.el,
+      previewBtn
+        ? h(
+            "div",
+            { class: "tasks-inspector-test-row" },
+            h("span", { class: "tasks-privacy-caption", text: "Testar como o lembrete aparece na Ilha." }),
+            previewBtn,
+          )
+        : null,
       h(
         "div",
         { class: "tasks-inspector-section" },
@@ -745,16 +1309,25 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
         subtasksList,
         h("div", { class: "tasks-subtask-add" }, subInput, addSubBtn),
       ),
+      calendarSection,
       errBox,
+    );
+
+    return [
+      h("div", { class: "tasks-inspector-head" }, h("h2", { text: "Editar tarefa" }), closeBtn),
+      body,
       h("div", { class: "tasks-inspector-actions" }, deleteBtn, cancelBtn, saveBtn),
     ];
   }
 
   function renderInspector(focusField = false) {
     clear(inspectorSlot);
-    const editingItem = !draftProposal && editingId
-      ? snap.items.find((it) => it.id === editingId && !it.deleted_at) ?? null
-      : null;
+    activeFieldsHandle = null;
+    activeSubmit = null;
+    const editingItem =
+      !draftProposal && editingId
+        ? snap.items.find((it) => it.id === editingId && !it.deleted_at) ?? null
+        : null;
     if (editingId && !editingItem && !draftProposal) {
       editingId = null;
     }
@@ -762,11 +1335,15 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     const open = Boolean(draftProposal || editingItem);
     workspaceEl.classList.toggle("has-inspector", open);
     setElementHidden(inspectorSlot, !open);
-    if (!open) return;
+    if (!open) {
+      draftTargetKey = null;
+      activeDraft = null;
+      return;
+    }
 
     const children = draftProposal
-      ? buildProposalInspector(draftProposal)
-      : buildEditInspector(editingItem!);
+      ? buildProposalInspector(draftProposal, `proposal:${draftProposal.id}`)
+      : buildEditInspector(editingItem!, `edit:${editingItem!.id}`);
     inspectorSlot.append(...children);
 
     if (focusField) {
@@ -795,9 +1372,8 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
         })
       : null;
 
-    // Quiet Row Rule + L6.3: quando pareado, só sinaliza na linha o que ainda está pendente no PC.
-    const itemSynced = isTaskItemSynced(snap.sync, item.id);
-    const showPendingSync = Boolean(snap.sync?.paired && !itemSynced);
+    // Quiet Row Rule + L6.3: só sinaliza na linha itens efetivamente pendentes de envio/sincronia.
+    const showPendingSync = Boolean(snap.sync?.paired && (snap.sync.unsynced_item_ids ?? []).includes(item.id));
     const syncPill = showPendingSync
       ? h("span", {
           class: "tasks-chip-pill tasks-item-sync local",
@@ -820,21 +1396,31 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
 
     const meta = metaParts.length > 0 ? h("div", { class: "tasks-item-meta" }, ...metaParts) : null;
 
+    const editBtn = button(
+      isEditing ? "Fechar" : "Editar",
+      () => {
+        draftProposal = null;
+        if (isEditing) {
+          closeInspector(true);
+          return;
+        }
+        editingId = item.id;
+        lastInvokerKey = { kind: "edit", taskId: item.id };
+        renderInspector(true);
+        renderList();
+      },
+      "",
+      true,
+    );
+    editBtn.classList.add("tasks-edit-btn");
+
     const actionsRow = h(
       "div",
       { class: "tasks-item-actions" },
       !item.done && item.due_date
         ? button("+10m", () => void runMutation(() => TasksBridge.snooze(item.id, 10)), "", true)
         : null,
-      !item.done && item.due_date
-        ? button("Testar aviso", () => void runMutation(() => TasksBridge.previewReminder(item.id)), "", true)
-        : null,
-      button(isEditing ? "Fechar" : "Editar", () => {
-        draftProposal = null;
-        editingId = isEditing ? null : item.id;
-        renderInspector(!isEditing);
-        renderList();
-      }, "", true),
+      editBtn,
       button("Excluir", () => void handleDelete(item.id), "danger", true),
     );
 
@@ -842,15 +1428,18 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     for (const sub of item.subtasks) {
       const subCb = h("input", {
         type: "checkbox",
+        "aria-label": `Subtarefa ${sub.text}`,
         onchange: () => void runMutation(() => TasksBridge.toggleSubtask(item.id, sub.id)),
       }) as HTMLInputElement;
       subCb.checked = sub.done;
+      const removeSubBtn = button("×", () => void runMutation(() => TasksBridge.removeSubtask(item.id, sub.id)), "", true);
+      removeSubBtn.setAttribute("aria-label", `Remover subtarefa ${sub.text}`);
       subtaskRows.append(
         h(
           "div",
           { class: sub.done ? "tasks-subtask done" : "tasks-subtask" },
           h("label", { class: "tasks-subtask-label" }, subCb, h("span", { text: sub.text })),
-          button("×", () => void runMutation(() => TasksBridge.removeSubtask(item.id, sub.id)), "", true),
+          removeSubBtn,
         ),
       );
     }
@@ -1069,6 +1658,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     try {
       draftProposal = await TasksBridge.proposeFromText(raw);
       editingId = null;
+      lastInvokerKey = { kind: "capture" };
       captureInput.value = "";
       renderInspector(true);
       renderList();
@@ -1099,6 +1689,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     try {
       draftProposal = await TasksBridge.voiceStop();
       editingId = null;
+      lastInvokerKey = { kind: "capture" };
       recording = false;
       renderInspector(true);
       renderList();
@@ -1118,6 +1709,19 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
       void handleProposeText();
     }
   });
+  inspectorSlot.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (activeFieldsHandle?.hasOpenPopover()) {
+        activeFieldsHandle.closePopover(true);
+      } else {
+        closeInspector(true);
+      }
+    } else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      activeSubmit?.();
+    }
+  });
   searchInput.addEventListener("input", () => {
     query = searchInput.value ?? "";
     renderList();
@@ -1135,6 +1739,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
       searchWrap,
     ),
     listSlot,
+    googleSlot,
   );
   workspaceEl.append(mainCol, inspectorSlot);
 
@@ -1171,7 +1776,7 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
             "div",
             {
               class: "tasks-privacy-caption",
-              text: "Armazenamento local (Todo/todo.json) · Atalho Ctrl+Alt+K · Datas ambíguas sempre pedem confirmação",
+              text: "Salvo localmente neste PC · Ctrl+Alt+K para captura rápida · Datas ambíguas sempre pedem confirmação",
             },
           ),
           syncBar,
@@ -1203,11 +1808,14 @@ export async function tasksPage(container: HTMLElement, _ctx: HubContext): Promi
     }
   });
   const offDismiss = await onEvent<string>("task-dismiss", () => void reload());
+  const offGoogleBackup = await onEvent("google-backup-completed", () => void refreshGoogleState());
+  void refreshGoogleState();
   activeCleanup = () => {
     offChanged();
     offVoice();
     offFocus();
     offDismiss();
+    offGoogleBackup();
   };
   if (_ctx) _ctx.onLeave = () => {
     activeCleanup?.();

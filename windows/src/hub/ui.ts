@@ -37,6 +37,10 @@ export const HUB_ICONS: Record<string, string> = {
   nosign: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM6 6l12 12",
   star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z",
   search: "M10.5 3a7.5 7.5 0 0 1 5.96 12.06l4.24 4.24-1.4 1.4-4.24-4.24A7.5 7.5 0 1 1 10.5 3zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z",
+  calendar: "M4.5 6.5h15a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19V8a1.5 1.5 0 0 1 1.5-1.5zM8 3.5v4M16 3.5v4M3 10.5h18",
+  clock: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM12 7.5v4.8l3.2 2",
+  chevronLeft: "M14.5 6l-6 6 6 6",
+  chevronRight: "M9.5 6l6 6-6 6",
 };
 
 export function icon(name: string): SVGSVGElement {
@@ -89,6 +93,7 @@ export function keycap(text: string): HTMLElement {
 
 export function button(text: string, onclick: () => void, kind: "" | "primary" | "danger" = "", small = false): HTMLButtonElement {
   return h("button", {
+    type: "button",
     class: ["hub-btn", kind, small ? "small" : ""].filter(Boolean).join(" "),
     text,
     onclick,
@@ -97,7 +102,7 @@ export function button(text: string, onclick: () => void, kind: "" | "primary" |
 
 /** The settings window's switch, so both windows look alike. */
 export function toggle(on: boolean, onChange: (v: boolean) => void): HTMLElement {
-  const el = h("button", { class: on ? "switch on" : "switch", "aria-pressed": on });
+  const el = h("button", { type: "button", class: on ? "switch on" : "switch", "aria-pressed": on });
   el.addEventListener("click", () => {
     const next = !el.classList.contains("on");
     el.classList.toggle("on", next);
@@ -110,9 +115,14 @@ export function toggle(on: boolean, onChange: (v: boolean) => void): HTMLElement
 export function segmented<T extends string>(options: [T, string][], value: T, onChange: (v: T) => void): HTMLElement {
   const el = h("div", { class: "hub-segmented" });
   for (const [id, text] of options) {
-    const b = h("button", { class: id === value ? "on" : "", text });
+    const active = id === value;
+    const b = h("button", { type: "button", class: active ? "on" : "", "aria-pressed": active, text });
     b.addEventListener("click", () => {
-      for (const other of el.querySelectorAll("button")) other.classList.toggle("on", other === b);
+      for (const other of el.querySelectorAll("button")) {
+        const isTarget = other === b;
+        other.classList.toggle("on", isTarget);
+        other.setAttribute("aria-pressed", String(isTarget));
+      }
       onChange(id);
     });
     el.append(b);

@@ -7,7 +7,10 @@ import { installFakeDom } from "./fakedom.mjs";
 import { calls, emit, internals, sent } from "./tauri.mjs";
 import {
   bucketFor,
+  buildMonthGrid,
   dateForShortcut,
+  formatCalendarButtonLabel,
+  formatClockButtonLabel,
   formatDueLabel,
   formatTimeMinutes,
   groupTasks,
@@ -749,4 +752,184 @@ test("Hub Tarefas: Editar abre inspetor lateral sem injetar editor inline no car
   assert.equal(updates[0].input.id, "t-edit-1");
   assert.equal(updates[0].input.text, "Revisar orçamento Q4");
   assert.equal(inspector.hidden, true);
+});
+
+test("Agenda tátil: buildMonthGrid gera 42 dias Dom-Sáb e rótulos de calendário/relógio sem digitação", () => {
+  const cells = buildMonthGrid(2026, 10); // Novembro 2026 (01/11/2026 é domingo)
+  assert.equal(cells.length, 42);
+  assert.equal(cells[0].iso, "2026-11-01");
+  assert.equal(cells[0].inMonth, true);
+  assert.equal(cells[29].iso, "2026-11-30");
+  assert.equal(cells[29].inMonth, true);
+  assert.equal(cells[30].inMonth, false);
+
+  assert.equal(formatCalendarButtonLabel(null, new Date(2026, 10, 15, 9, 0)), "Abrir calendário");
+  assert.equal(formatCalendarButtonLabel("2026-11-15", new Date(2026, 10, 15, 9, 0)), "Hoje · 15/11");
+  assert.equal(formatCalendarButtonLabel("2026-11-16", new Date(2026, 10, 15, 9, 0)), "Amanhã · 16/11");
+  assert.equal(formatClockButtonLabel(null), "Abrir relógio");
+  assert.equal(formatClockButtonLabel("14:35"), "14:35");
+});
+
+test("Hub Tarefas: Confirmar proposta usa botões Calendário, Relógio e Predefinido sem inputs de texto para data/hora", async () => {
+  const savedItem = fakeTodo({
+    id: "t-picker-1",
+    text: "Consulta médica",
+    due_date: "2026-11-20",
+    due_time: "15:25",
+  });
+  let currentSnap = makeSnapshot({ items: [] });
+
+  const page = await openTasksPage(currentSnap, {
+    tasks_state: () => currentSnap,
+    tasks_propose_from_text: () => ({
+      id: "prop-tactile-1",
+      title: "Consulta médica",
+      date_state: "ambiguous",
+      due_date: null,
+      date_phrase: "sexta",
+      time_state: "unspecified",
+      due_time: null,
+      time_phrase: null,
+      priority: "normal",
+    }),
+    tasks_save_shortcut_settings: ({ settings }) => {
+      currentSnap = makeSnapshot({ items: currentSnap.items, shortcuts: settings });
+      return settings;
+    },
+    tasks_confirm_proposal: ({ input }) => {
+      const created = { ...savedItem, ...input };
+      currentSnap = makeSnapshot({ items: [created], shortcuts: currentSnap.shortcuts });
+      return created;
+    },
+  });
+
+  const captureInput = page.querySelector(".tasks-capture-input");
+  const proposeBtn = page.find("BUTTON").find((b) => b.textContent === "Propor");
+  captureInput.value = "Consulta médica";
+  proposeBtn.fire("click");
+  await flush();
+
+  const inspector = page.querySelector(".tasks-inspector");
+  assert.equal(inspector.hidden, false);
+
+  // Zero inputs nativos dd/mm/aaaa ou --:-- dentro do inspetor do Hub
+  const dateOrTimeInputs = inspector.find("INPUT").filter((el) => {
+    const t = el.getAttribute("type");
+    return t === "date" || t === "time";
+  });
+  assert.equal(dateOrTimeInputs.length, 0);
+
+  // Botão que já abre o calendário
+  const calTrigger = inspector.find(".tasks-picker-btn").find((b) => b.textContent.includes("Abrir calendário"));
+  assert.ok(calTrigger);
+  calTrigger.fire("click");
+  const calPop = inspector.querySelector(".tasks-calendar-popover");
+  assert.ok(calPop);
+  const nov20Btn = calPop.find(".tasks-cal-day").find((b) => b.getAttribute("data-iso")?.endsWith("-20") && !b.classList.contains("out"));
+  assert.ok(nov20Btn);
+  const pickedDate = nov20Btn.getAttribute("data-iso");
+  nov20Btn.fire("click");
+  assert.equal(inspector.querySelector(".tasks-calendar-popover"), null);
+
+  // Botão "+ Predefinido" abre modo predefinido, cria 16:30 e adiciona chip vivo
+  const addPresetBtn = inspector.querySelector(".tasks-preset-add");
+  assert.ok(addPresetBtn);
+  addPresetBtn.fire("click");
+  const presetClock = inspector.querySelector(".tasks-clock-popover");
+  assert.ok(presetClock);
+  const pmBtn = presetClock.querySelector(".tasks-clock-period").find(".tasks-chip").find((b) => b.textContent === "12h–23h");
+  assert.ok(pmBtn);
+  pmBtn.fire("click");
+  const h16Node = presetClock.find(".tasks-clock-num").find((b) => b.textContent === "16");
+  assert.ok(h16Node);
+  h16Node.fire("click");
+  const m30Node = presetClock.find(".tasks-clock-num").find((b) => b.textContent === "30");
+  assert.ok(m30Node);
+  m30Node.fire("click");
+  const savePresetBtn = presetClock.find("BUTTON").find((b) => b.textContent === "Salvar predefinido 16:30");
+  assert.ok(savePresetBtn);
+  savePresetBtn.fire("click");
+  await flush();
+
+  const savedShortcuts = sent("tasks_save_shortcut_settings");
+  assert.equal(savedShortcuts.length, 1);
+  assert.ok(savedShortcuts[0].settings.time_shortcuts_minutes.includes(990));
+  assert.ok(inspector.find(".tasks-chip").some((b) => b.textContent === "16:30"));
+
+  // Botão que já abre o relógio para ajustar um horário pontual (15:25)
+  const clockTrigger = inspector.find(".tasks-picker-btn")[1];
+  assert.ok(clockTrigger);
+  clockTrigger.fire("click");
+  const clockPop = inspector.querySelector(".tasks-clock-popover");
+  assert.ok(clockPop);
+  clockPop.querySelector(".tasks-clock-period").find(".tasks-chip").find((b) => b.textContent === "12h–23h").fire("click");
+  clockPop.find(".tasks-clock-num").find((b) => b.textContent === "15").fire("click");
+  clockPop.find(".tasks-clock-num").find((b) => b.textContent === "25").fire("click");
+  const applyTimeBtn = clockPop.find("BUTTON").find((b) => b.textContent === "Definir 15:25");
+  assert.ok(applyTimeBtn);
+  applyTimeBtn.fire("click");
+  assert.equal(inspector.querySelector(".tasks-clock-popover"), null);
+
+  // Confirmar proposta envia dia e hora escolhidos nos popovers
+  inspector.find("BUTTON").find((b) => b.textContent === "Confirmar tarefa").fire("click");
+  await flush();
+
+  const confirmed = sent("tasks_confirm_proposal");
+  assert.equal(confirmed.length, 1);
+  assert.equal(confirmed[0].input.due_date, pickedDate);
+  assert.equal(confirmed[0].input.due_time, "15:25");
+});
+
+test("Hub Tarefas: editar subtarefa preserva rascunho não salvo e move 'Testar aviso' para o inspetor", async () => {
+  const item = fakeTodo({
+    id: "t-draft-1",
+    text: "Preparar pauta",
+    due_date: dateForShortcut("today"),
+    due_time: "10:00",
+    subtasks: [{ id: "sub-1", text: "Listar tópicos", done: false }],
+  });
+  let currentSnap = makeSnapshot({ items: [item] });
+
+  const page = await openTasksPage(currentSnap, {
+    tasks_state: () => currentSnap,
+    tasks_toggle_subtask: ({ subtaskId }) => {
+      currentSnap = makeSnapshot({
+        items: [
+          {
+            ...item,
+            subtasks: item.subtasks.map((s) => (s.id === subtaskId ? { ...s, done: !s.done } : s)),
+          },
+        ],
+      });
+      return currentSnap.items[0];
+    },
+    tasks_preview_reminder: () => true,
+  });
+
+  // "Testar aviso" não polui mais cada linha da lista
+  const rowCard = page.find(".tasks-item")[0];
+  assert.equal(rowCard.find("BUTTON").some((b) => b.textContent === "Testar aviso"), false);
+
+  rowCard.querySelector(".tasks-edit-btn").fire("click");
+  await flush();
+
+  const inspector = page.querySelector(".tasks-inspector");
+  const titleInput = inspector.querySelector(".hub-input");
+  titleInput.value = "Preparar pauta final da semana";
+  titleInput.fire("input");
+
+  // "Testar aviso" fica acessível dentro do inspetor de edição
+  const previewBtn = inspector.find("BUTTON").find((b) => b.textContent === "Testar aviso");
+  assert.ok(previewBtn);
+  previewBtn.fire("click");
+  await flush();
+  assert.equal(sent("tasks_preview_reminder").length, 1);
+
+  // Alternar subtarefa dispara reload(), mas não apaga o título em edição
+  const subCheckbox = inspector.querySelector(".tasks-inspector-subtasks").find("INPUT")[0];
+  subCheckbox.fire("change");
+  await flush();
+
+  assert.equal(sent("tasks_toggle_subtask").length, 1);
+  assert.equal(inspector.querySelector(".hub-input").value, "Preparar pauta final da semana");
 });

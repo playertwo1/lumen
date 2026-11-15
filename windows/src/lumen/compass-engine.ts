@@ -337,6 +337,8 @@ export class CompassEngine {
   private taskSyncStart = -1;
   private taskSyncDuration = 0;
   private taskSyncMode: "saved" | "synced" = "saved";
+  private cloudBackupStart = -1;
+  private cloudBackupDuration = 0;
   private badgePopStart = -1;
   private gulpStart = -1;
   private gulpChewStarted = false;
@@ -595,6 +597,21 @@ export class CompassEngine {
     this.blink();
     this.markBusyFor(dur);
   }
+
+  /** P3 (L7): pequena nuvem guardando uma caixinha ao concluir backup no Google Drive. */
+  triggerCloudBackup(duration = 1.75) {
+    if (reducedMotion()) {
+      this.cloudBackupStart = -1;
+      this.cloudBackupDuration = 0;
+      return;
+    }
+    const dur = Math.max(0.5, duration);
+    this.cloudBackupStart = this.elapsed;
+    this.cloudBackupDuration = dur;
+    this.squash();
+    this.blink();
+    this.markBusyFor(dur);
+  }
   get busy() {
     if (reducedMotion()) return false;
     const moodActive = !this.isMini && (
@@ -623,6 +640,7 @@ export class CompassEngine {
       this.taskCheckStart >= 0 ||
       this.mailInHandStart >= 0 ||
       this.taskSyncStart >= 0 ||
+      this.cloudBackupStart >= 0 ||
       this.rollDuration > 0 ||
       this.elapsed < this.busyUntil ||
       this.pendingSparkAt >= 0 ||
@@ -724,6 +742,8 @@ export class CompassEngine {
       this.isChewing = false;
       this.gulpStart = -1;
       this.pendingSparkAt = -1;
+      this.cloudBackupStart = -1;
+      this.cloudBackupDuration = 0;
       this.particles = [];
       this.moodBusy = this.moodHot = this.moodFull = this.moodTired = 0;
       this.moodDrops = [];
@@ -855,6 +875,10 @@ export class CompassEngine {
     if (this.taskSyncStart >= 0 && this.elapsed >= this.taskSyncStart + this.taskSyncDuration) {
       this.taskSyncStart = -1;
       this.taskSyncDuration = 0;
+    }
+    if (this.cloudBackupStart >= 0 && this.elapsed >= this.cloudBackupStart + this.cloudBackupDuration) {
+      this.cloudBackupStart = -1;
+      this.cloudBackupDuration = 0;
     }
 
     // Continuous active-state P1 motion
@@ -1151,6 +1175,9 @@ export class CompassEngine {
     }
     if (!reduced && this.taskSyncStart >= 0 && this.elapsed < this.taskSyncStart + this.taskSyncDuration) {
       this.drawTaskSyncGesture(ctx, compact);
+    }
+    if (!reduced && this.cloudBackupStart >= 0 && this.elapsed < this.cloudBackupStart + this.cloudBackupDuration) {
+      this.drawCloudBackupGesture(ctx, compact);
     }
     if (!reduced && this.particles.length > 0) this.drawParticles(ctx);
     ctx.restore();
@@ -2470,6 +2497,69 @@ export class CompassEngine {
       ctx.strokeStyle = rgbCss(INK);
       ctx.lineWidth = 1.5;
       ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  /** P3 (L7): pequena nuvem guardando uma caixinha ao concluir backup no Google Drive. */
+  private drawCloudBackupGesture(ctx: CanvasRenderingContext2D, compact: boolean) {
+    const dur = Math.max(0.5, this.cloudBackupDuration);
+    const p = Math.min(1, Math.max(0, (this.elapsed - this.cloudBackupStart) / dur));
+    const pop = Math.min(1, p / 0.16);
+    const fade = p > 0.84 ? Math.max(0, (1 - p) / 0.16) : 1;
+    const cx = compact ? 75 : 77;
+    const cy = compact ? 23 : 24;
+
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    this.drawScaledAccent(ctx, cx, cy, 0.72 + pop * 0.28, () => {
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      const tuck = Math.min(1, Math.max(0, (p - 0.12) / 0.56));
+      const glowAlpha = (p > 0.5 ? 0.3 : 0.16) * pop;
+      ctx.fillStyle = p > 0.62 ? `rgba(52, 211, 153, ${glowAlpha})` : `rgba(96, 165, 250, ${glowAlpha})`;
+      ctx.beginPath();
+      ctx.arc(0, 0, 12.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Nuvem estilizada acolhendo o pacote
+      ctx.fillStyle = "rgba(248, 250, 252, 0.96)";
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(-4.6, -1.2, 4.1, Math.PI * 0.55, Math.PI * 1.85);
+      ctx.arc(0.2, -3.5, 4.9, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.arc(5.1, -1.0, 3.8, Math.PI * 1.3, Math.PI * 0.48);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Caixinha entrando suavemente na nuvem
+      const easedTuck = 1 - Math.pow(1 - tuck, 2.2);
+      const boxY = 8.4 - easedTuck * 8.0;
+      const boxScale = 1 - easedTuck * 0.28;
+      ctx.save();
+      ctx.translate(0, boxY);
+      ctx.scale(boxScale, boxScale);
+      ctx.fillStyle = rgbCss(APPROVAL_AMBER);
+      ctx.strokeStyle = rgbCss(INK);
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.rect(-3.6, -2.8, 7.2, 5.6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = "#FEF3C7";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, -2.8);
+      ctx.lineTo(0, 2.8);
+      ctx.moveTo(-3.6, 0);
+      ctx.lineTo(3.6, 0);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.restore();
     });
     ctx.restore();
   }

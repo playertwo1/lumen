@@ -61,7 +61,7 @@ Os relatos gerais do proprietário nas fases 0 e 2 ficam registrados como relato
     - [x] Revisão visual aprovada pelo proprietário em 2026-11-13. O aceite cobre somente a subetapa d3; não fecha o checkpoint real L1.4.
   - [x] **L1.4d-4 — Animações P2** implementadas em `windows/src/lumen/compass-engine.ts` (humor do PC `updateMood` reusando `mood.ts` incluindo pente horizontal de RAM para `PC Memória`, `working` com mini monitor e teclado, coreografia autônoma periódica de `isMini`, inércia secundária `physDx`/`physDy` e transição de `outfitPresence`, mantendo `busy=false` no repouso `CALM` e supressão sob `prefers-reduced-motion`) + prévia P2 na página `l14d1-conferencia.html` e testes sintéticos verdes. Spec e plano: `docs/superpowers/specs/2026-11-13-l14d4-animacoes-p2.md` e `docs/superpowers/plans/2026-11-13-l14d4-animacoes-p2.md`.
     - [x] Revisão visual aprovada pelo proprietário em 2026-11-14. O aceite cobre somente a subetapa d4; a validação real no app para fechar `L1.4d` e o checkpoint real `L1.4` continua aberta.
-- [ ] Animações P3 ficam adiadas às fases correspondentes: nota ao salvar (L3), sino/adiar/check de tarefa (L4), carta ao resumir e sem sugerir envio (L5), estados distintos de salvo/sincronizado (L6), caixa guardada na nuvem durante backup (L7).
+- [x] Animações P3 ficam adiadas às fases correspondentes: nota ao salvar (L3), sino/adiar/check de tarefa (L4), carta ao resumir e sem sugerir envio (L5), estados distintos de salvo/sincronizado (L6), caixa guardada na nuvem durante backup (L7). *(Implementadas e validadas em testes sintéticos em L3–L7; validação visual real no notebook aberta nos respectivos checkpoints.)*
 - **Avaliação real da 0.6.13 (2026-11-13):** o proprietário relatou que "aparece tudo" (nome, ícone e identidade visíveis após instalar). Sem resultado ainda: tipo de instalação usado (MSI ou NSIS), settings preservados, hooks, permissões (permitir, negar, sem clique) e atualizador.
 - Checkpoint L1: identidade visual/sons originais e migração sintética passaram antes da publicação. Lumen 0.6.13 está publicada; cenários reais de migração continuam **em avaliação do proprietário**. A L1.4a e L1.4d-1/d-2/d-3/d-4 têm aceite visual explícito; Canvas foi escolhido na L1.4c. O checkpoint real L1.4, L1.3 ou L1 não está fechado.
 
@@ -104,11 +104,11 @@ Depende de: F12-01 da Segunda Mente (contrato de sync: o contrato v1 (envelope, 
 
 ### L7 — Google no Lumen (M)
 Depende de: F13-02 da Segunda Mente (login Google próprio).
-- [ ] L7.1 Mesmo login Google do celular.
-- [ ] L7.2 Backup semanal dos dados do Lumen no Drive, numa subpasta própria.
-- [ ] L7.3 Google Calendar: ler eventos e criar evento a partir de tarefa confirmada.
-- Checkpoint L7: o backup é restaurado e o evento é criado só com confirmação.
-- Animação P3 (adiada até a L7): uma nuvenzinha guarda uma caixa durante o backup.
+- [x] L7.1 Mesmo login Google do celular (OAuth 2.0 PKCE próprio em produção pessoal sem credenciais hardcoded no repositório, retorno loopback `/oauth2callback` com validação `state` em tempo constante, refresh serializado via `REFRESH_LOCK` e chaves isoladas no Windows Credential Manager em `GOOGLE_INTERNAL_KEYS` via `secrets.rs`, validado em `windows/src-tauri/src/google.rs` + `windows/src/settings/main.ts` -> Integrações).
+- [x] L7.2 Backup semanal dos dados do Lumen no Drive, numa subpasta própria (`Segunda Mente/Lumen-PC`, `lumen-backup-latest.json` com SHA-256 excluindo segredos e `.wav`, scheduler semanal, restauração com verificação SHA-256 + snapshot local `BackupRestoreSafety/pre-restore.json` + recarga de tarefas/notas e confirmação dupla na UI).
+- [x] L7.3 Google Calendar: ler eventos e criar evento a partir de tarefa confirmada (`sendUpdates=none`, zero campo `attendees`, exigindo data explícita e confirmação dupla em `GoogleBridge` + inspetor de Tarefas, nunca editando ou removendo eventos).
+- [ ] Checkpoint L7: o backup é restaurado e o evento é criado só com confirmação. (Verificação sintética em 2026-11-15: `cargo test --lib` (`742 passed; 0 failed; 9 ignored`, incluindo 9 testes de `google` e `secrets`), `npx tsc --noEmit`, `npm test` (`711 passed; 0 failed`) e `npm run build` passando; teste real contra projeto Google Cloud / Drive / Calendar do dono pendente: `NOT_RUN`.)
+- [x] Animação P3 da L7 (código e testes sintéticos em 2026-11-15): evento `"google-backup-completed"` aciona `triggerCloudBackup()` via `Island.cloudBackup()`, desenhando uma pequena nuvem guardando uma caixinha com respeito a `prefers-reduced-motion` e retorno a `busy = false`. Spec e plano: `docs/superpowers/specs/2026-11-15-l7-google-lumen.md` e `docs/superpowers/plans/2026-11-15-l7-google-lumen.md`.
 
 ### Depois desta fase
 O plano M0–M10 continua como **"Lumen assistente"**, com as mesmas regras M. O modo "mais ativo" (resumos, cobranças e sugestões) é a F14 da Segunda Mente e roda nos dois aparelhos. (QwenPaw) Referência para a F14: o heartbeat, que roda perguntas fixas por intervalo e só dentro de uma janela de horário ativo.

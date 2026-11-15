@@ -10,13 +10,17 @@ import { t } from "../i18n/i18n";
 
 type Toggle = (on: boolean, onChange: (v: boolean) => void) => HTMLElement;
 
+function sectionDivider(): HTMLElement {
+  return h("div", { class: "phone-divider" });
+}
+
 /**
  * The relay block ("Away from home Wi-Fi") is hidden until a relay is ready to use: the code and its tests stay.
  * Testers who start Coucou with COUCOU_RELAY_SETTINGS=1 see it (docs/RELAY_DEPLOY.md), and so does anyone whose relay
  * is already on. Nothing else changes.
  */
 function relaySlot(makeToggle: Toggle, refreshPairing: () => void): HTMLElement {
-  const slot = h("div", {});
+  const slot = h("div", { class: "phone-relay-slot" });
   void Bridge.phoneRelayStatus().then((status) => {
     if (status?.shown) slot.replaceWith(relayBlock(makeToggle, refreshPairing));
   });
@@ -24,12 +28,14 @@ function relaySlot(makeToggle: Toggle, refreshPairing: () => void): HTMLElement 
 }
 
 export function phoneSection(on: boolean, makeToggle: Toggle, settings: Settings): HTMLElement {
-  const detail = h("div", {});
-  const note = h("div", { class: "hint" });
+  const detail = h("div", { class: "phone-detail" });
+  const note = h("div", { class: "notice err phone-error", hidden: true });
   /** Where the pairing code is drawn, so showing it never hides the switches below. */
-  const pairingBox = h("div", {});
+  const pairingBox = h("div", { class: "phone-pairing-wrap" });
+  const statusPill = h("span", { class: "phone-live-pill", text: on ? "Ativo" : "Desligado" });
 
   const showError = (message: string) => {
+    note.hidden = false;
     note.textContent = t("Could not turn it on: {error}", { error: message });
   };
 
@@ -58,37 +64,110 @@ export function phoneSection(on: boolean, makeToggle: Toggle, settings: Settings
     detail.replaceChildren();
     pairingBox.replaceChildren();
     note.textContent = "";
+    note.hidden = true;
     if (status?.error) showError(status.error);
-    if (!status?.running) return;
-    const show = h("button", { text: t("Show pairing code") });
-    show.addEventListener("click", () => void reveal(status, false));
+    const running = Boolean(status?.running);
+    switchEl.classList.toggle("on", running);
+    switchEl.setAttribute("aria-pressed", String(running));
+    if (!status?.running) {
+      statusPill.className = "phone-live-pill";
+      statusPill.textContent = "Desligado";
+      return;
+    }
+
     const address = status.host ? `${status.host}:${status.port}` : `:${status.port}`;
+    statusPill.className = status.clients > 0 ? "phone-live-pill ok" : "phone-live-pill active";
+    statusPill.textContent = status.clients > 0 ? `Conectado · ${address}` : `Aguardando · ${address}`;
+
+    const show = h("button", { class: "primary", text: t("Show pairing code") }) as HTMLButtonElement;
+    show.addEventListener("click", () => {
+      show.hidden = true;
+      void reveal(status, false);
+    });
     clients.textContent = t("Phones connected: {count}", { count: status.clients });
-    detail.append(
-      h("div", { class: "row" }, show),
+
+    const pairingCard = h(
+      "section",
+      { class: "phone-card" },
+      h(
+        "div",
+        { class: "phone-card-head" },
+        h(
+          "div",
+          { class: "phone-card-title-col" },
+          h("h2", { text: "Pareamento na rede local" }),
+          clients,
+        ),
+        show,
+      ),
       pairingBox,
-      clients,
-      h("div", { class: "hint", text: t("The phone connects to {address}", { address }) }),
-      h("div", { class: "hint", text: t("If Windows asks about the firewall, allow Coucou on private networks. The phone and this computer must be on the same Wi-Fi.") }),
-      h("div", { class: "hint", text: t("Your phone finds this computer again by itself when the network changes. It is announced on your local network only while this switch is on. Some hotspots and guest networks block this.") }),
-      relaySlot(makeToggle, () => void refreshPairing()),
-      detailsBlock(makeToggle),
-      answersBlock(makeToggle),
-      diffsBlock(makeToggle),
-      usageBlock(makeToggle),
-      recapBlock(makeToggle),
-      servicesBlock(),
-      chatBlock(makeToggle, settings),
+      sectionDivider(),
+      h(
+        "div",
+        { class: "phone-meta-notes" },
+        h("div", { class: "hint", text: t("The phone connects to {address}", { address }) }),
+        h("div", { class: "hint", text: t("If Windows asks about the firewall, allow Coucou on private networks. The phone and this computer must be on the same Wi-Fi.") }),
+        h("div", { class: "hint", text: t("Your phone finds this computer again by itself when the network changes. It is announced on your local network only while this switch is on. Some hotspots and guest networks block this.") }),
+      ),
     );
+
+    const permissionsCard = h(
+      "section",
+      { class: "phone-card" },
+      h(
+        "div",
+        { class: "phone-card-head" },
+        h(
+          "div",
+          { class: "phone-card-title-col" },
+          h("h2", { text: "Permissões e contexto compartilhado" }),
+          h("div", { class: "hint", text: "Escolha exatamente o que o aplicativo Android pode visualizar ou responder." }),
+        ),
+      ),
+      answersBlock(makeToggle),
+      sectionDivider(),
+      detailsBlock(makeToggle),
+      sectionDivider(),
+      diffsBlock(makeToggle),
+      sectionDivider(),
+      usageBlock(makeToggle),
+      sectionDivider(),
+      recapBlock(makeToggle),
+    );
+
+    const extrasCard = h(
+      "section",
+      { class: "phone-card" },
+      h("h2", { text: "Serviços e chat remoto" }),
+      h("div", { class: "phone-extras-grid" }, servicesBlock(), chatBlock(makeToggle, settings)),
+    );
+
+    const leftCol = h(
+      "div",
+      { class: "phone-col" },
+      pairingCard,
+      relaySlot(makeToggle, () => void refreshPairing()),
+    );
+    const rightCol = h(
+      "div",
+      { class: "phone-col" },
+      permissionsCard,
+    );
+
+    detail.append(h("div", { class: "phone-workbench" }, leftCol, rightCol), extrasCard);
   };
 
   /** Kept up to date while the window is open and the link is on; nothing runs otherwise. */
-  const clients = h("div", { class: "hint" });
+  const clients = h("div", { class: "hint phone-clients-count" });
   const watch = window.setInterval(() => {
     if (!section.isConnected) return window.clearInterval(watch);
     if (document.visibilityState !== "visible" || !clients.isConnected) return;
     void Bridge.phoneLinkStatus().then((s) => {
-      if (s?.running) clients.textContent = t("Phones connected: {count}", { count: s.clients });
+      if (!s?.running) return;
+      clients.textContent = t("Phones connected: {count}", { count: s.clients });
+      const addr = s.host ? `${s.host}:${s.port}` : `:${s.port}`;
+      statusPill.className = s.clients > 0 ? "phone-live-pill ok" : "phone-live-pill active";
+      statusPill.textContent = s.clients > 0 ? `Conectado · ${addr}` : `Aguardando · ${addr}`;
     });
   }, 5000);
 
@@ -101,6 +180,8 @@ export function phoneSection(on: boolean, makeToggle: Toggle, settings: Settings
         switchEl.classList.remove("on");
         switchEl.setAttribute("aria-pressed", "false");
         detail.replaceChildren();
+        statusPill.className = "phone-live-pill";
+        statusPill.textContent = "Desligado";
         showError(String(err));
       }
     })();
@@ -108,16 +189,30 @@ export function phoneSection(on: boolean, makeToggle: Toggle, settings: Settings
 
   void Bridge.phoneLinkStatus().then(draw);
 
-  const section = h(
+  const masterCard = h(
     "section",
-    {},
-    h("h2", {}, h("span", { text: t("Android phone") })),
-    h("div", { class: "hint", text: t("Send your agents' sessions to Coucou for Android and answer permission requests from the phone. Off by default; it only listens on your local network.") }),
-    h("div", { class: "hint", text: t("Allow on the phone asks for the fingerprint or the screen lock. Deny does not.") }),
-    h("div", { class: "row" }, h("label", { text: t("Phone link") }), switchEl),
+    { class: "phone-card phone-master-card" },
+    h(
+      "div",
+      { class: "phone-master-head" },
+      h(
+        "div",
+        { class: "phone-card-title-col" },
+        h("h2", {}, h("span", { text: t("Android phone") }), statusPill),
+        h("div", { class: "hint", text: t("Send your agents' sessions to Coucou for Android and answer permission requests from the phone. Off by default; it only listens on your local network.") }),
+        h("div", { class: "hint", text: t("Allow on the phone asks for the fingerprint or the screen lock. Deny does not.") }),
+      ),
+      h(
+        "div",
+        { class: "phone-master-switch" },
+        h("label", { text: t("Phone link") }),
+        switchEl,
+      ),
+    ),
     note,
-    detail,
   );
+
+  const section = h("div", { class: "phone-page" }, masterCard, detail);
   return section;
 }
 
@@ -141,10 +236,11 @@ export function relayStateText(state: PhoneRelayState): string {
  * and the window never gets it back. Rust re-reads the switch for every connection.
  */
 function relayBlock(makeToggle: Toggle, changed: () => void): HTMLElement {
-  const note = h("div", { class: "hint" });
-  const state = h("div", { class: "hint" });
-  const address = h("input", { type: "text", placeholder: "wss://", style: "width:100%", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
-  const access = h("input", { type: "password", style: "width:100%", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+  const note = h("div", { class: "hint phone-relay-note" });
+  const state = h("div", { class: "phone-relay-state" });
+  const stateBadge = h("span", { class: "phone-live-pill", text: t("Off") });
+  const address = h("input", { type: "text", class: "phone-mono-input", placeholder: "wss://", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+  const access = h("input", { type: "password", class: "phone-mono-input", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
   let current: PhoneRelayStatus = { enabled: false, url: "", hasAccess: false, state: "off", shown: true };
 
   const show = (status: PhoneRelayStatus | null) => {
@@ -154,7 +250,21 @@ function relayBlock(makeToggle: Toggle, changed: () => void): HTMLElement {
     switchEl.setAttribute("aria-pressed", String(status.enabled));
     if (document.activeElement !== address) address.value = status.url;
     access.placeholder = status.hasAccess ? "••••••••" : "";
-    state.textContent = status.enabled ? relayStateText(status.state) : "";
+    const text = status.enabled ? relayStateText(status.state) : "";
+    state.textContent = text;
+    if (!status.enabled) {
+      stateBadge.className = "phone-live-pill";
+      stateBadge.textContent = t("Off");
+    } else if (status.state === "linked") {
+      stateBadge.className = "phone-live-pill ok";
+      stateBadge.textContent = "Conectado";
+    } else if (status.state === "accessRefused" || status.state === "roomTaken") {
+      stateBadge.className = "phone-live-pill err";
+      stateBadge.textContent = "Atenção";
+    } else {
+      stateBadge.className = "phone-live-pill active";
+      stateBadge.textContent = "Ativo";
+    }
   };
   const fail = (err: unknown) => {
     note.textContent = String(err);
@@ -197,15 +307,28 @@ function relayBlock(makeToggle: Toggle, changed: () => void): HTMLElement {
   }, 5000);
 
   return h(
-    "div",
-    {},
-    h("div", { class: "row" }, h("label", { text: t("Away from home Wi-Fi") }), switchEl),
+    "section",
+    { class: "phone-card" },
+    h(
+      "div",
+      { class: "phone-card-head" },
+      h("h2", {}, h("span", { text: t("Away from home Wi-Fi") }), stateBadge),
+      switchEl,
+    ),
     h("div", { class: "hint", text: t("Reach this computer from your phone on mobile data or another network, through a relay you deployed yourself. Everything is encrypted end to end: the relay only forwards data it cannot read. Off by default.") }),
-    h("div", { class: "row" }, h("label", { text: t("Relay address") })),
-    h("div", { class: "row" }, address, saveAddress),
-    h("div", { class: "row" }, h("label", { text: t("Relay access key") })),
-    h("div", { class: "row" }, access, saveKey),
-    h("div", { class: "hint", text: t("Paste the access key you set when you deployed the relay. It is kept in the system keystore and never shown again.") }),
+    h(
+      "div",
+      { class: "phone-field-group" },
+      h("label", { class: "phone-field-label", text: t("Relay address") }),
+      h("div", { class: "phone-input-row" }, address, saveAddress),
+    ),
+    h(
+      "div",
+      { class: "phone-field-group" },
+      h("label", { class: "phone-field-label", text: t("Relay access key") }),
+      h("div", { class: "phone-input-row" }, access, saveKey),
+      h("div", { class: "hint", text: t("Paste the access key you set when you deployed the relay. It is kept in the system keystore and never shown again.") }),
+    ),
     state,
     note,
   );
@@ -237,9 +360,18 @@ function detailsBlock(makeToggle: Toggle): HTMLElement {
   });
   return h(
     "div",
-    {},
-    h("div", { class: "row" }, h("label", { text: t("Show session details on the phone") }), switchEl),
-    h("div", { class: "hint", text: t("Sends the last steps (as shown on the island, so they can include commands), the final line, the project's folder name and the colour. Never a path.") }),
+    { class: "phone-perm-item" },
+    h(
+      "div",
+      { class: "phone-perm-row" },
+      h(
+        "div",
+        { class: "phone-perm-copy" },
+        h("label", { text: t("Show session details on the phone") }),
+        h("div", { class: "hint", text: t("Sends the last steps (as shown on the island, so they can include commands), the final line, the project's folder name and the colour. Never a path.") }),
+      ),
+      switchEl,
+    ),
     note,
   );
 }
@@ -269,9 +401,18 @@ function answersBlock(makeToggle: Toggle): HTMLElement {
   });
   return h(
     "div",
-    {},
-    h("div", { class: "row" }, h("label", { text: t("Let the phone answer Claude Code's questions") }), switchEl),
-    h("div", { class: "hint", text: t("The phone shows each question with its options. Every answer is confirmed with the phone's fingerprint or screen lock.") }),
+    { class: "phone-perm-item" },
+    h(
+      "div",
+      { class: "phone-perm-row" },
+      h(
+        "div",
+        { class: "phone-perm-copy" },
+        h("label", { text: t("Let the phone answer Claude Code's questions") }),
+        h("div", { class: "hint", text: t("The phone shows each question with its options. Every answer is confirmed with the phone's fingerprint or screen lock.") }),
+      ),
+      switchEl,
+    ),
     note,
   );
 }
@@ -292,31 +433,38 @@ function servicesBlock(): HTMLElement {
   let ticked: string[] = [];
   const boxes = PHONE_SERVICES.map(([id, name]) => {
     const box = h("input", { type: "checkbox" }) as HTMLInputElement;
+    const itemLabel = h("label", { class: "phone-service-chip" }, box, h("span", { text: name }));
     box.addEventListener("change", () => {
+      itemLabel.classList.toggle("checked", box.checked);
       void (async () => {
         note.textContent = "";
         const next = box.checked ? [...new Set([...ticked, id])] : ticked.filter((x) => x !== id);
         try {
           ticked = (await Bridge.phoneServicesSet(next)).services;
+          itemLabel.classList.toggle("checked", ticked.includes(id));
         } catch (err) {
           box.checked = ticked.includes(id);
+          itemLabel.classList.toggle("checked", box.checked);
           note.textContent = String(err);
         }
       })();
     });
-    return { id, box, row: h("div", { class: "row" }, h("label", {}, box, h("span", { text: ` ${name}` }))) };
+    return { id, box, itemLabel };
   });
   void Bridge.phoneServicesStatus().then((status) => {
     if (!status) return;
     ticked = status.services;
-    for (const b of boxes) b.box.checked = ticked.includes(b.id);
+    for (const b of boxes) {
+      b.box.checked = ticked.includes(b.id);
+      b.itemLabel.classList.toggle("checked", b.box.checked);
+    }
   });
   return h(
     "div",
-    {},
-    h("div", { class: "row" }, h("label", { text: t("Show these services on the phone") })),
+    { class: "phone-perm-item" },
+    h("div", { class: "phone-subhead", text: t("Show these services on the phone") }),
     h("div", { class: "hint", text: t("Each tick lets your paired phone see that service's card: a headline and up to three short lines, read-only. Nothing is shown until you tick it. No addresses, subjects, links or keys are ever sent.") }),
-    ...boxes.map((b) => b.row),
+    h("div", { class: "phone-service-grid" }, ...boxes.map((b) => b.itemLabel)),
     note,
   );
 }
@@ -346,9 +494,18 @@ function usageBlock(makeToggle: Toggle): HTMLElement {
   });
   return h(
     "div",
-    {},
-    h("div", { class: "row" }, h("label", { text: t("Show my plan usage on the phone") }), switchEl),
-    h("div", { class: "hint", text: t("The phone shows how much of your Claude and Codex plans is used and when they reset: the same percentages as the pills here, nothing else.") }),
+    { class: "phone-perm-item" },
+    h(
+      "div",
+      { class: "phone-perm-row" },
+      h(
+        "div",
+        { class: "phone-perm-copy" },
+        h("label", { text: t("Show my plan usage on the phone") }),
+        h("div", { class: "hint", text: t("The phone shows how much of your Claude and Codex plans is used and when they reset: the same percentages as the pills here, nothing else.") }),
+      ),
+      switchEl,
+    ),
     note,
   );
 }
@@ -379,16 +536,25 @@ function recapBlock(makeToggle: Toggle): HTMLElement {
   });
   return h(
     "div",
-    {},
-    h("div", { class: "row" }, h("label", { text: t("Show my weekly recap on the phone") }), switchEl),
-    h("div", { class: "hint", text: t("The phone shows last week's recap: time coding, sessions, files, lines, commands, permissions and the agent you used most. Counts only. The project's name is added only if you also show session details.") }),
+    { class: "phone-perm-item" },
+    h(
+      "div",
+      { class: "phone-perm-row" },
+      h(
+        "div",
+        { class: "phone-perm-copy" },
+        h("label", { text: t("Show my weekly recap on the phone") }),
+        h("div", { class: "hint", text: t("The phone shows last week's recap: time coding, sessions, files, lines, commands, permissions and the agent you used most. Counts only. The project's name is added only if you also show session details.") }),
+      ),
+      switchEl,
+    ),
     note,
   );
 }
 
 /**
  * The files an agent changed, on the phone: off until the user turns it on. The list (names and counts) rides on the
- * session; the lines of a file are sent only when the phone asks for that file. Rust re-reads this for every connection.
+ * session; the lines of a file are sent only when the phone asks for that file. Rust re-reads this switch for every connection.
  */
 function diffsBlock(makeToggle: Toggle): HTMLElement {
   const note = h("div", { class: "hint" });
@@ -411,9 +577,18 @@ function diffsBlock(makeToggle: Toggle): HTMLElement {
   });
   return h(
     "div",
-    {},
-    h("div", { class: "row" }, h("label", { text: t("Show the files an agent changed on the phone") }), switchEl),
-    h("div", { class: "hint", text: t("The phone lists the files each agent changed and, when you tap one, shows what changed in it (200 lines at most, long lines cut). File names and lines go only to your paired phone, over the pinned encrypted link, and only when it asks.") }),
+    { class: "phone-perm-item" },
+    h(
+      "div",
+      { class: "phone-perm-row" },
+      h(
+        "div",
+        { class: "phone-perm-copy" },
+        h("label", { text: t("Show the files an agent changed on the phone") }),
+        h("div", { class: "hint", text: t("The phone lists the files each agent changed and, when you tap one, shows what changed in it (200 lines at most, long lines cut). File names and lines go only to your paired phone, over the pinned encrypted link, and only when it asks.") }),
+      ),
+      switchEl,
+    ),
     note,
   );
 }
@@ -424,7 +599,7 @@ function diffsBlock(makeToggle: Toggle): HTMLElement {
  */
 function chatBlock(makeToggle: Toggle, settings: Settings): HTMLElement {
   let allowed: string[] = [];
-  const body = h("div", {});
+  const body = h("div", { class: "phone-chat-providers" });
   const note = h("div", { class: "hint" });
 
   const save = async (next: string[]) => {
@@ -439,9 +614,9 @@ function chatBlock(makeToggle: Toggle, settings: Settings): HTMLElement {
 
   /** One provider: a button that asks it for its models (only now), then a tick box per model. */
   const providerRow = (p: ProviderDef): HTMLElement => {
-    const list = h("div", {});
+    const list = h("div", { class: "phone-chat-models" });
     const button = h("button", { text: t("Choose models") });
-    const head = h("div", { class: "row" }, h("label", { text: p.name }), button);
+    const head = h("div", { class: "phone-chat-prov-head" }, h("span", { class: "phone-chat-prov-name", text: p.name }), button);
     const show = (models: string[]) => {
       list.replaceChildren(
         ...[...new Set([...models, ...modelsOf(allowed, p.id)])].map((model) => {
@@ -449,7 +624,7 @@ function chatBlock(makeToggle: Toggle, settings: Settings): HTMLElement {
           const box = h("input", { type: "checkbox" }) as HTMLInputElement;
           box.checked = allowed.includes(id);
           box.addEventListener("change", () => void save(toggleModel(allowed, id, box.checked)));
-          return h("div", { class: "row" }, h("label", {}, box, h("span", { text: ` ${model}` })));
+          return h("label", { class: "phone-model-check" }, box, h("span", { text: model }));
         }),
       );
     };
@@ -460,7 +635,7 @@ function chatBlock(makeToggle: Toggle, settings: Settings): HTMLElement {
         (err) => list.replaceChildren(h("div", { class: "hint", text: String(err).replace(/^Error:\s*/, "") })),
       );
     });
-    return h("div", {}, head, list);
+    return h("div", { class: "phone-chat-prov" }, head, list);
   };
 
   const draw = async (status: PhoneChatStatus) => {
@@ -500,9 +675,18 @@ function chatBlock(makeToggle: Toggle, settings: Settings): HTMLElement {
 
   return h(
     "div",
-    {},
-    h("div", { class: "row" }, h("label", { text: t("Let the phone chat with my AI providers") }), switchEl),
-    h("div", { class: "hint", text: t("Chat uses the API keys saved on this computer. The phone never sees them, and each message may cost money.") }),
+    { class: "phone-perm-item" },
+    h(
+      "div",
+      { class: "phone-perm-row" },
+      h(
+        "div",
+        { class: "phone-perm-copy" },
+        h("label", { text: t("Let the phone chat with my AI providers") }),
+        h("div", { class: "hint", text: t("Chat uses the API keys saved on this computer. The phone never sees them, and each message may cost money.") }),
+      ),
+      switchEl,
+    ),
     note,
     body,
   );
@@ -527,13 +711,13 @@ export function copyLinkHint(): HTMLElement {
 
 function pairingRows(pairing: PhoneLinkPairing, again: () => void): HTMLElement[] {
   // The QR comes from Rust (qrcode crate) as an SVG made only of paths.
-  const qr = h("div", { class: "qr" });
+  const qr = h("div", { class: "qr phone-qr" });
   qr.innerHTML = pairing.qrSvg;
 
-  const link = h("input", { type: "text", readonly: "true", value: pairing.link, style: "width:100%" }) as HTMLInputElement;
+  const link = h("input", { type: "text", class: "phone-mono-input phone-pair-link", readonly: "true", value: pairing.link }) as HTMLInputElement;
   link.addEventListener("focus", () => link.select());
 
-  const copy = h("button", { text: t("Copy link") });
+  const copy = h("button", { class: "primary", text: t("Copy link") });
   const copied = copyLinkHint();
   copy.addEventListener("click", () => {
     void navigator.clipboard?.writeText(pairing.link).then(() => {
@@ -546,12 +730,15 @@ function pairingRows(pairing: PhoneLinkPairing, again: () => void): HTMLElement[
   const repair = h("button", { text: t("Pair again") });
   repair.addEventListener("click", again);
 
-  return [
+  const controls = h(
+    "div",
+    { class: "phone-pairing-controls" },
     h("div", { class: "hint", text: t("In Coucou for Android, scan this code with the camera or paste the link.") }),
-    qr,
-    h("div", { class: "row" }, link, copy),
+    h("div", { class: "phone-input-row" }, link, copy),
     copied,
     ...(pairing.relay ? [h("div", { class: "hint", text: t("This code also carries the access key and the end-to-end key for the relay {host}. Pair again makes a new key and a new room.", { host: pairing.relay }) })] : []),
-    h("div", { class: "row" }, repair, h("span", { class: "hint", text: t("The phone that was paired is disconnected and needs the new code.") })),
-  ];
+    h("div", { class: "phone-repair-row" }, repair, h("span", { class: "hint", text: t("The phone that was paired is disconnected and needs the new code.") })),
+  );
+
+  return [h("div", { class: "phone-pairing-sheet" }, qr, controls)];
 }
