@@ -507,7 +507,7 @@ fn process(app: &AppHandle, id: &str) {
     if result.is_ok() {
         let _ = app.emit_to(crate::island::WINDOW_LABEL, "note-created", id);
         let engine = crate::flow::get(app).map(|f| f.store.lock().unwrap().prefs.summary_engine).unwrap_or_default();
-        if engine == SummaryEngine::Claude {
+        if engine != SummaryEngine::Off {
             summarize(app, id);
         }
         maybe_generate_auto_comments(app, id, false);
@@ -598,31 +598,41 @@ fn summarize(app: &AppHandle, id: &str) {
         }
         transcript.truncate(cut);
     }
+    let engine = crate::flow::get(app)
+        .map(|f| f.store.lock().unwrap().prefs.summary_engine)
+        .unwrap_or_default();
     let user = format!("<transcript>\n{transcript}\n</transcript>");
     let reply = tauri::async_runtime::block_on(async {
-        crate::chat::complete_oneshot(&settings, builder::SUMMARY_INSTRUCTIONS, &user, 2048, Duration::from_secs(120))
+        crate::chat::complete_summary(&settings, engine, builder::SUMMARY_INSTRUCTIONS, &user, 2048, Duration::from_secs(120))
             .await
             .map_err(|err| {
                 crate::log::line(format!("notes: summarize: {err}"));
                 err
             })
-            .ok()
     });
     taker.working.lock().unwrap().retain(|w| w != id);
-    let Some(reply) = reply else {
-        let _ = app.emit_to(crate::HUB_LABEL, "notes-changed", id);
-        return;
-    };
-    taker.change(app, id, |n| match builder::parse_summary(&reply) {
-        Some(parsed) => {
-            if let Some(title) = parsed.title.filter(|_| !n.title_edited) {
-                n.title = title;
-            }
-            n.summary = Some(parsed.summary);
-            n.key_points = parsed.key_points;
-            n.todos = parsed.todos;
+    let reply = match reply {
+        Ok(reply) => reply,
+        Err(err) => {
+            taker.change(app, id, |n| {
+                n.error = Some(err);
+            });
+            return;
         }
-        None => n.summary = Some(reply.trim().to_string()),
+    };
+    taker.change(app, id, |n| {
+        n.error = None;
+        match builder::parse_summary(&reply) {
+            Some(parsed) => {
+                if let Some(title) = parsed.title.filter(|_| !n.title_edited) {
+                    n.title = title;
+                }
+                n.summary = Some(parsed.summary);
+                n.key_points = parsed.key_points;
+                n.todos = parsed.todos;
+            }
+            None => n.summary = Some(reply.trim().to_string()),
+        }
     });
 }
 
@@ -1106,7 +1116,7 @@ pub fn notes_create_text(
         let engine = crate::flow::get(&bg_app)
             .map(|f| f.store.lock().unwrap().prefs.summary_engine)
             .unwrap_or_default();
-        if engine == SummaryEngine::Claude && trimmed.chars().count() >= 40 {
+        if engine != SummaryEngine::Off && trimmed.chars().count() >= 40 {
             summarize(&bg_app, &bg_id);
         }
         maybe_generate_auto_comments(&bg_app, &bg_id, false);

@@ -12,8 +12,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
+use crate::cli_relay::Cli;
+use crate::flow::store::SummaryEngine;
 use crate::settings::Settings;
-use crate::{claude, cli_relay, local_chat, openai_compat, secrets};
+use crate::{claude, claude_code, cli_relay, local_chat, openai_compat, secrets};
 
 pub const ANTHROPIC: &str = "anthropic";
 
@@ -220,6 +222,223 @@ fn checked_context(context: ChatContext) -> Result<ChatContext, String> {
         }
         other => Ok(other),
     }
+}
+
+/// Disponibilidade detectada para cada motor de resumo sem disparar chamadas de rede.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryBackends {
+    pub claude: Option<String>,
+    pub chatgpt: Option<String>,
+    pub gemini: Option<String>,
+    pub chat: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SummaryStep {
+    ChatGptOAuth,
+    ClaudeApi,
+    GoogleApi,
+    Cli(Cli),
+    ActiveChat,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct SummaryEnv {
+    claude_prefer_cli: bool,
+    claude_has_key: bool,
+    claude_has_cli: bool,
+    chatgpt_oauth: bool,
+    codex_cli: bool,
+    antigravity_cli: bool,
+    gemini_cli: bool,
+    google_has_key: bool,
+}
+
+impl SummaryEnv {
+    fn probe(settings: &Settings) -> Self {
+        Self {
+            claude_prefer_cli: cli_relay::uses_subscription(settings, ANTHROPIC),
+            claude_has_key: secrets::present(claude::KEY),
+            claude_has_cli: claude_code::available(),
+            chatgpt_oauth: crate::chatgpt::has_usable_account(),
+            codex_cli: Cli::Codex.exe().is_some(),
+            antigravity_cli: Cli::Antigravity.exe().is_some(),
+            gemini_cli: Cli::Gemini.exe().is_some(),
+            google_has_key: secrets::present("google-api-key"),
+        }
+    }
+}
+
+fn summary_steps(engine: SummaryEngine, env: SummaryEnv) -> Vec<SummaryStep> {
+    let mut steps = Vec::new();
+    match engine {
+        SummaryEngine::Off | SummaryEngine::Chat => {
+            steps.push(SummaryStep::ActiveChat);
+        }
+        SummaryEngine::Claude => {
+            if env.claude_prefer_cli {
+                if env.claude_has_cli {
+                    steps.push(SummaryStep::Cli(Cli::Claude));
+                }
+                if env.claude_has_key {
+                    steps.push(SummaryStep::ClaudeApi);
+                }
+            } else {
+                if env.claude_has_key {
+                    steps.push(SummaryStep::ClaudeApi);
+                }
+                if env.claude_has_cli {
+                    steps.push(SummaryStep::Cli(Cli::Claude));
+                }
+            }
+        }
+        SummaryEngine::ChatGpt => {
+            if env.chatgpt_oauth {
+                steps.push(SummaryStep::ChatGptOAuth);
+            }
+            if env.codex_cli {
+                steps.push(SummaryStep::Cli(Cli::Codex));
+            }
+        }
+        SummaryEngine::Gemini => {
+            if env.antigravity_cli {
+                steps.push(SummaryStep::Cli(Cli::Antigravity));
+            }
+            if env.gemini_cli {
+                steps.push(SummaryStep::Cli(Cli::Gemini));
+            }
+            if env.google_has_key {
+                steps.push(SummaryStep::GoogleApi);
+            }
+        }
+    }
+    steps
+}
+
+fn summary_step_label(step: SummaryStep) -> &'static str {
+    match step {
+        SummaryStep::ChatGptOAuth => "ChatGPT OAuth",
+        SummaryStep::ClaudeApi => "Chave Anthropic",
+        SummaryStep::GoogleApi => "Chave Google AI",
+        SummaryStep::Cli(cli) => cli.name(),
+        SummaryStep::ActiveChat => "Chat",
+    }
+}
+
+fn active_chat_label(settings: &Settings) -> String {
+    let p = settings.chat_provider.as_str();
+    match p {
+        "" | ANTHROPIC => "Claude".into(),
+        "chatgpt" => "ChatGPT OAuth".into(),
+        "openai" => {
+            if cli_relay::uses_subscription(settings, p) {
+                "OpenAI (Codex CLI)".into()
+            } else {
+                "OpenAI".into()
+            }
+        }
+        "google" => {
+            if cli_relay::uses_subscription(settings, p) {
+                "Google (Antigravity / Gemini CLI)".into()
+            } else {
+                "Google AI".into()
+            }
+        }
+        "openrouter" => "OpenRouter".into(),
+        "ollama" => "Ollama".into(),
+        "lmstudio" => "LM Studio".into(),
+        "custom" => "Servidor compatível".into(),
+        "cursor" => "Cursor CLI".into(),
+        "copilot" => "Copilot CLI".into(),
+        other => other.to_string(),
+    }
+}
+
+pub fn summary_backends(settings: &Settings) -> SummaryBackends {
+    let env = SummaryEnv::probe(settings);
+    SummaryBackends {
+        claude: summary_steps(SummaryEngine::Claude, env)
+            .first()
+            .map(|&s| summary_step_label(s).to_string()),
+        chatgpt: summary_steps(SummaryEngine::ChatGpt, env)
+            .first()
+            .map(|&s| summary_step_label(s).to_string()),
+        gemini: summary_steps(SummaryEngine::Gemini, env)
+            .first()
+            .map(|&s| summary_step_label(s).to_string()),
+        chat: Some(active_chat_label(settings)),
+    }
+}
+
+fn missing_summary_backend_error(engine: SummaryEngine) -> String {
+    match engine {
+        SummaryEngine::Claude => {
+            "Configure uma chave da Anthropic ou instale a CLI do Claude Code em Ajustes → Chat.".into()
+        }
+        SummaryEngine::ChatGpt => {
+            "Conecte sua conta ChatGPT por OAuth em Ajustes → Chat ou instale e entre na CLI do Codex (codex login).".into()
+        }
+        SummaryEngine::Gemini => {
+            "Instale a CLI do Antigravity (agy) ou do Gemini (gemini) com login Google OAuth, ou adicione uma chave Google em Ajustes → Chat.".into()
+        }
+        SummaryEngine::Chat | SummaryEngine::Off => "Nenhum provedor de chat configurado.".into(),
+    }
+}
+
+/// Executa o resumo de nota segundo o motor escolhido nas preferências do Anotador,
+/// tentando OAuth quando disponível e caindo para CLI quando configurada.
+pub async fn complete_summary(
+    settings: &Settings,
+    engine: SummaryEngine,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    let steps = summary_steps(engine, SummaryEnv::probe(settings));
+    if steps.is_empty() {
+        return Err(missing_summary_backend_error(engine));
+    }
+    let mut last_err: Option<String> = None;
+    for step in steps {
+        let res = match step {
+            SummaryStep::ActiveChat => {
+                complete_oneshot(settings, system, user, max_tokens, timeout).await
+            }
+            SummaryStep::ChatGptOAuth => {
+                let model = model_for(settings, "chatgpt");
+                crate::chatgpt::complete_oneshot(&model, system, user, timeout).await
+            }
+            SummaryStep::ClaudeApi => {
+                let model = model_for(settings, ANTHROPIC);
+                claude::complete(&model, system, user, max_tokens, timeout).await
+            }
+            SummaryStep::GoogleApi => {
+                let model = model_for(settings, "google");
+                match openai_compat::provider("google") {
+                    Some(p) => openai_compat::complete(p, &model, system, user, max_tokens, timeout).await,
+                    None => Err("Provedor Google indisponível.".into()),
+                }
+            }
+            SummaryStep::Cli(cli) => {
+                let model = if cli == Cli::Claude {
+                    model_for(settings, ANTHROPIC)
+                } else {
+                    String::new()
+                };
+                cli_relay::complete_cli(cli, &model, system, user).await
+            }
+        };
+        match res {
+            Ok(text) => return Ok(text),
+            Err(err) => {
+                crate::log::line(format!("summary: {} failed: {err}", summary_step_label(step)));
+                last_err = Some(err);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| missing_summary_backend_error(engine)))
 }
 
 /// Executa um prompt único no provedor de chat configurado atualmente (incluindo ChatGPT OAuth).
@@ -482,5 +701,47 @@ mod tests {
             assert!(crate::files::canonical_file_in_dir(&inbox, &inbox.join("link.txt")).is_none());
         }
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn summary_steps_prefer_oauth_and_fall_back_to_cli() {
+        let both_chatgpt = SummaryEnv { chatgpt_oauth: true, codex_cli: true, ..Default::default() };
+        assert_eq!(
+            summary_steps(SummaryEngine::ChatGpt, both_chatgpt),
+            vec![SummaryStep::ChatGptOAuth, SummaryStep::Cli(Cli::Codex)]
+        );
+        let only_codex = SummaryEnv { codex_cli: true, ..Default::default() };
+        assert_eq!(summary_steps(SummaryEngine::ChatGpt, only_codex), vec![SummaryStep::Cli(Cli::Codex)]);
+        assert!(summary_steps(SummaryEngine::ChatGpt, SummaryEnv::default()).is_empty());
+
+        let all_google = SummaryEnv {
+            antigravity_cli: true,
+            gemini_cli: true,
+            google_has_key: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            summary_steps(SummaryEngine::Gemini, all_google),
+            vec![SummaryStep::Cli(Cli::Antigravity), SummaryStep::Cli(Cli::Gemini), SummaryStep::GoogleApi]
+        );
+        let only_gemini_cli = SummaryEnv { gemini_cli: true, ..Default::default() };
+        assert_eq!(summary_steps(SummaryEngine::Gemini, only_gemini_cli), vec![SummaryStep::Cli(Cli::Gemini)]);
+
+        let claude_cli_first = SummaryEnv {
+            claude_prefer_cli: true,
+            claude_has_cli: true,
+            claude_has_key: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            summary_steps(SummaryEngine::Claude, claude_cli_first),
+            vec![SummaryStep::Cli(Cli::Claude), SummaryStep::ClaudeApi]
+        );
+        let claude_api_first = SummaryEnv { claude_prefer_cli: false, ..claude_cli_first };
+        assert_eq!(
+            summary_steps(SummaryEngine::Claude, claude_api_first),
+            vec![SummaryStep::ClaudeApi, SummaryStep::Cli(Cli::Claude)]
+        );
+        assert_eq!(summary_steps(SummaryEngine::Chat, SummaryEnv::default()), vec![SummaryStep::ActiveChat]);
     }
 }

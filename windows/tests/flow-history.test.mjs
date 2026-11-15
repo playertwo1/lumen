@@ -131,3 +131,42 @@ test("Erase everything retains confirmation on failure and resets it only after 
   assert.equal(f.page.querySelector(".hub-warn").hidden, true);
   assert.deepEqual(sent("flow_clear"), [{ everything: true }, { everything: true }]);
 });
+
+test("summaries selector offers Claude, ChatGPT/Codex OAuth/CLI, Antigravity/Gemini CLI, Chat and Off", async t => {
+  const page = root();
+  const status = {
+    prefs: { enabled: true, key: "right_ctrl", keepDays: 30, mic: "", summaryEngine: "claude" },
+    models: { parakeet: { state: "ready" }, downloadMb: 700 },
+    mics: [],
+    keys: "ok",
+    platform: "windows",
+    summaryBackends: {
+      claude: null,
+      chatgpt: "ChatGPT OAuth",
+      gemini: "Antigravity CLI",
+      chat: "ChatGPT OAuth",
+    },
+  };
+  const ctx = { hero: root, status, refresh: async () => status, setPrefs: async change => change(status.prefs) };
+  await flowSettingsPage(page, ctx);
+  t.after(() => ctx.onLeave?.());
+
+  const selects = page.find("select");
+  const summarySelect = selects.find(s => s.find("option").some(o => o.getAttribute("value") === "chatgpt"));
+  assert.ok(summarySelect);
+  assert.deepEqual(
+    summarySelect.find("option").map(o => o.getAttribute("value")),
+    ["claude", "chatgpt", "gemini", "chat", "off"],
+  );
+  assert.match(page.textContent, /Não configurado: adicione a chave Anthropic/);
+
+  summarySelect.value = "chatgpt";
+  summarySelect.fire("change");
+  assert.equal(status.prefs.summaryEngine, "chatgpt");
+  assert.match(page.textContent, /Pronto via ChatGPT OAuth/);
+
+  summarySelect.value = "gemini";
+  summarySelect.fire("change");
+  assert.equal(status.prefs.summaryEngine, "gemini");
+  assert.match(page.textContent, /Pronto via Antigravity CLI/);
+});

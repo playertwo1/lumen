@@ -5245,21 +5245,6 @@
       "ko": "목소리는 이 컴퓨터 밖으로 절대 안 나가요. Parakeet이 여기서 글자로 바꾸고, 녹음은 붙여넣자마자 버려요.",
       "ja": "あなたの声がこのパソコンの外に出ることはありません：Parakeet がここでテキストに変換し、録音は貼り付け後すぐに破棄されます。"
     },
-    "With Claude, the transcript (never the audio) goes to Anthropic with your key from Notch → Chat.": {
-      "zh-Hans": "使用 Claude 时，文字记录（绝不包括音频）会通过你在“Notch → 聊天”中设置的密钥发送给 Anthropic。",
-      "hi": "Claude के साथ, ट्रांसक्रिप्ट (ऑडियो कभी नहीं) Notch → चैट में दी गई आपकी कुंजी के साथ Anthropic को जाता है।",
-      "es": "Con Claude, la transcripción (nunca el audio) va a Anthropic con tu clave de Notch → Chat.",
-      "ar": "مع Claude، يذهب النص المكتوب (لا الصوت أبدًا) إلى Anthropic بمفتاحك من Notch ← الدردشة.",
-      "fr": "Avec Claude, la transcription (jamais l'audio) part chez Anthropic avec ta clé de Notch → Chat.",
-      "bn": "Claude-এ, ট্রান্সক্রিপ্ট (অডিও কখনো নয়) Notch → চ্যাট থেকে আপনার কী দিয়ে Anthropic-এ যায়।",
-      "pt-BR": "Com o Claude, a transcrição (nunca o áudio) vai para a Anthropic com sua chave de Notch → Chat.",
-      "ru": "С Claude расшифровка (но никогда не звук) уходит в Anthropic с вашим ключом из Notch → Чат.",
-      "id": "Dengan Claude, transkrip (tidak pernah audionya) dikirim ke Anthropic dengan kuncimu dari Notch → Obrolan.",
-      "de": "Mit Claude wird das Transkript mit deinem Schlüssel aus Notch → Chat an Anthropic gesendet, niemals das Audio.",
-      "tr": "Claude ile döküm, Çentik → Sohbet bölümündeki anahtarınla Anthropic'e gönderilir; ses asla gönderilmez.",
-      "ko": "Claude를 쓰면 녹취록(오디오는 안 보내요)이 노치 → 채팅의 내 키와 함께 Anthropic으로 가요.",
-      "ja": "Claude を使う場合、文字起こし（音声は送られません）が ノッチ → チャット のキーで Anthropic に送られます。"
-    },
     "Everything stays on this computer. Tell the people in the call that you are recording.": {
       "zh-Hans": "所有内容都留在这台电脑上。请告知通话中的人你正在录音。",
       "hi": "सब कुछ इसी कंप्यूटर पर रहता है। कॉल में मौजूद लोगों को बताएँ कि आप रिकॉर्ड कर रहे हैं।",

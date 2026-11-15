@@ -5,7 +5,7 @@
 import { h, clear } from "../../views/dom";
 import { t } from "../../i18n/i18n";
 import { onEvent } from "../../core/bridge";
-import { FlowBridge, flowKeyId, type Edge, type FlowKey, type ModelsStatus } from "../../core/flow";
+import { FlowBridge, flowKeyId, type Edge, type FlowKey, type ModelsStatus, type SummaryBackends, type SummaryEngine } from "../../core/flow";
 import { comboFromKeys } from "../keys";
 import type { HubContext } from "../shell";
 import { pageSave } from "../save";
@@ -145,9 +145,33 @@ export async function flowSettingsPage(page: HTMLElement, ctx: HubContext) {
 
   // ── Notetaker ──
   page.append(label(t("Notetaker")));
+  const summaryOptions: [SummaryEngine, string][] = [
+    ["claude", "Claude (chave ou CLI)"],
+    ["chatgpt", "ChatGPT / Codex (OAuth ou CLI)"],
+    ["gemini", "Antigravity / Gemini (CLI · OAuth Google)"],
+    ["chat", "Mesmo provedor do Chat"],
+    ["off", t("No summary")],
+  ];
+  const currentSummaryEngine: SummaryEngine = summaryOptions.some(([id]) => id === prefs.summaryEngine)
+    ? prefs.summaryEngine
+    : "claude";
+  const summaryNote = h("div", { class: "hub-note" });
+  const summaryStatus = h("div", { class: "hub-note" });
+  const renderSummaryDetails = (engine: SummaryEngine, backends?: SummaryBackends) => {
+    summaryNote.textContent = summaryDescription(engine);
+    const info = summaryAvailability(engine, backends);
+    summaryStatus.textContent = info.text;
+    summaryStatus.style.color = info.ready ? "var(--hub-green, #22c55e)" : info.warn ? "#f5a524" : "";
+    summaryStatus.hidden = !info.text;
+  };
+  renderSummaryDetails(currentSummaryEngine, status.summaryBackends);
   page.append(anchor("flow.summary", card(
-    row(t("Summaries"), null, select([["claude", t("Claude (your key)")], ["off", t("No summary")]], prefs.summaryEngine, (engine) => void ctx.setPrefs((p) => (p.summaryEngine = engine)))),
-    h("div", { class: "hub-note", text: t("With Claude, the transcript (never the audio) goes to Anthropic with your key from Notch → Chat.") }),
+    row(t("Summaries"), null, select(summaryOptions, currentSummaryEngine, (engine) => {
+      renderSummaryDetails(engine, ctx.status.summaryBackends);
+      void ctx.setPrefs((p) => (p.summaryEngine = engine));
+    })),
+    summaryNote,
+    summaryStatus,
     divider(),
     h("div", { class: "hub-note", text: t("Everything stays on this computer. Tell the people in the call that you are recording.") }),
   )));
@@ -238,4 +262,44 @@ function shortcutRecorder(combo: string[], platform: "windows" | "linux", onDone
     window.addEventListener("keyup", up, true);
   }
   return el;
+}
+
+export function summaryDescription(engine: SummaryEngine): string {
+  switch (engine) {
+    case "claude":
+      return "Com o Claude, a transcrição (nunca o áudio) usa sua chave da Anthropic ou a CLI do Claude Code configurada em Ajustes → Chat.";
+    case "chatgpt":
+      return "Com ChatGPT / Codex, a transcrição (nunca o áudio) usa sua conta ChatGPT conectada por OAuth em Ajustes → Chat, com fallback para a CLI do Codex (codex login).";
+    case "gemini":
+      return "Com Antigravity / Gemini, a transcrição (nunca o áudio) usa a CLI oficial (agy ou gemini) com seu login Google OAuth, ou sua chave Google AI se configurada.";
+    case "chat":
+      return "Usa automaticamente o mesmo provedor e modelo ativos no Chat (OAuth, CLIs de assinatura, API ou servidor local). A transcrição nunca inclui o áudio.";
+    case "off":
+      return "Resumos automáticos desligados. Você ainda pode clicar em Gerar resumo manualmente na aba Notas.";
+  }
+}
+
+export function summaryAvailability(
+  engine: SummaryEngine,
+  backends?: SummaryBackends,
+): { text: string; ready: boolean; warn: boolean } {
+  if (!backends || engine === "off") return { text: "", ready: false, warn: false };
+  if (engine === "chat") {
+    const active = backends.chat;
+    return active
+      ? { text: `Usando no Chat agora: ${active}`, ready: true, warn: false }
+      : { text: "", ready: false, warn: false };
+  }
+  const active = backends[engine];
+  if (active) {
+    return { text: `Pronto via ${active}`, ready: true, warn: false };
+  }
+  switch (engine) {
+    case "claude":
+      return { text: "Não configurado: adicione a chave Anthropic ou conecte o Claude Code em Ajustes → Chat.", ready: false, warn: true };
+    case "chatgpt":
+      return { text: "Não conectado: entre com sua conta ChatGPT (OAuth) em Ajustes → Chat ou rode `codex login`.", ready: false, warn: true };
+    case "gemini":
+      return { text: "Não configurado: instale o Antigravity CLI (agy) ou Gemini CLI (gemini) com login Google OAuth, ou adicione uma chave Google em Ajustes → Chat.", ready: false, warn: true };
+  }
 }

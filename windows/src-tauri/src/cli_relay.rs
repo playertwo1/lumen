@@ -448,14 +448,42 @@ fn prompt_on_stdin(cli: Cli, exe: &Path) -> bool {
     }
 }
 
+/// Limite seguro de caracteres UTF-16 para prompt passado em argumento de linha de comando no Windows.
+const MAX_CLI_ARG_PROMPT_CHARS: usize = 24_000;
+
+fn clamp_prompt_for_arg(system: &str, prompt: &str) -> String {
+    let overhead = system.chars().count() + 64;
+    let budget = MAX_CLI_ARG_PROMPT_CHARS.saturating_sub(overhead);
+    if prompt.chars().count() <= budget {
+        return prompt.to_string();
+    }
+    let marker = "\n...[truncado pelo limite da linha de comando]";
+    let keep = budget.saturating_sub(marker.chars().count());
+    let clipped: String = prompt.chars().take(keep).collect();
+    format!("{clipped}{marker}")
+}
+
+fn gemini_no_web_policy() -> PathBuf {
+    let dir = settings::local_dir().join("relay");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("gemini-no-web.toml");
+    let _ = std::fs::write(&path, NO_WEB_POLICY);
+    path
+}
+
 /// Runs the tool once and returns the text of its answer.
 async fn ask(cli: Cli, exe: &Path, r: &Request<'_>) -> Result<String, String> {
     let workdir = settings::local_dir().join("relay");
     std::fs::create_dir_all(&workdir).map_err(|e| e.to_string())?;
     let stdin_prompt = prompt_on_stdin(cli, exe);
+    let clamped_prompt = (!stdin_prompt && cfg!(windows)).then(|| clamp_prompt_for_arg(r.system, r.prompt));
+    let bounded = Request {
+        prompt: clamped_prompt.as_deref().unwrap_or(r.prompt),
+        ..*r
+    };
 
     let mut cmd = tokio::process::Command::new(exe);
-    cmd.args(args(cli, r, !stdin_prompt))
+    cmd.args(args(cli, &bounded, !stdin_prompt))
         .current_dir(&workdir)
         .env_remove("CLAUDECODE")
         .env("NO_COLOR", "1")
@@ -631,13 +659,12 @@ fn needs_sign_in(text: &str) -> bool {
 
 // ── The chat ──────────────────────────────────────────────────────────────────
 
-/// Executa um prompt único na assinatura CLI ativa sem registrar no histórico de chat.
-pub async fn complete(provider: &str, model: &str, system: &str, prompt: &str) -> Result<String, String> {
-    let Some((cli, exe)) = installed(provider) else {
-        let tool = clis_for(provider).first().map(|c| c.name()).unwrap_or(provider);
+/// Executa um prompt único na CLI específica, sem registrar no histórico de chat.
+pub async fn complete_cli(cli: Cli, model: &str, system: &str, prompt: &str) -> Result<String, String> {
+    let Some(exe) = cli.exe() else {
         return Err(tf(
             "{tool} is not installed. Install it from Settings → Chat, sign in once in a terminal, then ask again.",
-            &[("tool", tool)],
+            &[("tool", cli.name())],
         ));
     };
     if cli == Cli::Claude {
@@ -651,8 +678,27 @@ pub async fn complete(provider: &str, model: &str, system: &str, prompt: &str) -
         })
         .await;
     }
-    let request = Request { model: None, system, prompt, web: false, no_web_policy: None };
+    let policy = (cli == Cli::Gemini).then(gemini_no_web_policy);
+    let request = Request {
+        model: None,
+        system,
+        prompt,
+        web: false,
+        no_web_policy: policy.as_deref(),
+    };
     ask(cli, &exe, &request).await
+}
+
+/// Executa um prompt único na assinatura CLI ativa sem registrar no histórico de chat.
+pub async fn complete(provider: &str, model: &str, system: &str, prompt: &str) -> Result<String, String> {
+    let Some((cli, _)) = installed(provider) else {
+        let tool = clis_for(provider).first().map(|c| c.name()).unwrap_or(provider);
+        return Err(tf(
+            "{tool} is not installed. Install it from Settings → Chat, sign in once in a terminal, then ask again.",
+            &[("tool", tool)],
+        ));
+    };
+    complete_cli(cli, model, system, prompt).await
 }
 
 /// One chat turn with `provider` answered through the user's subscription.
@@ -689,12 +735,7 @@ pub async fn send(
         .await?
     } else {
         let prompt = chat_prompt(&turn.history, turn.first, context.as_ref(), &query);
-        let policy = (cli == Cli::Gemini && reads_file).then(|| {
-            let path = settings::local_dir().join("relay").join("gemini-no-web.toml");
-            let _ = std::fs::create_dir_all(settings::local_dir().join("relay"));
-            let _ = std::fs::write(&path, NO_WEB_POLICY);
-            path
-        });
+        let policy = (cli == Cli::Gemini && reads_file).then(gemini_no_web_policy);
         let request = Request { model: None, system: &system, prompt: &prompt, web: !reads_file, no_web_policy: policy.as_deref() };
         ask(cli, &exe, &request).await?
     };
@@ -929,5 +970,14 @@ mod tests {
         let (signed_in, mode) = auth_info(Cli::Cursor);
         assert!(!signed_in);
         assert!(mode.is_none());
+    }
+
+    #[test]
+    fn long_cli_arg_prompt_is_clamped_within_windows_budget() {
+        assert_eq!(clamp_prompt_for_arg("SYS", "curto"), "curto");
+        let huge = "á".repeat(30_000);
+        let clamped = clamp_prompt_for_arg("SYS", &huge);
+        assert!(clamped.chars().count() < MAX_CLI_ARG_PROMPT_CHARS);
+        assert!(clamped.ends_with("...[truncado pelo limite da linha de comando]"));
     }
 }
