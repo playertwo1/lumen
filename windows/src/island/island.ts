@@ -49,6 +49,9 @@ import { restoreAlertFocus } from "./hooks";
 import { DesktopLink } from "./desktop";
 import type { ViewCommand } from "./shortcuts";
 import { DRAG_THRESHOLD } from "../mochi/desktop-logic";
+
+/** Past this many px a press on the island drags it: more than Mochi's 3 px, so clicks stay clicks. */
+const ISLAND_DRAG_THRESHOLD = 8;
 import { Updates } from "./update";
 import { UPDATE_BLUE, showsUpdateHint } from "../whats-new/whats-new";
 
@@ -183,6 +186,9 @@ export class Island {
 
   /** Where a press on Mochi started: moving past DRAG_THRESHOLD drags him out. */
   private botPress: { x: number; y: number } | null = null;
+  /** Where a press on the island (not Mochi, not a control) started: moving it drags the island. */
+  private islandPress: { x: number; y: number } | null = null;
+  private islandDragging = false;
 
   /** The next reveal from hidden makes no peek (music starting, as on macOS). */
   private silentReveal = false;
@@ -1351,6 +1357,9 @@ export class Island {
       // A press on Mochi may become a drag out to the desktop.
       if (e.button === 0 && this.isBotHit(e.clientX, e.clientY)) {
         this.botPress = { x: e.clientX, y: e.clientY };
+      } else if (e.button === 0 && !(e.target as HTMLElement).closest?.("button, input, textarea, select, a, [contenteditable]")) {
+        // Anywhere else on the island may become a drag of the island itself.
+        this.islandPress = { x: e.clientX, y: e.clientY };
       }
       // Right-click on Mochi opens the wardrobe, and closes it again.
       if (e.button === 2 && this.isBotHit(e.clientX, e.clientY)) {
@@ -1380,6 +1389,17 @@ export class Island {
         this.desktop.carry(e.clientX, e.clientY);
         return;
       }
+      const grab = this.islandPress;
+      if (grab && !this.islandDragging) {
+        if (!(e.buttons & 1)) {
+          this.islandPress = null;
+        } else if (Math.hypot(e.clientX - grab.x, e.clientY - grab.y) > ISLAND_DRAG_THRESHOLD) {
+          this.islandDragging = true;
+          // Where the pointer is now: a press on the compact island opened it, so the window moved.
+          void Bridge.islandDragStart(e.clientX, e.clientY);
+        }
+        return;
+      }
       const press = this.botPress;
       if (!press) return;
       if (!(e.buttons & 1)) {
@@ -1394,6 +1414,18 @@ export class Island {
     });
     window.addEventListener("mouseup", (e) => {
       this.botPress = null;
+      this.islandPress = null;
+      if (this.islandDragging) {
+        this.islandDragging = false;
+        // The click that follows this release must not press anything on the island.
+        const swallow = (c: MouseEvent) => {
+          c.stopPropagation();
+          c.preventDefault();
+        };
+        window.addEventListener("click", swallow, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+        void Bridge.islandDragEnd();
+      }
       if (this.desktop.carrying) this.desktop.carryEnd(e.clientX, e.clientY);
     });
 
