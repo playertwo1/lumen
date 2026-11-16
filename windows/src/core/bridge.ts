@@ -273,6 +273,10 @@ export const Bridge = {
   setSystemLanguages: (languages: string[]) => call<void>("set_system_languages", { languages }),
 
   saveSettings: (settings: Settings) => call<void>("save_settings", { settings }),
+  /** The island follows the pointer from where it was grabbed (window-logical px)… */
+  islandDragStart: (grabX: number, grabY: number) => call<void>("island_drag_start", { grabX, grabY }),
+  /** …until it is let go: it sticks to the nearest edge (saved in `islandCorner`). */
+  islandDragEnd: () => call<void>("island_drag_end"),
 
   /** Shrink the window down to the invisible wake strip (hidden) or back to full. */
   /** Folds the window to `width`×`height` (the closed island) or grows it back to the panel. */

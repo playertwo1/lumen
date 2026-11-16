@@ -363,6 +363,24 @@ mod zoom_tests {
     }
 
     #[test]
+    fn a_dragged_island_sits_against_its_edge() {
+        // Work area 1920×1040 at (0, 0), window 720×100.
+        let (wa, win) = ((0, 0, 1920, 1040), (720, 100));
+        assert_eq!(dragged_origin("top@0.5", wa, win), Some((600, 0)));
+        assert_eq!(dragged_origin("bottom@0.25", wa, win), Some((120, 940)));
+        assert_eq!(dragged_origin("left@0.5", wa, win), Some((0, 520)));
+        assert_eq!(dragged_origin("right@0.0", wa, win), Some((1200, 0)));
+        // Never past a corner, whatever the offset.
+        assert_eq!(dragged_origin("top@0.0", wa, win), Some((0, 0)));
+        assert_eq!(dragged_origin("left@1.0", wa, win), Some((0, 940)));
+        assert_eq!(dragged_origin("top@9", wa, win), Some((1200, 0)));
+        // The fixed corners and anything unreadable go to corner_origin.
+        assert_eq!(dragged_origin("topLeft", wa, win), None);
+        assert_eq!(dragged_origin("top@abc", wa, win), None);
+        assert_eq!(dragged_origin("middle@0.5", wa, win), None);
+    }
+
+    #[test]
     fn only_a_cursor_near_the_island_is_followed() {
         let size = (PANEL_W, PANEL_H);
         assert!(is_near(360.0, 10.0, size));
@@ -457,6 +475,68 @@ fn corner_origin(corner: &str, monitor: (i32, i32, i32), edges: (i32, i32), win:
     (x, y)
 }
 
+/// A spot the user dragged the island to: "top@0.3", "bottom@0.8", "left@0.4", "right@0.1".
+/// Top and bottom: `offset` (0..1) is where the island's middle is across the work area;
+/// left and right: where its top is down it. Always against an edge, never past one.
+/// `wa` is the work area (x, y, w, h), `win` the window (w, h), all physical.
+fn dragged_origin(spec: &str, wa: (i32, i32, i32, i32), win: (i32, i32)) -> Option<(i32, i32)> {
+    let (edge, offset) = spec.split_once('@')?;
+    let offset = offset.parse::<f64>().ok().filter(|o| o.is_finite())?.clamp(0.0, 1.0);
+    let (ax, ay, aw, ah) = wa;
+    let x = (ax + (offset * aw as f64).round() as i32 - win.0 / 2).clamp(ax, (ax + aw - win.0).max(ax));
+    let y = (ay + (offset * ah as f64).round() as i32).clamp(ay, (ay + ah - win.1).max(ay));
+    match edge {
+        "top" => Some((x, ay)),
+        "bottom" => Some((x, ay + ah - win.1)),
+        "left" => Some((ax, y)),
+        "right" => Some((ax + aw - win.0, y)),
+        _ => None,
+    }
+}
+
+static DRAGGING: AtomicBool = AtomicBool::new(false);
+
+/// The island follows the pointer, held where it was grabbed (window-logical px).
+pub fn drag_start(app: &AppHandle, grab_x: f64, grab_y: f64) {
+    // Linux anchors the island to the screen edge (no global cursor on Wayland).
+    if !platform::CURSOR_POLL || DRAGGING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        while DRAGGING.load(Ordering::Acquire) {
+            if let (Some(win), Some((cx, cy))) = (window(&app), cursor_physical()) {
+                let scale = win.scale_factor().unwrap_or(1.0);
+                let _ = win.set_position(PhysicalPosition::new((cx - grab_x * scale) as i32, (cy - grab_y * scale) as i32));
+            }
+            std::thread::sleep(Duration::from_millis(12));
+        }
+    });
+}
+
+/// The island is let go: the spot ("edge@offset") on the edge nearest the pointer.
+pub fn drag_end(app: &AppHandle, pref: &str) -> Option<String> {
+    if !DRAGGING.swap(false, Ordering::AcqRel) {
+        return None;
+    }
+    let m = target_monitor(app, pref)?;
+    let (cx, cy) = cursor_physical()?;
+    let wa = m.work_area();
+    let (ax, ay, aw, ah) = (wa.position.x as f64, wa.position.y as f64, wa.size.width as f64, wa.size.height as f64);
+    let (edge, along) = crate::flow::pill::snap(cx, cy, ax, ay, aw, ah);
+    let spec = match edge {
+        crate::flow::store::Edge::Left | crate::flow::store::Edge::Right => {
+            // Sides: keep the island's top where it was let go.
+            let top = window(app).and_then(|w| w.outer_position().ok()).map(|p| p.y as f64).unwrap_or(cy);
+            let offset = ((top - ay) / ah.max(1.0)).clamp(0.0, 1.0);
+            format!("{}@{offset:.4}", if edge == crate::flow::store::Edge::Left { "left" } else { "right" })
+        }
+        crate::flow::store::Edge::Top => format!("top@{along:.4}"),
+        _ => format!("bottom@{along:.4}"),
+    };
+    Some(spec)
+}
+
 pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: Option<(f64, f64)>) {
     let Some(win) = window(app) else { return };
     let Some(m) = target_monitor(app, pref) else { return };
@@ -468,17 +548,29 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: Option<(f64, f64)>
     let (lw, lh) = collapsed.map(clamp_collapsed).unwrap_or((PANEL_W, PANEL_H));
     let pw = (lw * scale).round().max(1.0) as u32;
     let ph = (lh * scale).round().max(1.0) as u32;
+    // Mid-drag the pointer places the island (it is placed again when let go): only the size changes.
+    if DRAGGING.load(Ordering::Acquire) {
+        let _ = win.set_size(PhysicalSize::new(pw, ph));
+        return;
+    }
     let corner = app
         .try_state::<crate::Shared>()
         .map(|s| s.settings.lock().unwrap().island_corner.clone())
         .unwrap_or_default();
     let wa = m.work_area();
-    let (x, y) = corner_origin(
+    let (x, y) = dragged_origin(
         &corner,
-        (mp.x, mp.y, ms.width as i32),
-        (wa.position.y + wa.size.height as i32, top_inset(&m)),
+        (wa.position.x, wa.position.y, wa.size.width as i32, wa.size.height as i32),
         (pw as i32, ph as i32),
-    );
+    )
+    .unwrap_or_else(|| {
+        corner_origin(
+            &corner,
+            (mp.x, mp.y, ms.width as i32),
+            (wa.position.y + wa.size.height as i32, top_inset(&m)),
+            (pw as i32, ph as i32),
+        )
+    });
 
     // GTK never sizes a non-resizable window below its natural size (200 px
     // here), so on Linux the 6 px wake strip would stay a 200 px block. tao

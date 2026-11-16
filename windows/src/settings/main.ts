@@ -1420,6 +1420,10 @@ function generalSection(): HTMLElement {
     ["top", N_("Notch (top centre)")], ["topLeft", N_("Top left")], ["topRight", N_("Top right")],
     ["bottomLeft", N_("Bottom left")], ["bottomRight", N_("Bottom right")],
   ]) corner.append(h("option", { value, text: t(label) }));
+  // Dragged to a spot of its own ("top@0.3"): shown as such, until a fixed place is picked.
+  if (settings.islandCorner.includes("@")) {
+    corner.append(h("option", { value: settings.islandCorner, text: "Onde você arrastou" }));
+  }
   corner.value = settings.islandCorner;
   if (!corner.value) corner.value = "top";
   corner.addEventListener("change", () => {
@@ -1510,6 +1514,7 @@ function generalSection(): HTMLElement {
       h("label", { text: t("Position") }),
       corner,
     ),
+    h("div", { class: "hint", text: "Ou segure a ilha (fora do Mochi e dos botões) e arraste: ao soltar, ela gruda na borda mais próxima." }),
     h("div", { class: "row" },
       h("label", { text: t("Closed island shows") }),
       closed,

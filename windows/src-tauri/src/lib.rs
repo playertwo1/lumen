@@ -167,6 +167,32 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
     let _ = app.emit("settings-changed", settings);
 }
 
+#[tauri::command]
+fn island_drag_start(app: AppHandle, grab_x: f64, grab_y: f64) {
+    island::drag_start(&app, grab_x, grab_y);
+}
+
+/// The island was let go: it sticks to the nearest edge, and stays there next time.
+#[tauri::command]
+fn island_drag_end(app: AppHandle, shared: State<Shared>) {
+    let pref = shared.settings.lock().unwrap().screen.clone();
+    let spot = island::drag_end(&app, &pref);
+    let settings = {
+        let mut current = shared.settings.lock().unwrap();
+        if let Some(spot) = spot {
+            current.island_corner = spot;
+        }
+        current.clone()
+    };
+    if let Err(err) = settings::save(&settings) {
+        log::line(format!("could not save settings: {err}"));
+    }
+    let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
+    let size = *shared.gate.collapsed_size.lock().unwrap();
+    island::apply_geometry(&app, &settings.screen, collapsed.then_some(size));
+    let _ = app.emit("settings-changed", settings);
+}
+
 /// The island reports the system's languages at launch, for "System" in
 /// Settings → Language (WebView2 and WebKitGTK know them best).
 #[tauri::command]
@@ -1137,6 +1163,8 @@ pub fn run() {
             mail::mail_plan_start,
             mail::mail_plan_cancel,
             save_settings,
+            island_drag_start,
+            island_drag_end,
             set_system_languages,
             set_collapsed,
             fullscreen_set_pending,
