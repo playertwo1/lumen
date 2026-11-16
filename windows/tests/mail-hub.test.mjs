@@ -104,6 +104,50 @@ test("mailOverviewPage preserva âncora mail.autosort, testa conexão, resume ca
   assert.ok(!called.some((c) => c.cmd.includes("send") || c.cmd === "mail_plan_start"));
 });
 
+test("Visão geral abre o MailCraft com o canal de controle e mostra sucesso ou erro perto do botão", async (t) => {
+  t.after(() => {
+    internals.invoke = originalInvoke;
+  });
+  let openError = null;
+  const called = [];
+  internals.invoke = async (cmd, args) => {
+    called.push({ cmd, args });
+    if (cmd === "mail_triage") {
+      return {
+        settings: { autoSort: false, autoSortSince: null, banned: [], vip: [], rules: [] },
+        journal: [],
+        sent: [],
+        today: { sorted: 0, junk: 0, important: 0 },
+        windows: true,
+        outlookOpen: false,
+      };
+    }
+    if (cmd === "mail_config_get") {
+      return { backend: "mailcraft", mode: "control", host: "127.0.0.1", port: 7991, mcpCommand: "" };
+    }
+    if (cmd === "mail_open_mailcraft") {
+      if (openError) throw new Error(openError);
+      return "MailCraft aberto com o canal de controle na porta 7991.";
+    }
+    return undefined;
+  };
+
+  const page = root();
+  await mailOverviewPage(page, makeCtx());
+  const statusLine = () => page.find("div").find((el) => el.getAttribute("role") === "status" && el.textContent.includes("MailCraft"));
+
+  page.find("button").find((b) => b.textContent === "Abrir MailCraft").fire("click");
+  await flush();
+  assert.ok(called.some((c) => c.cmd === "mail_open_mailcraft"));
+  assert.match(statusLine().textContent, /canal de controle na porta 7991/);
+
+  openError = "O MailCraft está aberto sem o canal de controle.";
+  page.find("button").find((b) => b.textContent === "Abrir MailCraft").fire("click");
+  await flush();
+  assert.match(statusLine().textContent, /aberto sem o canal de controle/);
+  assert.match(statusLine().className, /err/);
+});
+
 test("mailRulesPage, mailBannedPage e mailVIPPage preservam âncoras e manipulam regras e chips com segurança", async (t) => {
   t.after(() => {
     internals.invoke = originalInvoke;

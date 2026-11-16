@@ -495,6 +495,23 @@ pub async fn mail_test_connection(config: Option<mailcraft::BackendConfig>) -> m
     mailcraft::status(&cfg).await
 }
 
+/// Abre o MailCraft com o canal de controle e grava a config para o Lumen usar esse canal.
+#[tauri::command]
+pub async fn mail_open_mailcraft(_app: AppHandle) -> Result<String, String> {
+    let current = active_backend();
+    let port = current.port;
+    if current.backend != "mailcraft" || current.mode != "control" {
+        let mut next = current;
+        next.backend = "mailcraft".to_string();
+        next.mode = "control".to_string();
+        next.mcp_command = String::new();
+        rt().store.set_backend(next);
+    }
+    tokio::task::spawn_blocking(move || mailcraft::open_app_with_control(port))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxSummaryResult {
