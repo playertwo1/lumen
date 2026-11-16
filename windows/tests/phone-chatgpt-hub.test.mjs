@@ -189,3 +189,38 @@ test("chatGptAccountSection handles disconnected, active switching, activation a
   assert.equal(sent("chatgpt_sign_out").length, 1);
   assert.equal(el.querySelector(".notice.ok").textContent, "Sessão encerrada e revogada.");
 });
+
+test("phoneSection places pairingCard full-width above workbench and hub.css enlarges .phone-qr by >=200%", async () => {
+  const { readFileSync } = await import("node:fs");
+  answers.phone_link_status = {
+    enabled: true, running: true, port: 47821, host: "192.168.18.165", name: "Desktop", clients: 0, error: null, relayState: "off",
+  };
+  answers.phone_relay_status = { shown: true, enabled: true, url: "https://relay.exemplo", hasAccess: true, state: "waiting" };
+  answers.phone_details_status = { enabled: true };
+  answers.phone_answers_status = { enabled: true };
+  answers.phone_diffs_status = { enabled: false };
+  answers.phone_usage_status = { enabled: false };
+  answers.phone_recap_status = { enabled: false };
+  answers.phone_services_status = { services: [] };
+  answers.phone_chat_status = { enabled: false, models: [] };
+
+  const root = phoneSection(true, makeToggle, { ...DEFAULT_SETTINGS });
+  await flush();
+  await flush();
+
+  const detail = root.querySelector(".phone-detail");
+  assert.ok(detail);
+  assert.ok(detail.childNodes[0].classList.contains("phone-card"), "pairing card sits full-width above workbench");
+  assert.ok(detail.childNodes[1].classList.contains("phone-workbench"), "workbench follows pairing card");
+
+  const showBtn = detail.find("button").find((b) => b.classList.contains("primary"));
+  assert.ok(showBtn);
+  showBtn.fire("click");
+  await flush();
+  assert.equal(sent("phone_link_pairing").length, 1);
+
+  const hubCss = readFileSync(new URL("../src/hub/hub.css", import.meta.url), "utf8");
+  const qrRule = hubCss.match(/\.hub-page\s+#settings-root\s+\.phone-qr\s*\{[^}]*width:\s*min\(100%,\s*(\d+)px\)/);
+  assert.ok(qrRule, "hub.css defines responsive enlarged .phone-qr width");
+  assert.ok(Number(qrRule[1]) >= 492, `expected QR width >= 492px (+200% over 164px), got ${qrRule[1]}px`);
+});
