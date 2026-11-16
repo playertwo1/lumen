@@ -8,11 +8,12 @@
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::process::Command;
 
@@ -304,10 +305,17 @@ pub fn parse_mcp_command(cmdline: &str) -> Result<(String, Vec<String>), String>
     let Some((bin, args)) = tokens.split_first() else {
         return Err("Comando MCP vazio.".to_string());
     };
-    for arg in args {
+    for (i, arg) in args.iter().enumerate() {
         let lower = arg.to_ascii_lowercase();
         if lower == "--allow" || lower.starts_with("--allow=") {
             return Err("Flag `--allow` não é permitida no comando MCP do Lumen (somente leitura e rascunho).".to_string());
+        }
+        if i + 1 == args.len() {
+            match arg.as_str() {
+                "--file" => return Err("`--file` precisa do caminho da caixa (ex.: `mailcraft-cli mcp --file C:\\...\\mailbox.mailcraft`).".to_string()),
+                "--connect" => return Err("`--connect` precisa do endereço HOST:PORT (ex.: `mailcraft-cli mcp --connect 127.0.0.1:7991`).".to_string()),
+                _ => {}
+            }
         }
     }
     Ok((bin.clone(), args.to_vec()))
@@ -465,10 +473,15 @@ impl ControlSession {
 
 // ── Cliente MCP stdio (`mailcraft-cli mcp`) ──────────────────────────────────
 
+/// Últimos bytes do stderr do servidor MCP, para explicar por que ele saiu.
+const STDERR_TAIL_BYTES: usize = 1024;
+const MCP_EXIT_MSG: &str = "Servidor MCP encerrou a saída inesperadamente.";
+
 struct McpSession {
     child: tokio::process::Child,
     stdin: tokio::process::ChildStdin,
     stdout: BufReader<tokio::process::ChildStdout>,
+    stderr_tail: Arc<Mutex<String>>,
     next_id: u64,
 }
 
@@ -484,7 +497,7 @@ impl McpSession {
         cmd.args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .kill_on_drop(true);
         #[cfg(windows)]
         {
@@ -496,10 +509,32 @@ impl McpSession {
             .map_err(|e| format!("Não foi possível iniciar `{}`: {e}", resolved.display()))?;
         let stdin = child.stdin.take().ok_or("stdin MCP indisponível")?;
         let stdout = child.stdout.take().ok_or("stdout MCP indisponível")?;
+        let mut stderr = child.stderr.take().ok_or("stderr MCP indisponível")?;
+        // Drena o stderr para o processo nunca travar com o pipe cheio; guarda só o final.
+        let stderr_tail = Arc::new(Mutex::new(String::new()));
+        let tail = Arc::clone(&stderr_tail);
+        tokio::spawn(async move {
+            let mut chunk = [0u8; 512];
+            while let Ok(n) = stderr.read(&mut chunk).await {
+                if n == 0 {
+                    break;
+                }
+                let mut t = tail.lock().unwrap_or_else(|e| e.into_inner());
+                t.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                if t.len() > STDERR_TAIL_BYTES {
+                    let mut cut = t.len() - STDERR_TAIL_BYTES;
+                    while !t.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    t.drain(..cut);
+                }
+            }
+        });
         let mut sess = Self {
             child,
             stdin,
             stdout: BufReader::new(stdout),
+            stderr_tail,
             next_id: 1,
         };
         sess.initialize().await?;
@@ -575,12 +610,15 @@ impl McpSession {
         })
         .to_string();
         self.write_line(&line).await?;
+        let tail = Arc::clone(&self.stderr_tail);
         let resp = tokio::time::timeout(IO_TIMEOUT, async {
             loop {
                 let mut buf = String::new();
                 let n = self.stdout.read_line(&mut buf).await.map_err(|e| e.to_string())?;
                 if n == 0 {
-                    return Err("Servidor MCP encerrou a saída inesperadamente.".to_string());
+                    // Dá tempo para a task de stderr ler o que o processo escreveu antes de sair.
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    return Err(mcp_exit_message(&tail));
                 }
                 if buf.len() > MAX_LINE_BYTES {
                     return Err("Resposta MCP excedeu o limite seguro.".to_string());
@@ -617,6 +655,17 @@ impl McpSession {
         drop(self.stdin);
         let _ = tokio::time::timeout(Duration::from_millis(500), self.child.wait()).await;
     }
+}
+
+fn mcp_exit_message(tail: &Mutex<String>) -> String {
+    let raw = tail.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let flat = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.is_empty() {
+        return MCP_EXIT_MSG.to_string();
+    }
+    let chars: Vec<char> = flat.chars().collect();
+    let short: String = chars[chars.len().saturating_sub(300)..].iter().collect();
+    format!("Servidor MCP encerrou a saída inesperadamente: {short}")
 }
 
 // ── Fachada unificada Control / MCP ──────────────────────────────────────────
@@ -1300,6 +1349,32 @@ mod tests {
         assert!(parse_mcp_command("mailcraft-cli mcp --allow send").is_err());
         assert!(parse_mcp_command("mailcraft-cli mcp --allow=delete").is_err());
         assert!(parse_mcp_command("").is_err());
+    }
+
+    #[test]
+    fn mcp_command_parser_requires_value_for_file_and_connect() {
+        let err = parse_mcp_command("mailcraft-cli mcp --file").expect_err("--file sem valor");
+        assert!(err.contains("--file"), "mensagem deve citar --file: {err}");
+        assert!(parse_mcp_command("mailcraft-cli mcp --connect").is_err());
+
+        #[cfg(windows)]
+        {
+            let (bin, args) = parse_mcp_command(
+                "\"C:\\Program Files\\MailCraft\\mailcraft-cli.exe\" mcp --file C:\\x\\mailbox.mailcraft",
+            )
+            .expect("caminho com espaços entre aspas");
+            assert!(bin.ends_with("mailcraft-cli.exe"));
+            assert_eq!(args, vec!["mcp", "--file", "C:\\x\\mailbox.mailcraft"]);
+        }
+    }
+
+    #[test]
+    fn mcp_exit_message_uses_stderr_tail_capped_to_300_chars() {
+        let empty = Arc::new(std::sync::Mutex::new(String::new()));
+        assert_eq!(mcp_exit_message(&empty), "Servidor MCP encerrou a saída inesperadamente.");
+        let long = Arc::new(std::sync::Mutex::new("x".repeat(1000)));
+        let msg = mcp_exit_message(&long);
+        assert_eq!(msg.len(), "Servidor MCP encerrou a saída inesperadamente: ".len() + 300);
     }
 
     #[test]
