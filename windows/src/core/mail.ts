@@ -85,6 +85,23 @@ export interface TriageView {
   today: { sorted: number; junk: number; important: number };
   windows: boolean;
   outlookOpen: boolean;
+  backend?: MailBackend;
+  classified?: ClassifiedMail[];
+}
+
+export type MailCategory = "conta" | "assinatura" | "importante" | "outros" | "promocao" | "spam";
+
+/** Uma mensagem da triagem do MailCraft. O Lumen só recomenda: nunca apaga. */
+export interface ClassifiedMail {
+  message: MailMessage;
+  category: MailCategory;
+  recommend: "manter" | "ler" | "apagar";
+  reason: string;
+}
+
+export interface ClassifyResult {
+  items: ClassifiedMail[];
+  note: string | null;
 }
 
 export interface PreparedMail {
@@ -186,6 +203,11 @@ export const MailBridge = {
   open: (message: MailMessage, reply: boolean) => call<void>("mail_open", { message, reply }),
   act: (message: MailMessage, kind: "read" | "flag" | "unflag" | "junk" | "ignore" | "vip") =>
     call<void>("mail_act", { message, kind }),
+  /** Como `act`, mas o erro do Rust chega à tela. */
+  actChecked: async (message: MailMessage, kind: "read" | "flag"): Promise<void> => {
+    if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
+    await invoke<void>("mail_act", { message, kind });
+  },
   configGet: () => call<MailCraftConfig>("mail_config_get"),
   configSet: (config: MailCraftConfig) => call<MailCraftConfig>("mail_config_set", { config }),
   testConnection: async (config?: MailCraftConfig): Promise<MailCraftStatus | null> =>
@@ -193,6 +215,10 @@ export const MailBridge = {
   summarizeInbox: async (limit?: number): Promise<InboxSummaryResult> => {
     if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
     return invoke<InboxSummaryResult>("mail_summarize_inbox", { limit });
+  },
+  classify: async (limit?: number): Promise<ClassifyResult> => {
+    if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
+    return invoke<ClassifyResult>("mail_classify", { limit });
   },
   // Sem `call`: a mensagem de erro do Rust (ex.: MailCraft não encontrado) precisa chegar à tela.
   openMailCraft: async (): Promise<string> => {

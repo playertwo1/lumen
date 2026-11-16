@@ -14,8 +14,10 @@ import {
   reasonLine,
   ruleLine,
   ruleName,
+  type ClassifiedMail,
   type MailAction,
   type MailBackend,
+  type MailCategory,
   type MailCraftConfig,
   type MailCraftMode,
   type MailCraftStatus,
@@ -72,7 +74,8 @@ function time(ms: number, withDay = false): string {
 
 /** Aviso discreto quando a triagem automática do Outlook clássico está desligada. */
 function autoSortHint(view: TriageView, redraw: () => void): HTMLElement | null {
-  if (view.settings.autoSort) return null;
+  // No MailCraft estas listas valem sempre, na triagem da Visão geral.
+  if (view.settings.autoSort || view.backend !== "outlook") return null;
   return h(
     "div",
     { class: "mail-autosort-banner", role: "status" },
@@ -167,8 +170,11 @@ function triageAside(
   };
 
   const activeRules = view.settings.rules.filter((r) => r.enabled).length;
-  const statusLabel = view.settings.autoSort ? "Triagem automática ligada" : "Triagem automática desligada";
-  const statusTone = view.settings.autoSort ? "mail-aside-state ok" : "mail-aside-state";
+  const onMailCraft = view.backend !== "outlook";
+  const statusLabel = onMailCraft
+    ? "Usadas na triagem do MailCraft"
+    : view.settings.autoSort ? "Triagem automática ligada" : "Triagem automática desligada";
+  const statusTone = onMailCraft || view.settings.autoSort ? "mail-aside-state ok" : "mail-aside-state";
 
   const guide = card(
     h(
@@ -178,7 +184,7 @@ function triageAside(
     ),
     h("div", {
       class: "mail-section-sub",
-      text: "Ao chegar um e-mail no Outlook clássico, o Lumen avalia nesta sequência sem apagar mensagens:",
+      text: "Na triagem, o Lumen avalia cada e-mail nesta sequência, sem apagar mensagens:",
     }),
     h(
       "div",
@@ -200,6 +206,144 @@ function triageAside(
   return guide;
 }
 
+// ── Triagem do MailCraft ─────────────────────────────────────────────────────
+
+const CATEGORY_ORDER: [MailCategory, string, "accent" | "neutral" | "warn"][] = [
+  ["conta", "Contas a pagar", "accent"],
+  ["assinatura", "Renovações de assinatura", "accent"],
+  ["importante", "Importantes", "accent"],
+  ["outros", "Outros", "neutral"],
+  ["promocao", "Promoções", "neutral"],
+  ["spam", "Spam", "warn"],
+];
+
+const RECOMMEND_LABEL = { manter: "Manter", ler: "Ler", apagar: "Recomendo apagar" } as const;
+
+/** Lê a caixa do MailCraft, separa contas, renovações, importantes, promoções e spam e recomenda o que apagar. */
+function mailCraftTriageCard(
+  initial: ClassifiedMail[],
+  statTile: (val: number, caption: string, dotTone: "neutral" | "warn" | "ok") => HTMLElement,
+): HTMLElement {
+  const stats = h("div", { class: "mail-stats" });
+  const list = h("div", { class: "mail-triage-results" });
+  const status = h("div", { class: "mail-status-line is-empty", role: "status", "aria-live": "polite" });
+
+  const actionButton = (text: string, run: () => Promise<void>) => {
+    const btn = button(text, () => {
+      btn.disabled = true;
+      void run()
+        .then(() => btn.remove())
+        .catch((err) => {
+          btn.disabled = false;
+          status.className = "mail-status-line err";
+          status.textContent = String(err).replace(/^Error:\s*/, "");
+        });
+    }, "", true);
+    return btn;
+  };
+
+  const draw = (items: ClassifiedMail[]) => {
+    clear(stats);
+    clear(list);
+    const important = items.filter((i) => ["conta", "assinatura", "importante"].includes(i.category)).length;
+    const toDelete = items.filter((i) => i.recommend === "apagar").length;
+    const promo = items.filter((i) => i.category === "promocao" || i.category === "spam").length;
+    stats.append(
+      statTile(important, "importantes", "ok"),
+      statTile(toDelete, "recomendo apagar", "warn"),
+      statTile(promo, "promoções e spam", "neutral"),
+    );
+    if (items.length === 0) {
+      list.append(h("div", { class: "mail-section-sub", text: "Clique em Fazer triagem para o Lumen ler as mensagens recentes." }));
+      return;
+    }
+    for (const [cat, title, tone] of CATEGORY_ORDER) {
+      const group = items.filter((i) => i.category === cat);
+      if (group.length === 0) continue;
+      list.append(
+        divider(),
+        h(
+          "div",
+          { class: "mail-section-head" },
+          h("h3", { class: "mail-section-title", text: title }),
+          h("span", { class: "mail-chips-count", text: String(group.length) }),
+        ),
+      );
+      for (const item of group) {
+        const m = item.message;
+        const actions = h("div", { class: "mail-section-actions" });
+        if (!m.flagged) actions.append(actionButton("Importante", () => MailBridge.actChecked(m, "flag")));
+        if (m.unread) actions.append(actionButton("Marcar lida", () => MailBridge.actChecked(m, "read")));
+        list.append(
+          h(
+            "div",
+            { class: "hub-list-row mail-journal" },
+            h(
+              "div",
+              { class: "grow" },
+              h("div", {}, h("b", { text: m.senderName || m.address }), h("span", { class: "mail-dim", text: `  ${m.subject}` })),
+              h("div", { class: "mail-dim small", text: item.reason }),
+            ),
+            h("span", { class: `mail-rule-outcome ${item.recommend === "apagar" ? "warn" : tone}`, text: RECOMMEND_LABEL[item.recommend] }),
+            actions,
+          ),
+        );
+      }
+    }
+  };
+
+  let running = false;
+  const runBtn = button("Fazer triagem", () => {
+    if (running) return;
+    running = true;
+    runBtn.disabled = true;
+    runBtn.setAttribute("aria-busy", "true");
+    runBtn.textContent = "Lendo a caixa…";
+    status.className = "mail-status-line";
+    status.textContent = "Lendo e classificando as mensagens recentes…";
+    void MailBridge.classify(20)
+      .then((res) => {
+        draw(res.items);
+        status.className = res.note ? "mail-status-line err" : "mail-status-line ok";
+        status.textContent = res.note ?? `${res.items.length} mensagens classificadas.`;
+      })
+      .catch((err) => {
+        status.className = "mail-status-line err";
+        status.textContent = String(err).replace(/^Error:\s*/, "");
+      })
+      .finally(() => {
+        running = false;
+        runBtn.disabled = false;
+        runBtn.removeAttribute("aria-busy");
+        runBtn.textContent = "Fazer triagem";
+      });
+  }, "primary");
+
+  draw(initial);
+  const triageCard = card(
+    h(
+      "div",
+      { class: "mail-section-head" },
+      h(
+        "div",
+        { class: "mail-section-title-col" },
+        h("h2", { class: "mail-section-title", text: "Triagem do MailCraft" }),
+        h("div", {
+          class: "mail-section-sub",
+          text: "O Lumen separa contas, renovações, importantes, promoções e spam, e recomenda o que apagar. Ele nunca apaga nem envia nada: você decide no MailCraft. Seus VIPs, palavras proibidas e regras valem primeiro.",
+        }),
+      ),
+      h("div", { class: "mail-section-actions" }, runBtn),
+    ),
+    status,
+    stats,
+    list,
+  );
+  triageCard.classList.add("mail-card");
+  triageCard.dataset.anchor = "mail.autosort";
+  return triageCard;
+}
+
 // ── Visão geral (MailCraft + Triagem secundária) ─────────────────────────────
 
 export async function mailOverviewPage(page: HTMLElement, ctx: HubContext) {
@@ -216,7 +360,7 @@ export async function mailOverviewPage(page: HTMLElement, ctx: HubContext) {
     ctx.hero(
       "mailOverview",
       "E-mail pessoal",
-      "MailCraft como provedor principal (leitura, resumo e rascunhos); Outlook clássico para triagem local.",
+      "MailCraft como provedor principal (triagem, leitura, resumo e rascunhos); Outlook clássico como opção secundária.",
       [],
       true,
     ),
@@ -580,9 +724,14 @@ export async function mailOverviewPage(page: HTMLElement, ctx: HubContext) {
       statTile(view.today.important, t("marked important"), "ok"),
     ),
   );
-  sortCard.dataset.anchor = "mail.autosort";
-
-  const sidebarCol = h("div", { class: "mail-sidebar" }, configCard, sortCard);
+  const onMailCraft = cfg.backend !== "outlook";
+  const sidebarCol = h("div", { class: "mail-sidebar" }, configCard);
+  if (onMailCraft) {
+    primaryCol.prepend(mailCraftTriageCard(view.classified ?? [], statTile));
+  } else {
+    sortCard.dataset.anchor = "mail.autosort";
+    sidebarCol.append(sortCard);
+  }
   page.append(h("div", { class: "mail-workbench" }, primaryCol, sidebarCol));
 
   if (view.sent.length > 0) {
@@ -612,6 +761,8 @@ export async function mailOverviewPage(page: HTMLElement, ctx: HubContext) {
     page.append(sentList);
   }
 
+  // O diário registra só o que a triagem do Outlook fez; no MailCraft nada é movido.
+  if (onMailCraft && view.journal.length === 0) return;
   const journalHead = h("div", { class: "mail-journal-head" }, label(t("Journal")));
   if (view.journal.length > 0) {
     journalHead.append(

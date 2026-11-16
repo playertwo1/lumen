@@ -13,6 +13,7 @@
 // OUTLOOK.EXE runs: Coucou never starts Outlook, and a closed Outlook costs nothing.
 // Coucou never deletes a message.
 
+pub mod classify;
 pub mod mailcraft;
 pub mod outlook;
 pub mod pdf;
@@ -67,6 +68,8 @@ struct Runtime {
     last_error: Option<String>,
     plans: HashMap<String, PlanRun>,
     cancelled: HashSet<String>,
+    /// A última triagem do MailCraft, para a página mostrar ao voltar.
+    classified: Vec<classify::Item>,
 }
 
 fn rt() -> MutexGuard<'static, Runtime> {
@@ -82,6 +85,7 @@ fn rt() -> MutexGuard<'static, Runtime> {
             last_error: None,
             plans: HashMap::new(),
             cancelled: HashSet::new(),
+            classified: Vec::new(),
         })
     })
     .lock()
@@ -635,6 +639,79 @@ pub async fn mail_summarize_inbox(app: AppHandle, limit: Option<usize>) -> Resul
     })
 }
 
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassifyResult {
+    pub items: Vec<classify::Item>,
+    /// Quando a IA não respondeu e a triagem usou só palavras-chave.
+    pub note: Option<String>,
+}
+
+/// Triagem da caixa do MailCraft: regras do usuário primeiro, depois a IA, e palavras-chave
+/// se a IA falhar. Só recomenda; nada é apagado nem movido.
+#[tauri::command]
+pub async fn mail_classify(app: AppHandle, limit: Option<usize>) -> Result<ClassifyResult, String> {
+    let backend = active_backend();
+    if !backend.is_mailcraft() {
+        return Err("A triagem usa o MailCraft: escolha o MailCraft como provedor ativo.".to_string());
+    }
+    let (list, _, accounts) = mailcraft::list_inbox(&backend, limit.unwrap_or(20).clamp(1, 40)).await?;
+    if !accounts.is_empty() {
+        rt().accounts = accounts;
+    }
+    let settings = rt().store.settings.clone();
+    let mut verdicts: Vec<Option<classify::Verdict>> = Vec::with_capacity(list.len());
+    let mut facts = Vec::with_capacity(list.len());
+    let mut ask = Vec::new();
+    for m in &list {
+        let det = mailcraft::message_detail(&backend, &m.entry_id, 600).await.ok();
+        let f = Facts {
+            sender_name: m.sender_name.clone(),
+            address: m.address.clone(),
+            subject: m.subject.clone(),
+            account: m.account.clone(),
+            text: det.as_ref().map(|d| d.text.clone()),
+        };
+        let v = classify::by_settings(&f, &settings);
+        if v.is_none() {
+            ask.push((verdicts.len(), (m.clone(), det)));
+        }
+        verdicts.push(v);
+        facts.push(f);
+    }
+
+    let mut note = None;
+    if !ask.is_empty() {
+        let pairs: Vec<_> = ask.iter().map(|(_, p)| p.clone()).collect();
+        let (system, prompt) = classify::prompt(&pairs);
+        let chat = app
+            .try_state::<crate::Shared>()
+            .map(|s| s.settings.lock().unwrap().clone())
+            .unwrap_or_default();
+        let answers = match crate::chat::complete_oneshot(&chat, &system, &prompt, 1500, Duration::from_secs(60)).await {
+            Ok(reply) => classify::parse(&reply),
+            Err(e) => {
+                note = Some(format!("A IA não respondeu ({e}); a triagem usou palavras-chave."));
+                HashMap::new()
+            }
+        };
+        for (n, (idx, _)) in ask.iter().enumerate() {
+            verdicts[*idx] = Some(answers.get(&(n + 1)).cloned().unwrap_or_else(|| classify::guess(&facts[*idx])));
+        }
+    }
+
+    let items: Vec<classify::Item> = list
+        .into_iter()
+        .zip(verdicts)
+        .map(|(message, v)| {
+            let (category, recommend, reason) = v.unwrap_or_else(|| classify::guess(&Facts::default()));
+            classify::Item { message, category, recommend, reason }
+        })
+        .collect();
+    rt().classified = items.clone();
+    Ok(ClassifyResult { items, note })
+}
+
 #[tauri::command]
 pub async fn mail_prepare_draft(
     reply_to_id: Option<String>,
@@ -698,6 +775,8 @@ pub struct TriageView {
     today: Value,
     windows: bool,
     outlook_open: bool,
+    backend: String,
+    classified: Vec<classify::Item>,
 }
 
 #[tauri::command]
@@ -720,6 +799,8 @@ pub fn mail_triage() -> TriageView {
         }),
         windows: cfg!(windows),
         outlook_open: outlook_open(),
+        backend: r.store.backend.clone().normalized().backend,
+        classified: r.classified.clone(),
     }
 }
 

@@ -148,6 +148,58 @@ test("Visão geral abre o MailCraft com o canal de controle e mostra sucesso ou 
   assert.match(statusLine().className, /err/);
 });
 
+test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda sem apagar", async (t) => {
+  t.after(() => {
+    internals.invoke = originalInvoke;
+  });
+  const called = [];
+  const msg = (id, sender, subject) => ({
+    entryId: id, storeId: "mailcraft", account: "", senderName: sender, address: `${id}@exemplo.com`,
+    subject, date: 0, unread: true, flagged: false, local: "",
+  });
+  internals.invoke = async (cmd, args) => {
+    called.push({ cmd, args });
+    if (cmd === "mail_triage") {
+      return {
+        settings: { autoSort: false, autoSortSince: null, banned: [], vip: [], rules: [] },
+        journal: [], sent: [], today: { sorted: 0, junk: 0, important: 0 },
+        windows: true, outlookOpen: false, backend: "mailcraft", classified: [],
+      };
+    }
+    if (cmd === "mail_config_get") {
+      return { backend: "mailcraft", mode: "control", host: "127.0.0.1", port: 7991, mcpCommand: "" };
+    }
+    if (cmd === "mail_classify") {
+      return {
+        note: null,
+        items: [
+          { message: msg("1", "Energia", "Conta de luz de novembro"), category: "conta", recommend: "manter", reason: "Fatura com vencimento" },
+          { message: msg("2", "Streaming", "Sua assinatura será renovada"), category: "assinatura", recommend: "ler", reason: "Renovação" },
+          { message: msg("3", "Loja", "50% off"), category: "promocao", recommend: "apagar", reason: "Oferta" },
+        ],
+      };
+    }
+    return undefined;
+  };
+
+  const page = root();
+  await mailOverviewPage(page, makeCtx());
+  assert.doesNotMatch(page.textContent, /Outlook clássico \(triagem\)/);
+  assert.match(page.textContent, /Triagem do MailCraft/);
+
+  page.find("button").find((b) => b.textContent === "Fazer triagem").fire("click");
+  await flush();
+  assert.match(page.textContent, /Contas a pagar/);
+  assert.match(page.textContent, /Renovações de assinatura/);
+  assert.match(page.textContent, /Recomendo apagar/);
+  assert.match(page.textContent, /3 mensagens classificadas/);
+
+  page.find("button").find((b) => b.textContent === "Importante").fire("click");
+  await flush();
+  assert.ok(called.some((c) => c.cmd === "mail_act" && c.args.kind === "flag" && c.args.message.entryId === "1"));
+  assert.ok(!called.some((c) => /send|delete/.test(c.cmd)));
+});
+
 test("mailRulesPage, mailBannedPage e mailVIPPage preservam âncoras e manipulam regras e chips com segurança", async (t) => {
   t.after(() => {
     internals.invoke = originalInvoke;
