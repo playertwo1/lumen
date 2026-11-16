@@ -12,6 +12,19 @@
 - [x] Comparar os SHA-256 dos instaladores publicados com o preflight. Os hashes diferiram; os assets finais foram baixados, conferidos com os digests do GitHub e examinados diretamente pelo Defender sem detecções (evento 1001, exame `{9AD2DD74-E9E4-4DCE-8E77-D2954870AA9F}`).
 - Nunca executar esta lista de publicação sem o proprietário pedir release.
 
+## Windows 0.7.6 — Triagem do MailCraft no lugar do cartão do Outlook (publicação local)
+
+- [x] Pedido explícito do proprietário em 2026-11-16 para fazer commit/merge na `main` e publicar uma nova versão `.exe` no GitHub (`playertwo1/lumen`, publicação local `no-github-actions`).
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.6: 2 items in 1 languages`), `npx tsc --noEmit`, `npm test` (`727/727`), `cargo test --lib` (`752` passaram, `9` ignorados), `cargo test` em `windows/hook/` (`37/37`) e `npm run pack`.
+- [x] Microsoft Defender (`MpCmdRun.exe -Scan -ScanType 3 -File <arquivo> -DisableRemediation`) examinou individualmente os quatro artefatos gerados: código 0 e `found no threats`.
+- [x] SHA-256 dos artefatos:
+  - Setup `Lumen-Windows-0.7.6-setup.exe`: `D685FF8FB192EAB876F12C5CA2D8F12DA270CF7E021B67F1CEED7B0CA4208EAD`.
+  - MSI `Lumen-Windows-0.7.6.msi`: `F1607230412A2C54585CCABE1E2CEEEF9A3A2A45055A4C84D94A517261E0E13E`.
+  - App portátil `lumen.exe`: `81441EE741A7DEDEC40847F0D3F5AA108CDC769F2085387A94F4889150303AA5`.
+  - Hook `lumen-hook.exe`: `B0B3420E993324041CBC516346B381E4C99099A1B017539941060C06B0798F5D`.
+- [x] Push para `origin` (`playertwo1/lumen`), tag `windows-v0.7.6`, publicação via `gh release create windows-v0.7.6` e atualização da release móvel `windows-latest`.
+- [ ] Proprietário validar no notebook a Triagem do MailCraft com a caixa real (classificação, recomendações e botões Importante/Marcar lida). Continua **NOT_RUN**.
+
 ## Windows 0.7.5 — Atalhos no Notch aberto, Limpar avisos do Mail, seta Abrir funcional e QR de pareamento ampliado (publicação local)
 
 - [x] Pedido explícito do proprietário em 2026-11-15 para consolidar as alterações na `main`, gerar o instalador `.exe` / release e publicar no GitHub (`playertwo1/lumen`, publicação local `no-github-actions`).

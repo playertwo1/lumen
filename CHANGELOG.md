@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows 0.7.6 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Triagem do MailCraft no lugar do cartão do Outlook** — a Visão geral do E-mail troca o cartão "Outlook clássico (triagem)" por **Triagem do MailCraft**: o botão **Fazer triagem** lê as 20 mensagens mais recentes e separa **Contas a pagar** (conta de luz, boleto, fatura), **Renovações de assinatura**, **Importantes**, **Promoções**, **Spam** e **Outros**, com o motivo de cada uma.
+- **Recomendação do que apagar, sem apagar nada** — cada e-mail recebe *Manter*, *Ler* ou *Recomendo apagar*; conta, renovação e importante nunca recebem "apagar". O Lumen não apaga nem envia: você decide no MailCraft. Botões **Importante** e **Marcar lida** agem direto na mensagem.
+- **Suas regras primeiro, IA depois** — VIPs, palavras proibidas e regras valem antes da IA do chat; se a IA não responder, a triagem usa palavras-chave e avisa na tela. Com o Outlook clássico como provedor, o cartão antigo continua.
+
 ## Windows 0.7.5 — 15 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Atalhos no cabeçalho do Notch Aberto** — dois novos botões somente icônicos ao lado de `Nova tarefa` para abrir o **Anotador** (`notes`) e **E-mail → Visão geral** (`mailOverview`) direto no Hub.

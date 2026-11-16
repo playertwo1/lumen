@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.7.6",
+      "items": [
+        {
+          "icon": "sparkles",
+          "title": { "pt-BR": "Triagem do MailCraft" },
+          "detail": { "pt-BR": "Separa contas, renovações de assinatura, importantes, promoções e spam na Visão geral do E-mail." }
+        },
+        {
+          "icon": "shield",
+          "title": { "pt-BR": "Recomenda o que apagar, sem apagar" },
+          "detail": { "pt-BR": "Cada e-mail recebe Manter, Ler ou Recomendo apagar. Você decide no MailCraft." }
+        }
+      ]
+    },
+    {
       "version": "0.7.5",
       "items": [
         {
