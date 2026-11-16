@@ -1,6 +1,6 @@
 // The words go where you type: onto the clipboard (kept out of the clipboard
-// history), Ctrl+V in the app in front, and the clipboard gets back what it
-// held 700 ms later — unless something else was copied meanwhile.
+// history and the cloud), then Ctrl+V in the app in front. They stay on the
+// clipboard, so Ctrl+V pastes them again anywhere.
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -48,7 +48,6 @@ pub enum Outcome {
 
 /// Pastes `text` in the app in front. `shift` sends Ctrl+Shift+V (terminals).
 pub fn paste(text: &str, shift: bool) -> Outcome {
-    let previous = with_clipboard(|c| c.get_text().ok()).flatten();
     if with_clipboard(|c| set_text(c, text)).map(|r| r.is_ok()) != Some(true) {
         return Outcome::Failed;
     }
@@ -58,16 +57,5 @@ pub fn paste(text: &str, shift: bool) -> Outcome {
         crate::log::line(format!("flow: paste keystroke failed: {err}"));
         return Outcome::Copied;
     }
-    let ours = text.to_string();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(700));
-        let Some(previous) = previous else { return };
-        with_clipboard(|c| {
-            // Something else was copied meanwhile: leave it.
-            if c.get_text().ok().as_deref() == Some(ours.as_str()) {
-                let _ = c.set_text(previous);
-            }
-        });
-    });
     Outcome::Pasted
 }

@@ -123,6 +123,7 @@ pub fn setup(app: &AppHandle) {
     app.manage(flow.clone());
     pill::setup(app);
     let prefs = flow.store.lock().unwrap().prefs.clone();
+    speech::set_dictation_model(prefs.speech_model == "whisper");
     pill::update(app, |s| {
         s.edge = pill::edge_name(prefs.edge).into();
         s.offset = prefs.pill_offset;
@@ -314,7 +315,7 @@ fn run(app: AppHandle, flow: Arc<Flow>, rx: mpsc::Receiver<(KeyEvent, Instant)>)
 
 /// Opens the microphone. None (and the pill says why) when it can't.
 fn begin(app: &AppHandle, flow: &Arc<Flow>) -> Option<Listening> {
-    if !speech::is_ready() {
+    if !speech::dictation_ready() {
         pill::announce(
             app,
             "download",
@@ -393,7 +394,7 @@ fn finish(app: &AppHandle, flow: &Arc<Flow>, mut l: Listening, busy: Arc<AtomicB
 
 fn process(app: &AppHandle, flow: &Arc<Flow>, samples: &[f32], front: Option<&(String, String)>, seconds: f64) -> Result<(), String> {
     let started = Instant::now();
-    let transcript = speech::transcribe(samples).ok_or("the voice model is not loaded")?;
+    let transcript = speech::transcribe_dictation(samples).ok_or("the voice model is not loaded")?;
     let raw = transcript.text.trim().to_string();
     if raw.is_empty() {
         pill::update(app, |s| s.phase = "idle".into());
@@ -521,6 +522,12 @@ pub fn flow_set_prefs(app: AppHandle, flow: State<Arc<Flow>>, prefs: Prefs) {
     }
     if prefs.enabled && (!before.enabled || restart) {
         enable(&app, &flow);
+    }
+    if before.speech_model != prefs.speech_model {
+        speech::set_dictation_model(prefs.speech_model == "whisper");
+        if prefs.enabled {
+            speech::preload();
+        }
     }
     if before.voice != prefs.voice || before.mic != prefs.mic {
         if before.mic != prefs.mic {
@@ -661,13 +668,13 @@ pub fn flow_paste_again(app: AppHandle, flow: State<Arc<Flow>>) {
 }
 
 #[tauri::command]
-pub fn flow_models_download(app: AppHandle) {
-    speech::download(app);
+pub fn flow_models_download(app: AppHandle, model: Option<String>) {
+    speech::download(app, model.as_deref().unwrap_or("parakeet"));
 }
 
 #[tauri::command]
-pub fn flow_models_remove(app: AppHandle) {
-    speech::remove(&app);
+pub fn flow_models_remove(app: AppHandle, model: Option<String>) {
+    speech::remove(&app, model.as_deref().unwrap_or("parakeet"));
 }
 
 // ── The pill's page ───────────────────────────────────────────────────────────
