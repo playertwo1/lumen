@@ -147,7 +147,7 @@ jobs:
         run: |
           $v = "${{ steps.pack.outputs.version }}"
           $notes = @"
-          Lumen para Windows $v — a Bússola de papel orienta suas sessões e ideias.
+          Lumen para Windows $v — o cristal violeta ilumina suas sessões e ideias.
 
           Baixe ``Lumen-Windows-$v.msi`` (Windows Installer) ou ``Lumen-Windows-$v-setup.exe`` e execute.
           O instalador não tem assinatura digital; o Windows SmartScreen pode exibir um aviso. Nesse caso, clique em
