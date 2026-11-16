@@ -87,6 +87,12 @@ export const ICONS = {
   terminal: "M5 4.5h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2zM7.2 9.2 10 12l-2.8 2.8M12.5 15h4.3",
   // checkmark.square (stroked): aba rápida de nova tarefa no header
   taskCheck: "M6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11A2.5 2.5 0 0 1 6.5 4zM8.4 12.2l2.4 2.4 4.8-4.8",
+  // note.text (stroked): atalho no header para abrir o Anotador
+  notepad: "M6.5 3.5h11a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2zM8 8.5h8M8 12h8M8 15.5h5",
+  // envelope (stroked): atalho no header para abrir E-mail (Visão geral)
+  envelope: "M4.5 5.5h15a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM3.8 7l8.2 5.7L20.2 7",
+  // bell.slash (stroked): limpar notificação de e-mails não lidos do notch
+  bellSlash: "M4 4l16 16M10.3 4.8A5.2 5.2 0 0 1 17 9.8c0 2.9.8 4.4 1.5 5.2h-4M6.5 9.8c0 2.9-.8 4.4-1.5 5.2h6.8M9.7 18.2a2.5 2.5 0 0 0 4.6 0",
   // folder
   folder: "M3 6.6a2 2 0 0 1 2-2h4.3l2 2.2H19a2 2 0 0 1 2 2v8.6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6.6z",
   // chevron.down (stroked)

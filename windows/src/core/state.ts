@@ -299,6 +299,31 @@ class AppState {
   /** Last project of a focused workspace session; never persisted. */
   lastWorkspaceSessionCwd: string | null = null;
 
+  /** Contagem de e-mails não lidos silenciada pelo usuário para limpar avisos do notch. */
+  mailUnreadDismissedAt: number | null = (() => {
+    try {
+      const raw = typeof localStorage !== "undefined" ? localStorage.getItem("lumen.mailUnreadDismissedAt") : null;
+      if (raw == null) return null;
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  dismissMailUnread(rawUnread: number) {
+    const mark = Number.isFinite(rawUnread) && rawUnread > 0 ? Math.floor(rawUnread) : 0;
+    this.mailUnreadDismissedAt = mark;
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("lumen.mailUnreadDismissedAt", String(mark));
+      }
+    } catch {
+      // ignora em ambiente sem storage
+    }
+    this.notify();
+  }
+
   /** Which pills this build offers depends on it (Claude Desktop is Windows only). */
   os: HostOs = HOST_OS;
 

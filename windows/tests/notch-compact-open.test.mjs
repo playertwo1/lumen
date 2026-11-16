@@ -5,7 +5,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { installFakeDom } from "./fakedom.mjs";
 import { internals } from "./tauri.mjs";
-import { compactCenter } from "../src/core/compact.ts";
+import { compactCenter, effectiveMailUnread, focusTargetLabel } from "../src/core/compact.ts";
 import { COMPACT_W, NOTCH_H, botPosition, compactWidth } from "../src/core/layout.ts";
 
 Object.defineProperty(globalThis, "navigator", { configurable: true, value: { userAgent: "Windows NT" } });
@@ -33,10 +33,11 @@ function setupDom() {
 const initialDom = setupDom();
 const { State } = await import("../src/core/state.ts");
 const { WhatsApp } = await import("../src/core/whatsapp.ts");
-const { Spotify } = await import("../src/core/spotify.ts");
-const { buildHeader } = await import("../src/views/views.ts");
+const { buildHeader, buildViews } = await import("../src/views/views.ts");
 const { buildTaskCaptureView } = await import("../src/views/tasks.ts");
+const { buildMailCard } = await import("../src/views/mail.ts");
 const { Island } = await import("../src/island/island.ts");
+const { Spotify } = await import("../src/core/spotify.ts");
 
 const defaultInvoke = internals.invoke;
 
@@ -200,8 +201,9 @@ test("compactCenter retorna null quando ocioso e respeita prioridades de context
   assert.equal(withApproval?.text, "Aprovação · Claude Code");
 });
 
-test("header do Notch aberto tem 5 abas somente icônicas incluindo captura de tarefas", () => {
+test("header do Notch aberto tem 7 abas somente icônicas incluindo tarefas, Anotador e E-mail", () => {
   const actionsDone = [];
+  const hubPages = [];
   const header = buildHeader({
     setView: (v) => {
       actionsDone.push(v);
@@ -221,7 +223,9 @@ test("header do Notch aberto tem 5 abas somente icônicas incluindo captura de t
     toggleSound: () => {},
     setVolume: () => {},
     setAutoClose: () => {},
-    openSettingsWindow: () => {},
+    openSettingsWindow: (page) => {
+      hubPages.push(page ?? "general");
+    },
     blip: () => {},
     chooseOutfit: () => {},
     previewOutfit: () => {},
@@ -231,7 +235,7 @@ test("header do Notch aberto tem 5 abas somente icônicas incluindo captura de t
   });
 
   const tabs = header.el.find(".tab");
-  assert.equal(tabs.length, 5);
+  assert.equal(tabs.length, 7);
   for (const tab of tabs) {
     assert.equal(tab.textContent, "");
     assert.equal(tab.find("svg").length, 1);
@@ -241,6 +245,15 @@ test("header do Notch aberto tem 5 abas somente icônicas incluindo captura de t
   assert.equal(tasksTab.getAttribute("title"), "Nova tarefa");
   tasksTab.fire("click");
   assert.deepEqual(actionsDone, ["taskCapture"]);
+
+  const notesTab = tabs[5];
+  assert.equal(notesTab.getAttribute("title"), "Abrir Anotador");
+  notesTab.fire("click");
+
+  const mailTab = tabs[6];
+  assert.equal(mailTab.getAttribute("title"), "Abrir E-mail (Visão geral)");
+  mailTab.fire("click");
+  assert.deepEqual(hubPages, ["notes", "mailOverview"]);
 
   header.sync();
   assert.equal(tasksTab.classList.contains("on"), true);
@@ -352,4 +365,127 @@ test("Island no modo compacto alterna entre 2A enxuto e Centro Contextual quando
   } finally {
     globalThis.requestAnimationFrame = prevRaf;
   }
+});
+
+test("effectiveMailUnread silencia os 357 avisos ao limpar e só volta a notificar com novos e-mails", () => {
+  assert.equal(effectiveMailUnread(357, null), 357);
+  assert.equal(effectiveMailUnread(357, 357), 0);
+  assert.equal(effectiveMailUnread(350, 357), 0);
+  assert.equal(effectiveMailUnread(359, 357), 2);
+  assert.equal(effectiveMailUnread(0, 357), 0);
+});
+
+test("botão Limpar no card do Mail remove o aviso de 357 não lidos tanto na lista quanto no detalhe e no notch compacto", () => {
+  State.mailUnreadDismissedAt = null;
+  State.integrations.integration_mail = {
+    configured: true,
+    loaded: true,
+    error: null,
+    data: {
+      running: true,
+      windows: true,
+      backend: "mailcraft",
+      unread: 357,
+      messages: [
+        {
+          storeId: "mailcraft",
+          entryId: "m1",
+          senderName: "AliExpress",
+          address: "promo@example.com",
+          subject: "Você viu, agora economize",
+          date: new Date().toISOString(),
+          unread: true,
+          flagged: false,
+        },
+      ],
+      shown: 12,
+      maxShown: 60,
+    },
+  };
+
+  const card = buildMailCard({ keyboard: () => {} });
+  card.sync();
+
+  assert.equal(card.el.find(".mail-unread")[0]?.textContent, "357");
+  const clearBtnList = card.el.find(".mail-clear-btn")[0];
+  assert.ok(clearBtnList);
+
+  // Entra no detalhe (como no print do usuário)
+  card.el.find(".mail-row")[0].fire("click");
+  const clearBtnDetail = card.el.querySelector(".mail-clear-btn.detail");
+  assert.ok(clearBtnDetail);
+
+  clearBtnDetail.fire("click");
+  assert.equal(State.mailUnreadDismissedAt, 357);
+
+  card.sync();
+  assert.equal(card.el.querySelector(".mail-clear-btn.detail"), null);
+  assert.equal(card.el.find(".mail-unread")[0]?.style.display, "none");
+  assert.equal(
+    compactCenter({
+      now: new Date(),
+      pendingApproval: null,
+      notice: null,
+      whatsapp: null,
+      mailUnread: effectiveMailUnread(357, State.mailUnreadDismissedAt),
+      todos: [],
+      music: null,
+    }),
+    null,
+  );
+  State.mailUnreadDismissedAt = null;
+});
+
+test("seta ↗ Abrir tem tooltip contextual e aciona openTarget para Mail, Codex, Claude e Antigravity", () => {
+  assert.equal(focusTargetLabel("integration_mail", "Mail", "mailcraft"), "Abrir MailCraft");
+  assert.equal(focusTargetLabel("integration_mail", "Mail", "outlook"), "Abrir Outlook");
+  assert.equal(focusTargetLabel("agent_codex", "Codex"), "Abrir Codex");
+  assert.equal(focusTargetLabel("agent_antigravity", "Antigravity"), "Abrir Antigravity");
+  assert.equal(focusTargetLabel("integration_claude", "Claude Code"), "Abrir Claude Code");
+  assert.equal(focusTargetLabel("agent_claude-desktop", "Claude Desktop"), "Abrir Claude Desktop");
+
+  let targetClicks = 0;
+  State.tasks = [
+    { id: "agent_codex", name: "Codex", color: "#2DD4BF", state: "idle", steps: [], stepIndex: 0, source: "agent", isIntegration: true },
+    { id: "agent_antigravity", name: "Antigravity", color: "#E879F9", state: "idle", steps: [], stepIndex: 0, source: "agent", isIntegration: true },
+  ];
+  State.focusId = "agent_codex";
+  State.view = "overview";
+
+  const overview = buildViews({
+    setView: () => {},
+    cancelDrop: () => {},
+    draftDroppedFile: async () => {},
+    collapse: () => {},
+    foldApproval: () => {},
+    setFocus: () => {},
+    openTerminal: () => {},
+    openTarget: () => { targetClicks += 1; },
+    openUrl: () => {},
+    decide: () => {},
+    answer: () => {},
+    answerInTerminal: () => {},
+    toggleSound: () => {},
+    setVolume: () => {},
+    setAutoClose: () => {},
+    openSettingsWindow: () => {},
+    blip: () => {},
+    chooseOutfit: () => {},
+    previewOutfit: () => {},
+    keyboard: () => {},
+    holdOpen: () => {},
+    launched: () => {},
+  }, () => {}).get("overview");
+  assert.ok(overview);
+
+  overview.sync();
+  const jump = overview.el.querySelector(".icon-btn.jump");
+  assert.ok(jump);
+  assert.equal(jump.getAttribute("title"), "Abrir Codex");
+  jump.fire("click");
+  assert.equal(targetClicks, 1);
+
+  State.focusId = "agent_antigravity";
+  overview.sync();
+  assert.equal(jump.getAttribute("title"), "Abrir Antigravity");
 });

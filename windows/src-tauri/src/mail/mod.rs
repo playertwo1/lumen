@@ -495,6 +495,17 @@ pub async fn mail_test_connection(config: Option<mailcraft::BackendConfig>) -> m
     mailcraft::status(&cfg).await
 }
 
+/// Abre ou traz à frente o cliente de e-mail configurado (MailCraft ou Outlook).
+pub fn open_mail_client_sync(backend: &str, port: u16) -> bool {
+    if backend == "outlook" {
+        return crate::platform::open_outlook_app();
+    }
+    if crate::platform::focus_app("mailcraft.exe") {
+        return true;
+    }
+    mailcraft::open_app_with_control(port).is_ok()
+}
+
 /// Abre o MailCraft com o canal de controle e grava a config para o Lumen usar esse canal.
 #[tauri::command]
 pub async fn mail_open_mailcraft(_app: AppHandle) -> Result<String, String> {

@@ -31,7 +31,8 @@ import { bindCoucoudoroPill, buildCoucoudoroCard } from "./coucoudoro";
 import { COUCOUDORO_ID } from "../core/coucoudoro";
 import { buildWhatsAppCard } from "./whatsapp";
 import { WHATSAPP_ID } from "../core/whatsapp";
-import { MAIL_ID } from "../core/mail";
+import { MAIL_ID, type MailCardData } from "../core/mail";
+import { focusTargetLabel } from "../core/compact";
 import { buildMailCard } from "./mail";
 import type { Outfit, OutfitSelection } from "../mochi/wardrobe";
 import { language, t, tl, type Msg } from "../i18n/i18n";
@@ -59,7 +60,7 @@ export interface ViewActions {
   toggleSound(): void;
   setVolume(v: number): void;
   setAutoClose(seconds: number): void;
-  openSettingsWindow(): void;
+  openSettingsWindow(page?: string): void;
   blip(): void;
   /** Wardrobe click: keeps the outfit ("auto" and "none" included). */
   chooseOutfit(selection: OutfitSelection): void;
@@ -145,6 +146,27 @@ export function buildHeader(actions: ViewActions): ViewHost {
     },
     svg(ICONS.taskCheck, 16, { stroke: 1.75 }),
   );
+  // Atalhos diretos no cabeçalho para abrir Anotador e E-mail (Visão geral) no Hub.
+  const tabNotes = h(
+    "button",
+    {
+      class: "tab",
+      title: "Abrir Anotador",
+      "aria-label": "Abrir Anotador",
+      onclick: () => openHub("notes"),
+    },
+    svg(ICONS.notepad, 16, { stroke: 1.7 }),
+  );
+  const tabMail = h(
+    "button",
+    {
+      class: "tab",
+      title: "Abrir E-mail (Visão geral)",
+      "aria-label": "Abrir E-mail (Visão geral)",
+      onclick: () => openHub("mailOverview"),
+    },
+    svg(ICONS.envelope, 17, { stroke: 1.7 }),
+  );
 
   const gearBtn = h("button", { title: tl("Settings"), onclick: () => go("settings") }, svg(ICONS.gearLine, 18, { stroke: 1.6 }));
   const soundBtn = h("button", { title: tl("Mute"), onclick: () => actions.toggleSound() }, svg(ICONS.speakerLine, 18, { stroke: 1.6 }));
@@ -162,11 +184,16 @@ export function buildHeader(actions: ViewActions): ViewHost {
     actions.setView(v);
   }
 
+  function openHub(page: "notes" | "mailOverview") {
+    actions.blip();
+    actions.openSettingsWindow(page);
+  }
+
   const headerActions = h("div", { class: "header-actions" }, planPills, gearBtn, soundBtn, closeBtn);
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, tabHome, tabChat, tabDrop, tabLaunch, tabTasks),
+    h("div", { class: "tabs" }, tabHome, tabChat, tabDrop, tabLaunch, tabTasks, tabNotes, tabMail),
     headerActions,
   );
 
@@ -460,6 +487,12 @@ function buildOverview(actions: ViewActions): ViewHost {
       }
 
       jump.style.display = detailOpen || mode === "plan" || mode === "diff" ? "none" : "";
+      const mailBackend = (State.integrations[MAIL_ID]?.data as Partial<MailCardData> | undefined)?.backend ?? null;
+      const jumpTitle = focusTargetLabel(task?.id, task?.name, mailBackend);
+      if (jump.getAttribute("title") !== jumpTitle) {
+        jump.setAttribute("title", jumpTitle);
+        jump.setAttribute("aria-label", jumpTitle);
+      }
 
       // Ctrl+↓ Ctrl+↑ walk the open GitHub list (cardItemCount / cardSelection).
       const rows = mode === "card" ? listRows(leftBody) : [];

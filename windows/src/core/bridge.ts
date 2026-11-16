@@ -363,9 +363,14 @@ export const Bridge = {
   /** The diff card's ↗: an existing file, in VS Code; never launched by its type. */
   openFileInVSCode: (path: string) => call<boolean>("open_file_in_vscode", { path }),
 
+  /** Botão ↗ do notch aberto: traz à frente ou abre o app/sessão em foco. */
+  openFocusTarget: (pillId: string, sessionId: string | null, path: string | null) =>
+    call<boolean>("open_focus_target", { pillId, sessionId, path }),
+
   quit: () => call<void>("quit_app"),
 
-  openSettingsWindow: () => call<void>("open_settings_window"),
+  openSettingsWindow: (page?: string) =>
+    call<void>("open_settings_window", page ? { page } : undefined),
 
   /** Writes to %LOCALAPPDATA%\Coucou\coucou.log, next to the Rust lines. */
   log: (message: string) => call<void>("log_line", { message }),

@@ -5,6 +5,7 @@ import { Tracked, Spring, clamp } from "../core/anim";
 import { Bridge, IS_TAURI, TasksBridge, onDragDrop, type DragDropPayload, type VitalsReading } from "../core/bridge";
 import {
   compactCenter,
+  effectiveMailUnread,
   type CompactCenterAction,
   type CompactCenterItem,
   type CompactNotice,
@@ -22,7 +23,7 @@ import {
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import { MUSIC_IDS, Spotify, islandDances } from "../core/spotify";
-import type { MailCardData } from "../core/mail";
+import { MAIL_ID, type MailCardData } from "../core/mail";
 import { WhatsApp } from "../core/whatsapp";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { CALM, type MochiMood } from "../mochi/mood";
@@ -268,7 +269,7 @@ export class Island {
         if (task?.id === CLAUDE_DESKTOP_ID) void Bridge.openClaudeDesktop();
         else void Bridge.openSession(task?.sessionId ?? null, task?.sessionCwd ?? null);
       },
-      // The ↗ button — same targets as openAgentTarget() on macOS.
+      // Botão ↗ — foca ou abre o app/sessão em foco (Mail, Codex, Claude, Antigravity e demais integrações).
       openTarget: () => {
         const task = State.focusTask;
         if (!task) return;
@@ -280,9 +281,19 @@ export class Island {
           integration_notion: "https://notion.so",
           integration_calcom: "https://app.cal.com/bookings",
         };
-        if (task.id === CLAUDE_DESKTOP_ID) void Bridge.openClaudeDesktop();
-        else if (task.id === "integration_claude" || task.sessionId) {
-          void Bridge.openSession(task.sessionId ?? null, task.sessionCwd ?? null);
+        const focusTargets = new Set([
+          MAIL_ID,
+          CLAUDE_DESKTOP_ID,
+          "integration_claude",
+          "agent_codex",
+          "agent_antigravity",
+        ]);
+        if (focusTargets.has(task.id) || task.sessionId) {
+          void Bridge.openFocusTarget(
+            task.id,
+            task.sessionId ?? null,
+            task.sessionCwd ?? State.lastWorkspaceSessionCwd ?? null,
+          );
         } else if (task.id === "integration_n8n") void Bridge.openN8n();
         // WhatsApp Desktop at the open conversation; WhatsApp Web when it isn't installed.
         else if (task.id === "integration_whatsapp") void Bridge.whatsappOpenApp();
@@ -333,7 +344,7 @@ export class Island {
         void Bridge.saveSettings(State.settings);
         State.notify();
       },
-      openSettingsWindow: () => void Bridge.openSettingsWindow(),
+      openSettingsWindow: (page) => void Bridge.openSettingsWindow(page),
       blip: () => Sound.play("blip"),
       chooseOutfit: (selection) => {
         if (parseOutfit(State.settings.mochiOutfit) === selection) return;
@@ -1073,7 +1084,8 @@ export class Island {
   private getCompactCenterItem(now = new Date()): CompactCenterItem | null {
     const track = Spotify.state.track;
     const mail = State.integrations["integration_mail"]?.data as Partial<MailCardData> | undefined;
-    const mailUnread = typeof mail?.unread === "number" ? mail.unread : 0;
+    const rawMailUnread = typeof mail?.unread === "number" ? mail.unread : 0;
+    const mailUnread = effectiveMailUnread(rawMailUnread, State.mailUnreadDismissedAt);
     const pending = State.pendingApproval
       ? {
           pillName: State.tasks.find((t) => t.id === State.pendingApproval?.pillId)?.name,

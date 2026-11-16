@@ -384,6 +384,33 @@ pub fn open_claude_desktop() -> bool {
     )
 }
 
+pub fn focus_app(_exe: &str) -> bool {
+    false
+}
+
+pub fn open_antigravity(path: Option<&str>) -> bool {
+    let Some(agy) = find_on_path("agy").or_else(|| find_on_path("antigravity")) else {
+        return false;
+    };
+    let mut cmd = Command::new(agy);
+    if let Some(p) = path.filter(|s| std::path::Path::new(s).is_dir()) {
+        cmd.arg(p);
+    }
+    no_console(&mut cmd).spawn().is_ok()
+}
+
+pub fn open_codex(_path: Option<&str>) -> bool {
+    false
+}
+
+pub fn open_claude_code(_path: Option<&str>) -> bool {
+    false
+}
+
+pub fn open_outlook_app() -> bool {
+    false
+}
+
 /// A desktop entry with this file name in the system's or the user's
 /// applications folders (XDG_DATA_HOME, then XDG_DATA_DIRS).
 fn desktop_entry_exists(file: &str) -> bool {
