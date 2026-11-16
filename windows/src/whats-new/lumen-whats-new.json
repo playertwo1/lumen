@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.7",
+      "items": [
+        {
+          "icon": "puzzle",
+          "title": { "pt-BR": "Arraste o notch até qualquer borda" },
+          "detail": { "pt-BR": "Segure a ilha e solte: ela gruda na borda mais próxima, em cima, embaixo ou nos lados." }
+        },
+        {
+          "icon": "mic",
+          "title": { "pt-BR": "Pílula arrastável, em cima ou escondida" },
+          "detail": { "pt-BR": "A pílula do ditado também gruda na borda ao soltar, e ganhou as opções Em cima e Escondida." }
+        },
+        {
+          "icon": "keyboard",
+          "title": { "pt-BR": "Engrenagem abre direto os Ajustes" },
+          "detail": { "pt-BR": "A engrenagem da ilha vai direto em Ajustes → Geral, sem o painel intermediário." }
+        }
+      ]
+    },
+    {
       "version": "0.7.6",
       "items": [
         {
