@@ -61,9 +61,12 @@ pub async fn ask(request: &Request<'_>) -> Result<String, String> {
     let exe = exe().ok_or_else(|| t("Claude Code is not installed."))?;
     let workdir = settings::local_dir().join("relay");
     std::fs::create_dir_all(&workdir).map_err(|e| e.to_string())?;
+    // The system prompt goes in a file: an npm install is `claude.cmd`, and
+    // Windows refuses a batch file's argument that holds a line break.
+    let system_file = SystemFile::write(&workdir, request.system)?;
 
     let mut cmd = tokio::process::Command::new(&exe);
-    cmd.args(args(request))
+    cmd.args(args(request, &system_file.0))
         .current_dir(&workdir)
         .env_remove("CLAUDECODE")
         .stdin(Stdio::piped())
@@ -100,20 +103,33 @@ pub async fn ask(request: &Request<'_>) -> Result<String, String> {
     })
 }
 
-fn args(request: &Request<'_>) -> Vec<OsString> {
-    let mut out: Vec<OsString> = [
-        "-p",
-        "--output-format",
-        "json",
-        "--model",
-        request.model,
-        "--system-prompt",
-        request.system,
-        "--tools",
-    ]
-    .iter()
-    .map(OsString::from)
-    .collect();
+/// The system prompt of one run, on disk while it runs; deleted when dropped.
+struct SystemFile(PathBuf);
+
+impl SystemFile {
+    fn write(dir: &Path, system: &str) -> Result<SystemFile, String> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        let path = dir.join(format!("system-{}-{n}.txt", std::process::id()));
+        std::fs::write(&path, system).map_err(|e| e.to_string())?;
+        Ok(SystemFile(path))
+    }
+}
+
+impl Drop for SystemFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn args(request: &Request<'_>, system_file: &Path) -> Vec<OsString> {
+    let mut out: Vec<OsString> = ["-p", "--output-format", "json", "--model", request.model, "--system-prompt-file"]
+        .iter()
+        .map(OsString::from)
+        .collect();
+    out.push(system_file.as_os_str().to_owned());
+    out.push("--tools".into());
     out.push(request.tools.join(",").into());
     if !request.tools.is_empty() {
         out.push("--allowedTools".into());
@@ -189,14 +205,17 @@ mod tests {
     fn a_run_loads_no_settings_and_only_the_tools_it_is_given() {
         let request = Request {
             model: "claude-x",
-            system: "sys",
+            system: "line one\nline \"two\" 100%",
             prompt: "hi",
             tools: &[],
             read_dir: None,
             timeout: Duration::from_secs(1),
         };
-        let a = strings(&args(&request));
-        assert_eq!(&a[..8], ["-p", "--output-format", "json", "--model", "claude-x", "--system-prompt", "sys", "--tools"]);
+        let file = PathBuf::from("/tmp/system-1.txt");
+        let a = strings(&args(&request, &file));
+        assert_eq!(&a[..8], ["-p", "--output-format", "json", "--model", "claude-x", "--system-prompt-file", "/tmp/system-1.txt", "--tools"]);
+        // A batch file (`claude.cmd`) can't take an argument with a line break.
+        assert!(a.iter().all(|x| !x.contains(['\n', '\r'])), "{a:?}");
         assert_eq!(a[8], "");
         assert!(!a.contains(&"--allowedTools".to_string()));
         assert!(!a.contains(&"--add-dir".to_string()));
@@ -208,12 +227,44 @@ mod tests {
 
         let inbox = PathBuf::from("/tmp/inbox");
         let request = Request { tools: &["WebSearch", "Read"], read_dir: Some(&inbox), ..request };
-        let a = strings(&args(&request));
+        let a = strings(&args(&request, &file));
         assert_eq!(a[8], "WebSearch,Read");
         let allowed = a.iter().position(|x| x == "--allowedTools").unwrap();
         assert_eq!(a[allowed + 1], "WebSearch,Read");
         let dir = a.iter().position(|x| x == "--add-dir").unwrap();
         assert_eq!(a[dir + 1], "/tmp/inbox");
+    }
+
+    #[test]
+    fn the_system_file_is_written_then_removed() {
+        let dir = std::env::temp_dir().join(format!("coucou-sysfile-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = {
+            let f = SystemFile::write(&dir, "a\nb").unwrap();
+            assert_eq!(std::fs::read_to_string(&f.0).unwrap(), "a\nb");
+            f.0.clone()
+        };
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// With Claude Code installed and signed in: a multi-line system prompt
+    /// reaches it (it used to fail with "batch file arguments are invalid").
+    /// `cargo test --lib a_real_run -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn a_real_run_takes_a_multi_line_system_prompt() {
+        let request = Request {
+            model: "claude-haiku-4-5",
+            system: "Answer with the single word: pong.\nNothing else, \"no\" punctuation, 100%.",
+            prompt: "ping",
+            tools: &[],
+            read_dir: None,
+            timeout: Duration::from_secs(60),
+        };
+        let answer = tauri::async_runtime::block_on(ask(&request)).unwrap();
+        println!("{answer}");
+        assert!(answer.to_lowercase().contains("pong"), "{answer}");
     }
 
     #[test]
