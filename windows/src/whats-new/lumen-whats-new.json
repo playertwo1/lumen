@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.5",
+      "items": [
+        {
+          "icon": "checklist",
+          "title": { "pt-BR": "Atalhos de Anotador e E-mail no Notch" },
+          "detail": { "pt-BR": "Dois novos ícones no cabeçalho para abrir Anotador e E-mail (Visão geral) direto no Hub." }
+        },
+        {
+          "icon": "bell",
+          "title": { "pt-BR": "Limpar avisos de não lidos e seta Abrir" },
+          "detail": { "pt-BR": "Botão Limpar no card do Mail e seta ↗ funcional para MailCraft/Outlook, Codex, Claude e Antigravity." }
+        },
+        {
+          "icon": "phone",
+          "title": { "pt-BR": "QR Code de pareamento ampliado no Hub" },
+          "detail": { "pt-BR": "Cartão de pareamento em largura total acima do workbench para leitura rápida no celular." }
+        }
+      ]
+    },
+    {
       "version": "0.7.4",
       "items": [
         {

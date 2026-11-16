@@ -1,5 +1,12 @@
 # Changelog
 
+## Windows 0.7.5 — 15 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Atalhos no cabeçalho do Notch Aberto** — dois novos botões somente icônicos ao lado de `Nova tarefa` para abrir o **Anotador** (`notes`) e **E-mail → Visão geral** (`mailOverview`) direto no Hub.
+- **Limpar avisos de não lidos do Mail e polimento do detalhe** — botão **Limpar** na lista e no detalhe do Mail (`mailUnreadDismissedAt` local) para silenciar a notificação acumulada (`Mail · N não lidos`) sem alterar as mensagens no servidor, além de ajuste vertical no detalhe do e-mail.
+- **Botão `↗` ("Abrir") contextual para apps em foco** — comando `open_focus_target` trazendo à frente ou abrindo **MailCraft / Outlook**, **Codex**, **Claude Code**, **Claude Desktop** e **Antigravity**, com *tooltip* dinâmico.
+- **Pareamento QR ampliado em Celular Android** — cartão de pareamento em largura total acima do workbench com QR code responsivo ampliado em `hub.css` e `settings.css`.
+
 ## Windows 0.7.4 — 15 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Google no Lumen (`L7.1`, `L7.2`, `L7.3` e animação P3)** — login OAuth PKCE no navegador com credenciais no Windows Credential Manager, backup semanal + restauração íntegra (`SHA-256` e snapshot prévio) na pasta `Segunda Mente/Lumen-PC` do Google Drive, leitura e criação confirmada de eventos no Google Calendar (`attendees` vazio e `sendUpdates=none`) e gesto `triggerCloudBackup` no `CompassEngine`.
