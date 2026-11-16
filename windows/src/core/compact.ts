@@ -90,6 +90,42 @@ function nextRelevantTodo(todos: TodoItem[], now: Date): { item: TodoItem; overd
 }
 
 /**
+ * Contagem efetiva de e-mails não lidos exibida como aviso no notch.
+ * Ao limpar notificações em `dismissedAt`, os avisos já acumulados somem
+ * sem alterar as mensagens no servidor; novos e-mails acima da marca voltam a aparecer.
+ */
+export function effectiveMailUnread(rawUnread: number, dismissedAt: number | null): number {
+  const safeRaw = Number.isFinite(rawUnread) && rawUnread > 0 ? Math.floor(rawUnread) : 0;
+  if (safeRaw === 0) return 0;
+  if (dismissedAt == null || !Number.isFinite(dismissedAt) || dismissedAt < 0) return safeRaw;
+  return safeRaw <= dismissedAt ? 0 : safeRaw - dismissedAt;
+}
+
+/** Rótulo contextual para o tooltip da seta ↗ do card esquerdo. */
+export function focusTargetLabel(
+  taskId: string | null | undefined,
+  taskName?: string | null,
+  mailBackend?: string | null,
+): string {
+  switch (taskId) {
+    case "integration_mail":
+      return mailBackend === "outlook" ? "Abrir Outlook" : "Abrir MailCraft";
+    case "agent_codex":
+      return "Abrir Codex";
+    case "agent_antigravity":
+      return "Abrir Antigravity";
+    case "integration_claude":
+      return "Abrir Claude Code";
+    case "agent_claude-desktop":
+      return "Abrir Claude Desktop";
+    case "integration_whatsapp":
+      return "Abrir WhatsApp";
+    default:
+      return taskName?.trim() ? `Abrir ${taskName.trim()}` : "Abrir";
+  }
+}
+
+/**
  * Resolve o item exibido no centro do Notch Compacto.
  * Retorna `null` quando não há evento/mensagem/tarefa ativa para que o notch
  * assuma o formato compacto enxuto (Opção 2A).

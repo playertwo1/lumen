@@ -653,17 +653,58 @@ fn focus_terminal_tab(windows: &[isize], folder: &str) -> bool {
     selected.unwrap_or(false)
 }
 
-/// Brings forward the window of a running app, by executable name.
-fn focus_app(exe: &str) -> bool {
+/// Traz à frente a janela visível de um aplicativo pelo nome do executável.
+pub fn focus_app(exe: &str) -> bool {
     let pids: Vec<u32> = process_table()
         .into_iter()
         .filter(|(_, p)| p.exe.eq_ignore_ascii_case(exe))
         .map(|(pid, _)| pid)
         .collect();
+    if pids.is_empty() {
+        return false;
+    }
     top_windows()
         .into_iter()
         .find(|(_, owner, _)| pids.contains(owner))
         .is_some_and(|(hwnd, _, _)| bring_forward(hwnd))
+}
+
+/// Traz à frente a janela cujo título contém `needle` (ignorando janelas do próprio processo).
+pub fn focus_window_title(needle: &str) -> bool {
+    let needle_low = needle.to_ascii_lowercase();
+    let self_pid = std::process::id();
+    top_windows()
+        .into_iter()
+        .find(|(_, owner, title)| *owner != self_pid && title.to_ascii_lowercase().contains(&needle_low))
+        .is_some_and(|(hwnd, _, _)| bring_forward(hwnd))
+}
+
+fn valid_dir(path: Option<&str>) -> Option<&std::path::Path> {
+    let raw = path.map(str::trim).filter(|s| !s.is_empty())?;
+    let p = std::path::Path::new(raw);
+    (p.is_absolute() && p.is_dir()).then_some(p)
+}
+
+fn shell_open_uri(uri: PCWSTR) -> bool {
+    unsafe {
+        let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
+            return false;
+        }
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC,
+            lpVerb: w!("open"),
+            lpFile: uri,
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        let opened = ShellExecuteExW(&mut info).is_ok();
+        if initialized.is_ok() {
+            CoUninitialize();
+        }
+        opened
+    }
 }
 
 /// The Claude desktop app: brought forward when it runs (Claude Code's own
@@ -671,7 +712,7 @@ fn focus_app(exe: &str) -> bool {
 /// started from the Squirrel path or its registered MSIX protocol otherwise.
 pub fn open_claude_desktop() -> bool {
     open_claude_with(
-        || focus_app("claude.exe"),
+        || focus_app("claude.exe") || focus_window_title("Claude"),
         || {
             std::env::var_os("LOCALAPPDATA").is_some_and(|base| {
                 let exe = PathBuf::from(base).join("AnthropicClaude").join("claude.exe");
@@ -680,6 +721,96 @@ pub fn open_claude_desktop() -> bool {
         },
         activate_claude_protocol,
     )
+}
+
+/// Foca ou abre o Antigravity (janela em execução, `Antigravity.exe` ou comando `agy`).
+pub fn open_antigravity(path: Option<&str>) -> bool {
+    if focus_app("Antigravity.exe") || focus_window_title("Antigravity") {
+        return true;
+    }
+    let dir = valid_dir(path);
+    if let Some(base) = std::env::var_os("LOCALAPPDATA") {
+        let exe = PathBuf::from(base).join("Programs").join("Antigravity").join("Antigravity.exe");
+        if exe.is_file() {
+            let mut cmd = Command::new(exe);
+            if let Some(d) = dir {
+                cmd.arg(d);
+            }
+            if no_console(&mut cmd).spawn().is_ok() {
+                return true;
+            }
+        }
+    }
+    if let Some(agy) = find_on_path("agy") {
+        let mut cmd = Command::new(agy);
+        if let Some(d) = dir {
+            cmd.arg(d);
+        }
+        if no_console(&mut cmd).spawn().is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Foca ou abre o Codex (app desktop, terminal com Codex ou VS Code/Windows Terminal).
+pub fn open_codex(path: Option<&str>) -> bool {
+    if focus_app("Codex.exe") || focus_window_title("Codex") {
+        return true;
+    }
+    let dir = valid_dir(path);
+    if let (Some(wt), Some(codex)) = (windows_terminal(), cli_candidates("codex").into_iter().next()) {
+        let mut cmd = Command::new(wt);
+        if let Some(d) = dir {
+            cmd.arg("-d").arg(d);
+        }
+        cmd.arg(codex);
+        if no_console(&mut cmd).spawn().is_ok() {
+            return true;
+        }
+    }
+    focus_app("WindowsTerminal.exe") || focus_app("Code.exe")
+}
+
+/// Foca ou abre o ambiente de Claude Code (VS Code, Cursor, Windows Terminal ou sessão).
+pub fn open_claude_code(path: Option<&str>) -> bool {
+    if focus_app("Code.exe") || focus_app("Cursor.exe") || focus_app("WindowsTerminal.exe") {
+        return true;
+    }
+    let dir = valid_dir(path);
+    if let Some(code) = find_on_path("code") {
+        let mut cmd = Command::new(code);
+        if let Some(d) = dir {
+            cmd.arg(d);
+        }
+        if no_console(&mut cmd).spawn().is_ok() {
+            return true;
+        }
+    }
+    if let (Some(wt), Some(claude)) = (windows_terminal(), cli_candidates("claude").into_iter().next()) {
+        let mut cmd = Command::new(wt);
+        if let Some(d) = dir {
+            cmd.arg("-d").arg(d);
+        }
+        cmd.arg(claude);
+        if no_console(&mut cmd).spawn().is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Traz à frente ou abre o Outlook no Windows.
+pub fn open_outlook_app() -> bool {
+    if focus_app("olk.exe") || focus_app("OUTLOOK.EXE") {
+        return true;
+    }
+    if let Some(outlook) = find_on_path("outlook") {
+        if no_console(&mut Command::new(outlook)).spawn().is_ok() {
+            return true;
+        }
+    }
+    shell_open_uri(w!("ms-outlook:"))
 }
 
 fn open_claude_with(
@@ -692,27 +823,7 @@ fn open_claude_with(
 
 /// The MSIX manifest registers `claude`; let Windows resolve its current install.
 fn activate_claude_protocol() -> bool {
-    unsafe {
-        let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-        // A Tauri thread may already use MTA. Keep that apartment: the Shell can
-        // delegate activation, and we must not uninitialize someone else's COM.
-        if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
-            return false;
-        }
-        let mut info = SHELLEXECUTEINFOW {
-            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-            fMask: SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC,
-            lpVerb: w!("open"),
-            lpFile: w!("claude://"),
-            nShow: SW_SHOWNORMAL.0,
-            ..Default::default()
-        };
-        let opened = ShellExecuteExW(&mut info).is_ok();
-        if initialized.is_ok() {
-            CoUninitialize();
-        }
-        opened
-    }
+    shell_open_uri(w!("claude://"))
 }
 
 // ── New Claude Code session (launch.rs) ───────────────────────────────────────

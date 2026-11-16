@@ -395,6 +395,84 @@ fn open_claude_desktop() -> bool {
     platform::open_claude_desktop()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FocusTargetKind {
+    Mail,
+    ClaudeDesktop,
+    ClaudeCode,
+    Codex,
+    Antigravity,
+    SessionOrFallback,
+}
+
+/// Resolve o tipo de abertura do botão ↗ a partir do ID da pílula em foco.
+pub(crate) fn resolve_focus_target_kind(pill_id: &str) -> FocusTargetKind {
+    match pill_id {
+        "integration_mail" => FocusTargetKind::Mail,
+        "agent_claude-desktop" => FocusTargetKind::ClaudeDesktop,
+        "integration_claude" => FocusTargetKind::ClaudeCode,
+        "agent_codex" => FocusTargetKind::Codex,
+        "agent_antigravity" => FocusTargetKind::Antigravity,
+        _ => FocusTargetKind::SessionOrFallback,
+    }
+}
+
+/// Botão ↗ do notch aberto: foca ou abre o aplicativo / sessão em foco
+/// (MailCraft/Outlook, Codex, Claude Code, Claude Desktop, Antigravity ou outro agente).
+#[tauri::command]
+async fn open_focus_target(pill_id: String, session_id: Option<String>, path: Option<String>) -> bool {
+    match resolve_focus_target_kind(&pill_id) {
+        FocusTargetKind::Mail => {
+            let cfg = mail::mail_config_get();
+            tauri::async_runtime::spawn_blocking(move || mail::open_mail_client_sync(&cfg.backend, cfg.port))
+                .await
+                .unwrap_or(false)
+        }
+        FocusTargetKind::ClaudeDesktop => {
+            tauri::async_runtime::spawn_blocking(platform::open_claude_desktop)
+                .await
+                .unwrap_or(false)
+        }
+        FocusTargetKind::Antigravity => {
+            if session_id.is_some() && open_session(session_id, path.clone()).await {
+                return true;
+            }
+            tauri::async_runtime::spawn_blocking(move || platform::open_antigravity(path.as_deref()))
+                .await
+                .unwrap_or(false)
+        }
+        FocusTargetKind::Codex => {
+            if let Some(sid) = session_id.as_deref() {
+                if let Some(owners) = session_window::lookup(sid) {
+                    let folder = path.as_deref().map(session_window::folder_name).unwrap_or_default().to_string();
+                    #[cfg(windows)]
+                    if tauri::async_runtime::spawn_blocking(move || platform::focus_session_window(&owners, &folder))
+                        .await
+                        .unwrap_or(false)
+                    {
+                        return true;
+                    }
+                }
+                if herdr::focus(sid) {
+                    return true;
+                }
+            }
+            tauri::async_runtime::spawn_blocking(move || platform::open_codex(path.as_deref()))
+                .await
+                .unwrap_or(false)
+        }
+        FocusTargetKind::ClaudeCode => {
+            if session_id.is_some() && open_session(session_id, path.clone()).await {
+                return true;
+            }
+            tauri::async_runtime::spawn_blocking(move || platform::open_claude_code(path.as_deref()))
+                .await
+                .unwrap_or(false)
+        }
+        FocusTargetKind::SessionOrFallback => open_session(session_id, path).await,
+    }
+}
+
 /// The file behind a live diff, if it may be handed to the editor: an existing
 /// regular file given by its full path. Anything else — a relative path, a
 /// folder, a path `code` could read as an option — goes no further.
@@ -1079,6 +1157,7 @@ pub fn run() {
             launch::pick_folder,
             launch::drop_into_session,
             open_claude_desktop,
+            open_focus_target,
             open_file_in_vscode,
             git::git_status,
             git::git_diff,
@@ -1406,5 +1485,15 @@ mod tests {
         assert!(diff_file("").is_none());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_focus_target_kind_maps_all_primary_pills() {
+        assert_eq!(super::resolve_focus_target_kind("integration_mail"), super::FocusTargetKind::Mail);
+        assert_eq!(super::resolve_focus_target_kind("agent_codex"), super::FocusTargetKind::Codex);
+        assert_eq!(super::resolve_focus_target_kind("integration_claude"), super::FocusTargetKind::ClaudeCode);
+        assert_eq!(super::resolve_focus_target_kind("agent_claude-desktop"), super::FocusTargetKind::ClaudeDesktop);
+        assert_eq!(super::resolve_focus_target_kind("agent_antigravity"), super::FocusTargetKind::Antigravity);
+        assert_eq!(super::resolve_focus_target_kind("agent_cursor"), super::FocusTargetKind::SessionOrFallback);
     }
 }

@@ -12,6 +12,7 @@
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { State } from "../core/state";
+import { effectiveMailUnread } from "../core/compact";
 import {
   MAIL_BLUE, MAIL_FILTERS, MAIL_ID, MailBridge, filterTitle, messageId, senderName,
   type MailCardData, type MailFilter, type MailMessage,
@@ -175,9 +176,11 @@ export function buildMailCard(host: MailCardHost): MailCard {
   function syncList() {
     const d = data();
     const isMailCraft = (d.backend ?? "mailcraft") === "mailcraft";
+    const badgeUnread = effectiveMailUnread(d.unread, State.mailUnreadDismissedAt);
     const list = displayed();
     const key = [
-      language(), d.running, d.windows, d.backend, d.unread, d.error ?? "", searchOpen, filter, searching, results === null, d.shown,
+      language(), d.running, d.windows, d.backend, d.unread, badgeUnread, State.mailUnreadDismissedAt ?? "",
+      d.error ?? "", searchOpen, filter, searching, results === null, d.shown,
       Math.floor(Date.now() / 60_000),
       ...list.map((m) => `${messageId(m)}|${m.unread}|${m.flagged}`),
     ].join("~");
@@ -193,10 +196,23 @@ export function buildMailCard(host: MailCardHost): MailCard {
       head.append(closeSearch);
     } else {
       head.append(h("span", { text: t("Inbox") }));
-      // Just the number, on one line (the sentence on hover).
-      unreadTag.textContent = d.unread > 9999 ? "9999+" : String(d.unread);
-      unreadTag.title = t("{0} unread", { 0: d.unread });
-      unreadTag.style.display = d.unread > 0 ? "" : "none";
+      // Mostra a contagem de avisos pendentes no notch + botão Limpar para silenciar o acumulado sem alterar a caixa.
+      unreadTag.textContent = badgeUnread > 9999 ? "9999+" : String(badgeUnread);
+      unreadTag.title = `${badgeUnread} não lidos no notch (caixa: ${d.unread})`;
+      unreadTag.style.display = badgeUnread > 0 ? "" : "none";
+      const clearBtn = badgeUnread > 0
+        ? h(
+            "button",
+            {
+              class: "mail-clear-btn",
+              title: "Limpar notificação de não lidos do notch",
+              "aria-label": "Limpar notificação de não lidos do notch",
+              onclick: () => State.dismissMailUnread(d.unread),
+            },
+            svg(ICONS.bellSlash, 10, { stroke: 2 }),
+            h("span", { text: "Limpar" }),
+          )
+        : null;
       const summarizeBtn = h("button", {
         class: "link-btn accent",
         title: "Resumir caixa de entrada sem enviar nada",
@@ -266,7 +282,9 @@ export function buildMailCard(host: MailCardHost): MailCard {
           );
         },
       }) as HTMLButtonElement;
-      head.append(unreadTag, h("span", { class: "mail-spacer" }), summarizeBtn, draftBtn);
+      head.append(unreadTag);
+      if (clearBtn) head.append(clearBtn);
+      head.append(h("span", { class: "mail-spacer" }), summarizeBtn, draftBtn);
       if (searching) head.append(h("span", { class: "mail-spinner" }));
       head.append(searchBtn);
     }
@@ -306,10 +324,15 @@ export function buildMailCard(host: MailCardHost): MailCard {
     }
   }
 
+  let detailDismissedKey: number | null = State.mailUnreadDismissedAt;
+
   function drawDetail() {
     clear(detailView);
     const m = open;
     if (!m) return;
+    const d = data();
+    const badgeUnread = effectiveMailUnread(d.unread, State.mailUnreadDismissedAt);
+    detailDismissedKey = State.mailUnreadDismissedAt;
     const back = h("button", { class: "int-back mail-back", title: tl("Back") }, svg(ICONS.chevronLeft, 10, { stroke: 2.4 }));
     back.addEventListener("click", closeMessage);
     const preview = previews.get(messageId(m));
@@ -322,7 +345,8 @@ export function buildMailCard(host: MailCardHost): MailCard {
     actions.append(
       h("button", {
         class: isMc ? "link-btn accent" : "link-btn",
-        text: isMc ? "Rascunho de resposta (sem enviar)" : t("Reply"),
+        text: isMc ? "Rascunho (sem enviar)" : t("Reply"),
+        title: isMc ? "Preparar rascunho de resposta (sem enviar)" : t("Reply"),
         onclick: () => void MailBridge.open(m, true),
       }),
     );
@@ -346,14 +370,32 @@ export function buildMailCard(host: MailCardHost): MailCard {
       );
       actions.append(h("span", { class: "mail-dots-wrap" }, dots, more));
     }
+    const clearDetailBtn = badgeUnread > 0
+      ? h(
+          "button",
+          {
+            class: "mail-clear-btn detail",
+            title: "Limpar notificação de não lidos do notch",
+            "aria-label": "Limpar notificação de não lidos do notch",
+            onclick: () => {
+              State.dismissMailUnread(d.unread);
+              drawDetail();
+            },
+          },
+          svg(ICONS.bellSlash, 9.5, { stroke: 2 }),
+          h("span", { text: `Limpar ${badgeUnread > 999 ? "999+" : badgeUnread}` }),
+        )
+      : null;
+    const headChildren: Node[] = [
+      back,
+      h("i", { class: m.unread ? "mail-dot on" : "mail-dot" }),
+      h("b", { class: "mail-from", text: senderName(m), title: m.address }),
+      h("span", { class: "mail-spacer" }),
+    ];
+    if (clearDetailBtn) headChildren.push(clearDetailBtn);
+    headChildren.push(h("span", { class: "int-ago", text: timeAgo(m.date) }));
     detailView.append(
-      h("div", { class: "mail-detail-head" },
-        back,
-        h("i", { class: m.unread ? "mail-dot on" : "mail-dot" }),
-        h("b", { class: "mail-from", text: senderName(m), title: m.address }),
-        h("span", { class: "mail-spacer" }),
-        h("span", { class: "int-ago", text: timeAgo(m.date) }),
-      ),
+      h("div", { class: "mail-detail-head" }, ...headChildren),
       h("div", { class: "mail-detail-subject", text: m.subject || " " }),
       h("div", { class: "mail-detail-text", text }),
       actions,
@@ -365,8 +407,11 @@ export function buildMailCard(host: MailCardHost): MailCard {
     if (open) {
       // The open message, kept up to date when a refresh changes it.
       const fresh = displayed().find((x) => messageId(x) === messageId(open!));
-      if (fresh && (fresh.unread !== open.unread || fresh.flagged !== open.flagged)) {
-        open = fresh;
+      if (
+        (fresh && (fresh.unread !== open.unread || fresh.flagged !== open.flagged)) ||
+        detailDismissedKey !== State.mailUnreadDismissedAt
+      ) {
+        if (fresh) open = fresh;
         drawDetail();
       }
     }
