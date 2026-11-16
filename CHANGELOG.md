@@ -1,5 +1,10 @@
 # Changelog
 
+## Windows 0.7.9 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Limpeza do ditado pelo Claude corrigida** — com o Claude Code instalado pelo npm (`claude.cmd`) e sem chave da API, a revisão do texto ditado falhava com "batch file arguments are invalid", porque o Windows não aceita um argumento com quebra de linha num arquivo `.cmd`, e o texto saía sem revisão. As instruções agora vão num arquivo temporário (`--system-prompt-file`), apagado assim que a resposta chega.
+- **Chat e resumos pelo Claude Code** — a mesma correção vale para o chat sem chave da API e para os resumos das notas de chamada, que usam o mesmo caminho.
+
 ## Windows 0.7.8 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Whisper Large v3 Turbo no ditado** — em Ajustes → Reconhecimento dá para baixar o Whisper Large v3 Turbo (cerca de 1 GB, uma vez) e escolher em **Modelo do ditado** entre Parakeet (rápido) e Whisper (mais preciso em português, mais lento sem placa de vídeo). Roda neste computador, sem enviar a voz, com o idioma do app; as notas de chamada e o comando de voz continuam no Parakeet. Sem o Whisper baixado, o ditado usa o Parakeet.
