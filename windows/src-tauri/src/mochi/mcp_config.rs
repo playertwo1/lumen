@@ -908,7 +908,11 @@ fn scan_single_line_literal_string(src: &str, start: usize, limit: usize) -> Res
         if bytes[i] == b'\'' {
             return Ok(i + 1);
         }
-        i += 1;
+        let ch = src[i..limit]
+            .chars()
+            .next()
+            .ok_or_else(|| "unterminated literal string".to_string())?;
+        i += ch.len_utf8();
     }
     Err("unterminated literal string".to_string())
 }
@@ -929,7 +933,7 @@ fn scan_multiline_basic_string(src: &str, start: usize) -> Result<usize, String>
             i += ch.len_utf8();
             continue;
         }
-        if src[i..].starts_with("\"\"\"") {
+        if bytes[i..].starts_with(b"\"\"\"") {
             let mut count = 3;
             while i + count < bytes.len() && bytes[i + count] == b'"' {
                 count += 1;
@@ -939,7 +943,11 @@ fn scan_multiline_basic_string(src: &str, start: usize) -> Result<usize, String>
             }
             return Ok(i + count);
         }
-        i += 1;
+        let ch = src[i..]
+            .chars()
+            .next()
+            .ok_or_else(|| "unterminated multiline basic string".to_string())?;
+        i += ch.len_utf8();
     }
     Err("unterminated multiline basic string".to_string())
 }
@@ -948,7 +956,7 @@ fn scan_multiline_literal_string(src: &str, start: usize) -> Result<usize, Strin
     let bytes = src.as_bytes();
     let mut i = start + 3;
     while i < bytes.len() {
-        if src[i..].starts_with("'''") {
+        if bytes[i..].starts_with(b"'''") {
             let mut count = 3;
             while i + count < bytes.len() && bytes[i + count] == b'\'' {
                 count += 1;
@@ -958,7 +966,11 @@ fn scan_multiline_literal_string(src: &str, start: usize) -> Result<usize, Strin
             }
             return Ok(i + count);
         }
-        i += 1;
+        let ch = src[i..]
+            .chars()
+            .next()
+            .ok_or_else(|| "unterminated multiline literal string".to_string())?;
+        i += ch.len_utf8();
     }
     Err("unterminated multiline literal string".to_string())
 }
@@ -1412,5 +1424,52 @@ mod tests {
 
         std::fs::write(&codex_path, b"[broken\nargs = [1, 2\n").unwrap();
         assert!(preview_at("codex", true, &home.path, &hook_exe).is_err());
+    }
+
+    #[test]
+    fn codex_toml_handles_utf8_accents_and_emojis_in_multiline_strings() {
+        let home = TestHome::new("utf8-multiline");
+        let codex_dir = home.path.join(".codex");
+        std::fs::create_dir_all(&codex_dir).unwrap();
+        let codex_path = codex_dir.join("config.toml");
+
+        let original = concat!(
+            "developer_instructions = \"\"\"\n",
+            "Atenção: configuração em português com ç, ã, é, ô 🚀🔒\n",
+            "\"\"\"\n\n",
+            "[mcp_servers.outro]\n",
+            "nota = '''\n",
+            "Texto literal com acentuação: coração, ação, café ✨\n",
+            "'''\n\n",
+            "[mcp_servers.lumen]\n",
+            "command = \"C:\\\\antigo\\\\coucou-hook.exe\"\n",
+            "args = [\"--mcp\"]\n\n",
+            "[perfil]\n",
+            "resumo = \"\"\"Mais emojis 🎉 e acentos áéíóú\"\"\"\n",
+            "literal = '''Ainda mais: 🧭 ñ ü'''\n",
+        );
+        std::fs::write(&codex_path, original.as_bytes()).unwrap();
+
+        let hook_exe = PathBuf::from(r"C:\Lumen\coucou-hook.exe");
+        let plan = preview_at("codex", true, &home.path, &hook_exe).unwrap();
+        apply_at("codex", true, &plan.fingerprint, &home.path, &hook_exe).unwrap();
+
+        let updated = std::fs::read_to_string(&codex_path).unwrap();
+        assert!(updated.contains("Atenção: configuração em português com ç, ã, é, ô 🚀🔒"));
+        assert!(updated.contains("Texto literal com acentuação: coração, ação, café ✨"));
+        assert!(updated.contains("Mais emojis 🎉 e acentos áéíóú"));
+        assert!(updated.contains("Ainda mais: 🧭 ñ ü"));
+
+        let st = status_at(&home.path, &hook_exe);
+        let codex = st.iter().find(|s| s.id == "codex").unwrap();
+        assert!(codex.registered);
+        assert!(codex.command_matches);
+
+        let rm_plan = preview_at("codex", false, &home.path, &hook_exe).unwrap();
+        apply_at("codex", false, &rm_plan.fingerprint, &home.path, &hook_exe).unwrap();
+        let after_remove = std::fs::read_to_string(&codex_path).unwrap();
+        assert!(after_remove.contains("Atenção: configuração em português com ç, ã, é, ô 🚀🔒"));
+        assert!(after_remove.contains("Ainda mais: 🧭 ñ ü"));
+        assert!(!after_remove.contains("[mcp_servers.lumen]"));
     }
 }

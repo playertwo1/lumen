@@ -155,15 +155,16 @@ impl MochiRuntime {
         }
     }
 
-    /// Clona o runtime sem reter referência a `McpServerHandle` (evita ciclo no loop MCP).
+    /// Clona o runtime sem reter referência a `McpServerHandle` (evita ciclo no loop MCP),
+    /// mas compartilha `active_run` e `next_run_id` para unificar pausa rápida e cancelamento.
     pub(crate) fn detached_for_mcp(&self) -> Self {
         Self {
             registry: Arc::clone(&self.registry),
             permissions: Arc::clone(&self.permissions),
             audit: Arc::clone(&self.audit),
             mcp: Arc::new(Mutex::new(None)),
-            next_run_id: Arc::new(AtomicU64::new(1)),
-            active_run: Arc::new(Mutex::new(None)),
+            next_run_id: Arc::clone(&self.next_run_id),
+            active_run: Arc::clone(&self.active_run),
         }
     }
 
@@ -412,22 +413,31 @@ impl MochiRuntime {
                 );
                 return Err(ToolError::Cancelled);
             }
-            res = self.permissions.authorize(tool.id, tool.risk, &dry_run_summary, &observed_requester) => {
+            res = self.permissions.authorize_with_guard(
+                tool.id,
+                tool.risk,
+                &dry_run_summary,
+                &observed_requester,
+                || self.is_paused(tool_ctx),
+                Some(&cancel_rx),
+            ) => {
                 match res {
                     Ok(permit) => permit,
                     Err(err) => {
-                        let decision = match &err {
-                            ToolError::Timeout => AuditDecision::TimedOut,
+                        let (decision, result) = match &err {
+                            ToolError::Paused => (AuditDecision::BlockedPaused, AuditResult::Blocked),
+                            ToolError::Cancelled => (AuditDecision::Cancelled, AuditResult::Cancelled),
+                            ToolError::Timeout => (AuditDecision::TimedOut, AuditResult::Blocked),
                             ToolError::PermissionDenied(_) if !self.permissions.status().healthy => {
-                                AuditDecision::BlockedFailClosed
+                                (AuditDecision::BlockedFailClosed, AuditResult::Blocked)
                             }
-                            _ => AuditDecision::Denied,
+                            _ => (AuditDecision::Denied, AuditResult::Blocked),
                         };
                         self.record_audit(
                             tool.id,
                             tool.risk,
                             decision,
-                            AuditResult::Blocked,
+                            result,
                             &err.to_string(),
                         );
                         return Err(err);
@@ -687,7 +697,7 @@ fn safe_tool_audit_summary(
     }
 }
 
-async fn wait_for_cancel(cancel_rx: &mut watch::Receiver<bool>) {
+pub(crate) async fn wait_for_cancel(cancel_rx: &mut watch::Receiver<bool>) {
     loop {
         if *cancel_rx.borrow_and_update() {
             return;

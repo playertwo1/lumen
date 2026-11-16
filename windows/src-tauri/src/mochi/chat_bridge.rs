@@ -11,10 +11,9 @@ use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 use crate::chat::{self, Chat, ChatContext, ChatReply};
-use crate::island::WINDOW_LABEL;
 use crate::settings::Settings;
 use crate::{claude, cli_relay, local_chat, mail, openai_compat};
 
@@ -289,6 +288,14 @@ pub async fn run_tool_loop_with_model<M: ToolLoopModel>(
             return Err(msg);
         }
 
+        if step > 0 {
+            sink.emit(MochiRunStatePayload {
+                state: MochiRunState::Thinking,
+                tool: last_tool.clone(),
+                detail: None,
+            });
+        }
+
         let mut model_cancel_rx = cancel_rx.clone();
         let req = ModelTurnRequest {
             step,
@@ -414,7 +421,6 @@ struct ProviderToolModel {
     kind: ProviderKind,
     history: Vec<Value>,
     initial_user: Value,
-    app: AppHandle,
 }
 
 impl ProviderToolModel {
@@ -440,7 +446,6 @@ impl ProviderToolModel {
                 },
                 history: turn.history.clone(),
                 initial_user: Value::Null,
-                app,
             });
         }
         if provider == "chatgpt" {
@@ -452,7 +457,6 @@ impl ProviderToolModel {
                 },
                 history: turn.history.clone(),
                 initial_user,
-                app,
             });
         }
         if provider == chat::ANTHROPIC || provider.is_empty() {
@@ -464,7 +468,6 @@ impl ProviderToolModel {
                 },
                 history: turn.history.clone(),
                 initial_user,
-                app,
             });
         }
         if let Some(p) = openai_compat::provider(provider) {
@@ -476,7 +479,6 @@ impl ProviderToolModel {
                 },
                 history: turn.history.clone(),
                 initial_user,
-                app,
             });
         }
         if let Some(server) = local_chat::server(settings, provider) {
@@ -489,7 +491,6 @@ impl ProviderToolModel {
                 },
                 history: turn.history.clone(),
                 initial_user,
-                app,
             });
         }
         Err(format!("Unknown chat provider: {provider}"))
@@ -576,15 +577,6 @@ impl ToolLoopModel for ProviderToolModel {
         req: ModelTurnRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
         Box::pin(async move {
-            if req.step > 0
-                && matches!(
-                    self.kind,
-                    ProviderKind::ChatGpt { .. } | ProviderKind::Local { .. }
-                )
-            {
-                let _ = self.app.emit_to(WINDOW_LABEL, "chat-delta", String::new());
-            }
-
             let appendix = (!req.system_appendix.is_empty()).then_some(req.system_appendix);
             match &mut self.kind {
                 ProviderKind::CliRelay {
@@ -776,10 +768,17 @@ pub async fn chat_send_with_mochi(
         ..ToolContext::new()
     };
     let app_for_req = app.clone();
+    let runtime_for_req = runtime.clone();
     let answer = run_tool_loop_with_model(
         runtime,
         &tool_ctx,
-        move |_run_id| Box::new(TauriApprovalRequester::new(app_for_req)),
+        move |run_id| {
+            Box::new(TauriApprovalRequester::for_run(
+                app_for_req,
+                runtime_for_req,
+                run_id,
+            ))
+        },
         app,
         &mut model,
     )
@@ -1044,6 +1043,7 @@ mod tests {
             vec![
                 MochiRunState::Thinking,
                 MochiRunState::Executing,
+                MochiRunState::Thinking,
                 MochiRunState::Done
             ]
         );
@@ -1085,6 +1085,7 @@ mod tests {
                 MochiRunState::Thinking,
                 MochiRunState::AwaitingClick,
                 MochiRunState::Executing,
+                MochiRunState::Thinking,
                 MochiRunState::Done
             ]
         );

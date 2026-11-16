@@ -1533,6 +1533,7 @@ export function generalSection(): HTMLElement {
     ),
     ...recapRows(),
     ...mochiAuditRows(),
+    ...mochiPermissionsRows(),
     ...updateRows(toggle, version),
     languageRow(),
   );
@@ -1847,16 +1848,25 @@ export function mochiAuditRows(): HTMLElement[] {
         window.clearTimeout(clearTimer);
         clearTimer = null;
       }
-      await MochiBridge.auditClear();
-      clearedActive = true;
-      setCount([]);
-      feedback.textContent = T.cleared;
-      clearTimer = window.setTimeout(() => {
-        clearTimer = null;
-        clearedActive = false;
+      try {
+        await MochiBridge.auditClear();
+        clearedActive = true;
+        setCount([]);
+        feedback.className = "hint";
+        feedback.textContent = T.cleared;
+        clearTimer = window.setTimeout(() => {
+          clearTimer = null;
+          clearedActive = false;
+          clearBtn.disabled = false;
+          feedback.textContent = "";
+        }, 2400);
+      } catch (err) {
         clearBtn.disabled = false;
-        feedback.textContent = "";
-      }, 2400);
+        feedback.className = "notice err";
+        feedback.textContent = t("Could not clear tool log: {error}", {
+          error: String(err).replace(/^Error:\s*/, ""),
+        });
+      }
     },
   }) as HTMLButtonElement;
 
@@ -1875,6 +1885,111 @@ export function mochiAuditRows(): HTMLElement[] {
       h("span", { class: "hint", style: "flex:1 1 0;min-width:0", text: T.about }),
     ),
   ];
+}
+
+/** Settings → General → Assistant permanent tool permissions & fail-closed recovery. */
+export function mochiPermissionsRows(): HTMLElement[] {
+  const T = {
+    label: t("Tool permissions"),
+    none: t("No permanent tool permissions."),
+    invalidReason: t("Invalid or missing permissions file."),
+    reset: t("Restore default permissions"),
+    revoke: t("Revoke"),
+  };
+  const box = h("div", { class: "mochi-permissions" });
+  const errorBox = h("div", { class: "notice err", style: "display:none" });
+
+  const showError = (err: unknown) => {
+    errorBox.textContent = t("Could not update tool permissions: {error}", {
+      error: String(err).replace(/^Error:\s*/, ""),
+    });
+    errorBox.style.display = "block";
+  };
+
+  const render = (status: Awaited<ReturnType<typeof MochiBridge.permissionsStatus>>) => {
+    clear(box);
+    errorBox.style.display = "none";
+
+    if (!status || (status.healthy && status.alwaysAllow.length === 0)) {
+      box.append(
+        h("div", { class: "row" },
+          h("label", { text: T.label }),
+          h("span", { class: "hint", text: T.none }),
+        ),
+      );
+      return;
+    }
+
+    if (!status.healthy) {
+      const reason = status.failClosedReason || T.invalidReason;
+      const resetBtn = h("button", {
+        class: "danger",
+        text: T.reset,
+        onclick: async () => {
+          resetBtn.disabled = true;
+          try {
+            await MochiBridge.permissionsResetDefault();
+            await refresh();
+          } catch (err) {
+            resetBtn.disabled = false;
+            showError(err);
+          }
+        },
+      }) as HTMLButtonElement;
+
+      box.append(
+        h("div", { class: "row" },
+          h("label", { text: T.label }),
+          h("div", {
+            class: "notice err",
+            style: "flex:1 1 0;min-width:0",
+            text: t("Permissions locked (fail-closed): {reason}", { reason }),
+          }),
+        ),
+        h("div", { class: "row" },
+          h("label", {}),
+          resetBtn,
+        ),
+        errorBox,
+      );
+      return;
+    }
+
+    status.alwaysAllow.forEach((toolId, index) => {
+      const revokeBtn = h("button", {
+        text: T.revoke,
+        onclick: async () => {
+          revokeBtn.disabled = true;
+          try {
+            await MochiBridge.permissionsRevoke(toolId);
+            await refresh();
+          } catch (err) {
+            revokeBtn.disabled = false;
+            showError(err);
+          }
+        },
+      }) as HTMLButtonElement;
+
+      box.append(
+        h("div", { class: "row" },
+          h("label", { text: index === 0 ? T.label : "" }),
+          h("code", { text: toolId }),
+          revokeBtn,
+        ),
+      );
+    });
+    box.append(errorBox);
+  };
+
+  const refresh = async () => {
+    const status = await MochiBridge.permissionsStatus().catch(() => null);
+    render(status);
+  };
+
+  render(null);
+  void refresh();
+
+  return [box];
 }
 
 // ── Language ──────────────────────────────────────────────────────────────────

@@ -313,8 +313,7 @@ export class Island {
             ? "allow"
             : d;
         Sound.play(effective === "deny" ? "blip" : "approve");
-        // bridge.ts declara apenas "allow" | "deny" para hooks externos; pedidos mochi_tool Medium aceitam "always" no Rust.
-        void Bridge.approvalDecision(req.requestId, effective as "allow" | "deny");
+        void Bridge.approvalDecision(req.requestId, effective);
         this.closeApproval();
       },
       answer: (answers) => {

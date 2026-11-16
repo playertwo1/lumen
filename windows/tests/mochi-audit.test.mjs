@@ -43,13 +43,19 @@ window.addEventListener = () => {};
 
 const { MochiBridge } = await import("../src/core/bridge.ts");
 const { setLanguage } = await import("../src/i18n/i18n.ts");
-const { mochiAuditRows, generalSection } = await import("../src/settings/main.ts");
+const { mochiAuditRows, mochiPermissionsRows, generalSection } = await import("../src/settings/main.ts");
 
 const originalInvoke = internals.invoke;
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 let auditEntries = [];
 let failAuditList = false;
+let failAuditClear = false;
+let permissionStatus = {
+  healthy: true,
+  failClosedReason: null,
+  alwaysAllow: [],
+};
 
 beforeEach(() => {
   setLanguage("en");
@@ -76,6 +82,12 @@ beforeEach(() => {
     },
   ];
   failAuditList = false;
+  failAuditClear = false;
+  permissionStatus = {
+    healthy: true,
+    failClosedReason: null,
+    alwaysAllow: [],
+  };
 
   internals.invoke = async (cmd, args) => {
     if (cmd === "mochi_audit_list") {
@@ -85,7 +97,29 @@ beforeEach(() => {
     }
     if (cmd === "mochi_audit_clear") {
       calls.push([cmd, args]);
+      if (failAuditClear) throw new Error("disk locked");
       auditEntries = [];
+      return null;
+    }
+    if (cmd === "mochi_permissions_status") {
+      calls.push([cmd, args]);
+      return permissionStatus;
+    }
+    if (cmd === "mochi_permissions_revoke") {
+      calls.push([cmd, args]);
+      permissionStatus = {
+        ...permissionStatus,
+        alwaysAllow: permissionStatus.alwaysAllow.filter((id) => id !== args?.toolId),
+      };
+      return true;
+    }
+    if (cmd === "mochi_permissions_reset_default") {
+      calls.push([cmd, args]);
+      permissionStatus = {
+        healthy: true,
+        failClosedReason: null,
+        alwaysAllow: [],
+      };
       return null;
     }
     return originalInvoke(cmd, args);
@@ -161,4 +195,71 @@ test("generalSection places mochiAuditRows right below recapRows and supports pt
 
   assert.equal(sent("mochi_audit_clear").length, 1);
   assert.match(section.textContent, /Registro limpo\./);
+});
+
+test("mochiAuditRows keeps count and shows error when mochi_audit_clear fails", async () => {
+  failAuditClear = true;
+  const container = document.createElement("div");
+  container.append(...mochiAuditRows());
+  await settle();
+
+  assert.match(container.textContent, /2 local entries/);
+  const clearBtn = container.find("button").find((b) => b.classList.contains("danger"));
+  await clearBtn.fire("click");
+  await settle();
+
+  assert.equal(sent("mochi_audit_clear").length, 1);
+  assert.equal(clearBtn.disabled, false);
+  assert.match(container.textContent, /2 local entries/);
+  assert.doesNotMatch(container.textContent, /Tool log cleared\./);
+  assert.match(container.textContent, /Could not clear tool log: disk locked/);
+});
+
+test("mochiPermissionsRows shows fail-closed warning and restores default permissions on click", async () => {
+  permissionStatus = {
+    healthy: false,
+    failClosedReason: "schema inválido",
+    alwaysAllow: [],
+  };
+
+  const container = document.createElement("div");
+  container.append(...mochiPermissionsRows());
+  await settle();
+
+  assert.match(container.textContent, /Permissions locked \(fail-closed\): schema inválido/);
+  const resetBtn = container.find("button").find((b) => b.classList.contains("danger"));
+  assert.ok(resetBtn, "deve existir botão danger para restaurar permissões padrão");
+  assert.equal(resetBtn.textContent, "Restore default permissions");
+
+  await resetBtn.fire("click");
+  await settle();
+
+  assert.equal(sent("mochi_permissions_reset_default").length, 1);
+  assert.match(container.textContent, /No permanent tool permissions\./);
+  assert.doesNotMatch(container.textContent, /fail-closed/);
+});
+
+test("mochiPermissionsRows lists alwaysAllow tools and revokes immediately on click", async () => {
+  permissionStatus = {
+    healthy: true,
+    failClosedReason: null,
+    alwaysAllow: ["ping", "med_probe"],
+  };
+
+  const container = document.createElement("div");
+  container.append(...mochiPermissionsRows());
+  await settle();
+
+  assert.match(container.textContent, /ping/);
+  assert.match(container.textContent, /med_probe/);
+  const revokeButtons = container.find("button").filter((b) => b.textContent === "Revoke");
+  assert.equal(revokeButtons.length, 2);
+
+  await revokeButtons[1].fire("click");
+  await settle();
+
+  assert.deepEqual(sent("mochi_permissions_revoke"), [{ toolId: "med_probe" }]);
+  assert.match(container.textContent, /ping/);
+  assert.doesNotMatch(container.textContent, /med_probe/);
+  assert.equal(container.find("button").filter((b) => b.textContent === "Revoke").length, 1);
 });

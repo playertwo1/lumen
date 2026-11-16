@@ -419,7 +419,17 @@ fn match_path_span(rest: &str, prev: Option<char>) -> Option<usize> {
         }
     }
 
-    // 5) Caminhos POSIX pessoais/raiz (/home/..., /Users/..., /root/..., ~/..., /var/folders/..., /tmp/...)
+    // 5) Caminhos POSIX pessoais/raiz (/home/..., /Users/..., /root/..., ~/..., /var/folders/..., /tmp/..., /mnt/<drive>/...)
+    if rest.starts_with("/mnt/") {
+        let after_mnt = &rest["/mnt/".len()..];
+        let mut chars = after_mnt.chars();
+        if let (Some(drive), Some('/')) = (chars.next(), chars.next()) {
+            if drive.is_ascii_alphabetic() {
+                return Some(consume_path(rest, prev));
+            }
+        }
+    }
+
     const POSIX_PREFIXES: &[&str] = &[
         "/home/",
         "/Users/",
@@ -536,7 +546,7 @@ fn match_secret_kv(rest: &str, prev: Option<char>) -> Option<(usize, usize)> {
     let mut prefix_len = key_total_len + after_key_trim_len + sep_ch.len_utf8();
     let after_sep = &rest[prefix_len..];
     let spaces_after_sep = after_sep.len() - after_sep.trim_start_matches(' ').len();
-    if sep_ch == '=' && spaces_after_sep > 0 && !after_sep[spaces_after_sep..].starts_with(['"', '\'']) {
+    if sep_ch == '=' {
         prefix_len += spaces_after_sep;
     } else if sep_ch == ':' {
         if !key_quoted && spaces_after_sep == 0 && after_sep.starts_with("//") {
@@ -944,5 +954,21 @@ mod tests {
         std::fs::write(dir.audit_path(), b"   \n").unwrap();
         let empty = AuditLog::load_from(dir.audit_path());
         assert!(empty.list(None).is_empty());
+    }
+
+    #[test]
+    fn redact_summary_masks_spaced_quoted_secrets_and_wsl_mnt_paths() {
+        let out_double = redact_summary("Falha com token = \"segredo123\" no config");
+        assert!(!out_double.contains("segredo123"), "vazou token: {out_double}");
+        assert!(out_double.contains("token = \"[redigido]\""), "formato inesperado: {out_double}");
+
+        let out_single = redact_summary("Erro em api_key= 'minhaChave' ao conectar");
+        assert!(!out_single.contains("minhaChave"), "vazou api_key: {out_single}");
+        assert!(out_single.contains("api_key= '[redigido]'"), "formato inesperado: {out_single}");
+
+        let out_wsl = redact_summary("Lendo /mnt/c/Users/alice/doc.txt localmente");
+        assert!(!out_wsl.contains("alice"), "vazou caminho WSL: {out_wsl}");
+        assert!(!out_wsl.contains("/mnt/c"), "vazou prefixo WSL: {out_wsl}");
+        assert!(out_wsl.contains("[caminho]"), "esperado [caminho]: {out_wsl}");
     }
 }

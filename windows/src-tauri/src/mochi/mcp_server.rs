@@ -46,6 +46,25 @@ struct AuthRequest {
     token: String,
 }
 
+#[derive(Clone)]
+enum McpRequesterSource {
+    App(AppHandle),
+    Custom(Arc<dyn ApprovalRequester>),
+    #[cfg(test)]
+    Factory(Arc<dyn Fn(&MochiRuntime, u64) -> Arc<dyn ApprovalRequester> + Send + Sync>),
+}
+
+struct McpActiveRunGuard<'a> {
+    runtime: &'a MochiRuntime,
+    run_id: u64,
+}
+
+impl Drop for McpActiveRunGuard<'_> {
+    fn drop(&mut self) {
+        self.runtime.finish_run(self.run_id);
+    }
+}
+
 /// Handle de ciclo de vida do servidor MCP local.
 #[derive(Debug)]
 pub struct McpServerHandle {
@@ -69,17 +88,34 @@ impl McpServerHandle {
         app: Option<AppHandle>,
         endpoint_path: PathBuf,
     ) -> Result<Self, String> {
-        let requester: Arc<dyn ApprovalRequester> = match app {
-            Some(app_handle) => Arc::new(TauriApprovalRequester::new(app_handle)),
-            None => Arc::new(DefaultDenyRequester),
+        let requester_source = match app {
+            Some(app_handle) => McpRequesterSource::App(app_handle),
+            None => McpRequesterSource::Custom(Arc::new(DefaultDenyRequester)),
         };
-        Self::start_with_requester(runtime, requester, endpoint_path).await
+        Self::start_with_source(runtime, requester_source, endpoint_path).await
     }
 
     /// Inicia o servidor com um `ApprovalRequester` explícito (isolando testes unitários da UI Tauri).
     pub async fn start_with_requester(
         runtime: MochiRuntime,
         requester: Arc<dyn ApprovalRequester>,
+        endpoint_path: PathBuf,
+    ) -> Result<Self, String> {
+        Self::start_with_source(runtime, McpRequesterSource::Custom(requester), endpoint_path).await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn start_with_requester_factory(
+        runtime: MochiRuntime,
+        factory: Arc<dyn Fn(&MochiRuntime, u64) -> Arc<dyn ApprovalRequester> + Send + Sync>,
+        endpoint_path: PathBuf,
+    ) -> Result<Self, String> {
+        Self::start_with_source(runtime, McpRequesterSource::Factory(factory), endpoint_path).await
+    }
+
+    async fn start_with_source(
+        runtime: MochiRuntime,
+        requester_source: McpRequesterSource,
         endpoint_path: PathBuf,
     ) -> Result<Self, String> {
         let token = generate_token_hex()?;
@@ -104,7 +140,7 @@ impl McpServerHandle {
         let accept_task = tokio::spawn(accept_loop(
             listener,
             detached_runtime,
-            requester,
+            requester_source,
             token,
             shutdown_rx,
         ));
@@ -193,7 +229,7 @@ fn write_endpoint_file(path: &Path, endpoint: &McpEndpoint) -> Result<(), String
 async fn accept_loop(
     listener: TcpListener,
     runtime: MochiRuntime,
-    requester: Arc<dyn ApprovalRequester>,
+    requester_source: McpRequesterSource,
     expected_token: String,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
@@ -221,14 +257,14 @@ async fn accept_loop(
                     continue;
                 }
                 let runtime_clone = runtime.clone();
-                let requester_clone = Arc::clone(&requester);
+                let source_clone = requester_source.clone();
                 let token_clone = expected_token.clone();
                 let shutdown_clone = shutdown_rx.clone();
                 tokio::spawn(async move {
                     handle_connection(
                         stream,
                         runtime_clone,
-                        requester_clone,
+                        source_clone,
                         token_clone,
                         shutdown_clone,
                     )
@@ -242,7 +278,7 @@ async fn accept_loop(
 async fn handle_connection(
     stream: TcpStream,
     runtime: MochiRuntime,
-    requester: Arc<dyn ApprovalRequester>,
+    requester_source: McpRequesterSource,
     expected_token: String,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
@@ -307,7 +343,7 @@ async fn handle_connection(
         }
 
         if let Some(reply) =
-            process_rpc_bytes(&line, &runtime, requester.as_ref(), &shutdown_rx).await
+            process_rpc_bytes(&line, &runtime, &requester_source, &shutdown_rx).await
         {
             if write_json_line(&mut write_half, &reply).await.is_err() {
                 break;
@@ -398,7 +434,7 @@ fn rpc_error(id: Value, code: i64, message: impl Into<String>) -> Value {
 async fn process_rpc_bytes(
     bytes: &[u8],
     runtime: &MochiRuntime,
-    requester: &dyn ApprovalRequester,
+    requester_source: &McpRequesterSource,
     shutdown_rx: &watch::Receiver<bool>,
 ) -> Option<Value> {
     let req: Value = match serde_json::from_slice(bytes) {
@@ -441,23 +477,29 @@ async fn process_rpc_bytes(
         ));
     };
 
-    match method {
-        "notifications/initialized" | "notifications/cancelled" => None,
-        _ => {
-            let reply_id = raw_id?;
-            Some(
-                dispatch_rpc_request(
-                    reply_id,
-                    method,
-                    obj.get("params"),
-                    runtime,
-                    requester,
-                    shutdown_rx,
-                )
-                .await,
-            )
-        }
+    if raw_id.is_none() && method.starts_with("notifications/") {
+        return None;
     }
+
+    let Some(reply_id) = raw_id else {
+        return Some(rpc_error(
+            Value::Null,
+            -32600,
+            "Invalid Request: 'id' obrigatório.",
+        ));
+    };
+
+    Some(
+        dispatch_rpc_request(
+            reply_id,
+            method,
+            obj.get("params"),
+            runtime,
+            requester_source,
+            shutdown_rx,
+        )
+        .await,
+    )
 }
 
 async fn dispatch_rpc_request(
@@ -465,7 +507,7 @@ async fn dispatch_rpc_request(
     method: &str,
     params: Option<&Value>,
     runtime: &MochiRuntime,
-    requester: &dyn ApprovalRequester,
+    requester_source: &McpRequesterSource,
     shutdown_rx: &watch::Receiver<bool>,
 ) -> Value {
     match method {
@@ -528,15 +570,43 @@ async fn dispatch_rpc_request(
                 }
             };
 
+            let (run_id, mut run_cancel_rx) = runtime.begin_run();
+            let _run_guard = McpActiveRunGuard { runtime, run_id };
+            let requester_arc: Arc<dyn ApprovalRequester> = match requester_source {
+                McpRequesterSource::App(app_handle) => Arc::new(TauriApprovalRequester::for_run(
+                    app_handle.clone(),
+                    runtime.clone(),
+                    run_id,
+                )),
+                McpRequesterSource::Custom(req) => Arc::clone(req),
+                #[cfg(test)]
+                McpRequesterSource::Factory(factory) => factory(runtime, run_id),
+            };
+
+            let (combined_tx, combined_rx) =
+                watch::channel(*shutdown_rx.borrow() || *run_cancel_rx.borrow());
+            let mut shutdown_watch = shutdown_rx.clone();
+            let cancel_relay = tokio::spawn(async move {
+                tokio::select! {
+                    _ = super::wait_for_cancel(&mut shutdown_watch) => {
+                        let _ = combined_tx.send(true);
+                    }
+                    _ = super::wait_for_cancel(&mut run_cancel_rx) => {
+                        let _ = combined_tx.send(true);
+                    }
+                }
+            });
+
             let outcome = runtime
                 .invoke_tool(
                     name,
                     arguments,
                     &ToolContext::default(),
-                    requester,
-                    shutdown_rx.clone(),
+                    requester_arc.as_ref(),
+                    combined_rx,
                 )
                 .await;
+            cancel_relay.abort();
 
             let result = match outcome {
                 Ok(ok) => {
@@ -981,5 +1051,180 @@ mod tests {
         assert!(endpoint_path.exists());
         drop(handle2);
         assert!(!endpoint_path.exists());
+    }
+
+    #[tokio::test]
+    async fn invalid_payload_without_id_replies_before_subsequent_ping_call() {
+        let dir = TestDir::new("sync-invalid");
+        let endpoint_path = dir.path.join(MCP_ENDPOINT_FILE_NAME);
+        let runtime = test_runtime(&dir.path, ToolRegistry::with_default_tools());
+        let handle = start_test_server(runtime, endpoint_path.clone()).await;
+        let endpoint: McpEndpoint =
+            serde_json::from_slice(&std::fs::read(&endpoint_path).unwrap()).unwrap();
+
+        let (mut reader, mut writer) = connect_and_auth(endpoint.port, &endpoint.token).await;
+
+        writer.write_all(b"{\"foo\":1}\n[1]\n").await.unwrap();
+        writer.flush().await.unwrap();
+
+        let mut line1 = String::new();
+        reader.read_line(&mut line1).await.unwrap();
+        let err1: Value = serde_json::from_str(line1.trim()).unwrap();
+        assert_eq!(err1["id"], Value::Null);
+        assert_eq!(err1["error"]["code"], -32600);
+
+        let mut line2 = String::new();
+        reader.read_line(&mut line2).await.unwrap();
+        let err2: Value = serde_json::from_str(line2.trim()).unwrap();
+        assert_eq!(err2["id"], Value::Null);
+        assert_eq!(err2["error"]["code"], -32600);
+
+        let resp = rpc_roundtrip(
+            &mut reader,
+            &mut writer,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": { "name": "ping", "arguments": {} }
+            }),
+        )
+        .await;
+        assert_eq!(resp["id"], 2);
+        assert_eq!(resp["result"]["isError"], false);
+
+        handle.shutdown();
+    }
+
+    #[tokio::test]
+    async fn cancel_execution_while_mcp_awaits_click_cleans_pending_and_never_persists_always_allow() {
+        use crate::mochi::approval_bridge::request_via_pending_for_run;
+        use crate::mochi::permissions::{ApprovalFuture, ApprovalPromptRequest};
+        use crate::pipe::Pending;
+
+        static EXEC_COUNT: AtomicUsize = AtomicUsize::new(0);
+        fn medium_exec(_args: Value, _ctx: ExecutionContext) -> ToolFuture {
+            EXEC_COUNT.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(json!({ "ok": true })) })
+        }
+
+        EXEC_COUNT.store(0, Ordering::SeqCst);
+        let dir = TestDir::new("mcp-cancel-pending");
+        let endpoint_path = dir.path.join(MCP_ENDPOINT_FILE_NAME);
+        let mut registry = ToolRegistry::with_default_tools();
+        registry
+            .register_and_enable(ToolDefinition {
+                id: "mcp_med_tool",
+                description: "Ferramenta média via MCP",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }),
+                risk: RiskLevel::Medium,
+                timeout: Duration::from_secs(5),
+                check_availability: |_| Availability::Available,
+                dry_run: |_| Ok("Alterar item de teste.".to_string()),
+                execute: medium_exec,
+                verify: |_, _| Ok(()),
+                audit_summary: |_, _| "mcp médio".to_string(),
+            })
+            .unwrap();
+
+        let runtime = test_runtime(&dir.path, registry);
+        let pending = Arc::new(Pending::default());
+        let (waiting_tx, waiting_rx) = tokio::sync::oneshot::channel::<()>();
+        let waiting_tx = Arc::new(std::sync::Mutex::new(Some(waiting_tx)));
+
+        struct McpPendingRequester {
+            pending: Arc<Pending>,
+            runtime: MochiRuntime,
+            run_id: u64,
+            waiting_tx: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
+        }
+
+        impl ApprovalRequester for McpPendingRequester {
+            fn request<'a>(&'a self, prompt: ApprovalPromptRequest) -> ApprovalFuture<'a> {
+                Box::pin(async move {
+                    if let Some(tx) = self.waiting_tx.lock().unwrap().take() {
+                        let _ = tx.send(());
+                    }
+                    request_via_pending_for_run(
+                        &self.pending,
+                        "mcp-req-1".to_string(),
+                        prompt,
+                        Duration::from_secs(5),
+                        Duration::from_secs(5),
+                        Some((self.runtime.clone(), self.run_id)),
+                    )
+                    .await
+                })
+            }
+        }
+
+        let pending_for_factory = Arc::clone(&pending);
+        let waiting_for_factory = Arc::clone(&waiting_tx);
+        let factory: Arc<dyn Fn(&MochiRuntime, u64) -> Arc<dyn ApprovalRequester> + Send + Sync> =
+            Arc::new(move |rt, run_id| {
+                Arc::new(McpPendingRequester {
+                    pending: Arc::clone(&pending_for_factory),
+                    runtime: rt.clone(),
+                    run_id,
+                    waiting_tx: Arc::clone(&waiting_for_factory),
+                })
+            });
+
+        let handle = McpServerHandle::start_with_requester_factory(
+            runtime.clone(),
+            factory,
+            endpoint_path.clone(),
+        )
+        .await
+        .unwrap();
+        let endpoint: McpEndpoint =
+            serde_json::from_slice(&std::fs::read(&endpoint_path).unwrap()).unwrap();
+
+        let (mut reader, mut writer) = connect_and_auth(endpoint.port, &endpoint.token).await;
+        let call_line = format!(
+            "{}\n",
+            serde_json::to_string(&json!({
+                "jsonrpc": "2.0",
+                "id": 99,
+                "method": "tools/call",
+                "params": { "name": "mcp_med_tool", "arguments": {} }
+            }))
+            .unwrap()
+        );
+        writer.write_all(call_line.as_bytes()).await.unwrap();
+        writer.flush().await.unwrap();
+
+        // Aguarda a chamada MCP entrar na espera de clique.
+        tokio::time::timeout(Duration::from_secs(2), waiting_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::task::yield_now().await;
+
+        // Cancela no runtime principal (mesmo active_run compartilhado com detached_for_mcp).
+        assert!(runtime.cancel_execution(None));
+
+        let mut reply = String::new();
+        tokio::time::timeout(Duration::from_secs(2), reader.read_line(&mut reply))
+            .await
+            .unwrap()
+            .unwrap();
+        let resp: Value = serde_json::from_str(reply.trim()).unwrap();
+        assert_eq!(resp["id"], 99);
+        assert_eq!(resp["result"]["isError"], true);
+        let err_text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(err_text.contains("cancel"), "erro inesperado: {err_text}");
+
+        // PendingMapGuard deve ter removido o pedido ao dropar a future de autorização.
+        assert!(!pending.remove_mochi("mcp-req-1"));
+        assert!(!runtime.cancel_execution(None));
+        assert_eq!(EXEC_COUNT.load(Ordering::SeqCst), 0);
+        assert!(runtime.permissions.status().always_allow.is_empty());
+
+        handle.shutdown();
     }
 }

@@ -14,9 +14,11 @@ use std::future::Future;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::Ordering;
 use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 
 use super::registry::{is_valid_tool_id, RiskLevel, ToolError};
 
@@ -200,6 +202,35 @@ impl PermissionEngine {
         summary: &str,
         requester: &dyn ApprovalRequester,
     ) -> Result<PermitToken, ToolError> {
+        self.authorize_with_guard(
+            tool_id,
+            risk,
+            summary,
+            requester,
+            || crate::integrations::PAUSED.load(Ordering::Relaxed),
+            None,
+        )
+        .await
+    }
+
+    /// Autoriza a execução verificando pausa rápida e cancelamento antes de pedir clique
+    /// e antes de persistir `alwaysAllow` em `mochi-permissions.json`.
+    pub async fn authorize_with_guard(
+        &self,
+        tool_id: &str,
+        risk: RiskLevel,
+        summary: &str,
+        requester: &dyn ApprovalRequester,
+        is_paused: impl Fn() -> bool,
+        cancel_rx: Option<&watch::Receiver<bool>>,
+    ) -> Result<PermitToken, ToolError> {
+        if is_paused() {
+            return Err(ToolError::Paused);
+        }
+        if cancel_rx.is_some_and(|rx| *rx.borrow()) {
+            return Err(ToolError::Cancelled);
+        }
+
         let preflight = {
             let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             reload_locked(&self.config_path, &mut guard);
@@ -236,6 +267,13 @@ impl PermissionEngine {
             });
         }
 
+        if is_paused() {
+            return Err(ToolError::Paused);
+        }
+        if cancel_rx.is_some_and(|rx| *rx.borrow()) {
+            return Err(ToolError::Cancelled);
+        }
+
         let prompt = ApprovalPromptRequest {
             tool_id: tool_id.to_string(),
             summary: summary.to_string(),
@@ -243,6 +281,13 @@ impl PermissionEngine {
             allow_always: risk == RiskLevel::Medium,
         };
         let reply = requester.request(prompt).await;
+
+        if is_paused() {
+            return Err(ToolError::Paused);
+        }
+        if cancel_rx.is_some_and(|rx| *rx.borrow()) {
+            return Err(ToolError::Cancelled);
+        }
 
         let persist_always = match reply {
             UserApprovalReply::AllowOnce => false,
@@ -280,6 +325,12 @@ impl PermissionEngine {
         };
 
         let decision = if persist_always {
+            if is_paused() {
+                return Err(ToolError::Paused);
+            }
+            if cancel_rx.is_some_and(|rx| *rx.borrow()) {
+                return Err(ToolError::Cancelled);
+            }
             if !cfg.always_allow.iter().any(|id| id == tool_id) {
                 cfg.always_allow.push(tool_id.to_string());
                 cfg.always_allow.sort();
@@ -894,5 +945,72 @@ mod tests {
         assert!(parse_config("\u{FEFF}   ").is_err());
         assert!(parse_config(r#"{"version":1,"alwaysAllow":["a","a"]}"#).is_err());
         assert!(parse_config(r#"{"version":1,"alwaysAllow":[],"mode":"AUTO"}"#).is_err());
+    }
+
+    #[tokio::test]
+    async fn paused_or_cancelled_never_persists_always_allow() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+
+        struct PausingRequester {
+            flag: Arc<AtomicBool>,
+        }
+        impl ApprovalRequester for PausingRequester {
+            fn request<'a>(&'a self, _prompt: ApprovalPromptRequest) -> ApprovalFuture<'a> {
+                Box::pin(async move {
+                    self.flag.store(true, Ordering::SeqCst);
+                    UserApprovalReply::AllowAlways
+                })
+            }
+        }
+
+        let dir = TempDir::new("paused-no-persist");
+        std::fs::write(dir.config(), "{\"version\":1,\"alwaysAllow\":[]}\n").unwrap();
+        let engine = PermissionEngine::load_from(dir.config());
+
+        let paused = Arc::new(AtomicBool::new(false));
+        let req = PausingRequester {
+            flag: Arc::clone(&paused),
+        };
+        let err = engine
+            .authorize_with_guard(
+                "med_tool",
+                RiskLevel::Medium,
+                "teste",
+                &req,
+                || paused.load(Ordering::SeqCst),
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(err, ToolError::Paused);
+        assert!(engine.status().always_allow.is_empty());
+
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        struct CancellingRequester {
+            tx: watch::Sender<bool>,
+        }
+        impl ApprovalRequester for CancellingRequester {
+            fn request<'a>(&'a self, _prompt: ApprovalPromptRequest) -> ApprovalFuture<'a> {
+                Box::pin(async move {
+                    let _ = self.tx.send(true);
+                    UserApprovalReply::AllowAlways
+                })
+            }
+        }
+        let cancel_req = CancellingRequester { tx: cancel_tx };
+        let err_cancel = engine
+            .authorize_with_guard(
+                "med_tool",
+                RiskLevel::Medium,
+                "teste",
+                &cancel_req,
+                || false,
+                Some(&cancel_rx),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(err_cancel, ToolError::Cancelled);
+        assert!(engine.status().always_allow.is_empty());
     }
 }

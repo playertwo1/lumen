@@ -108,16 +108,16 @@ pub fn run_with_endpoint_and_stdio<R: BufRead, W: Write>(
             }
         };
 
-        let request_id = request_reply_id(&parsed);
+        let silent = is_silent_notification_value(&parsed);
 
         if conn.is_none() {
             conn = connect_and_auth(endpoint_path).ok();
         }
 
         let Some(active) = conn.as_mut() else {
-            if let Some(id) = request_id {
+            if !silent {
                 let err = json_rpc_error(
-                    id,
+                    error_reply_id(&parsed),
                     ERR_SERVER_UNAVAILABLE,
                     "Lumen MCP server unavailable",
                 );
@@ -126,7 +126,7 @@ pub fn run_with_endpoint_and_stdio<R: BufRead, W: Write>(
             continue;
         };
 
-        let reply = forward_one(active, trimmed, request_id.is_some());
+        let reply = forward_one(active, trimmed, !silent);
         match reply {
             Ok(Some(resp_line)) => {
                 writeln!(writer, "{resp_line}")
@@ -138,9 +138,9 @@ pub fn run_with_endpoint_and_stdio<R: BufRead, W: Write>(
             Ok(None) => {}
             Err(_) => {
                 conn = None;
-                if let Some(id) = request_id {
+                if !silent {
                     let err = json_rpc_error(
-                        id,
+                        error_reply_id(&parsed),
                         ERR_SERVER_UNAVAILABLE,
                         "Lumen MCP server connection lost",
                     );
@@ -153,16 +153,34 @@ pub fn run_with_endpoint_and_stdio<R: BufRead, W: Write>(
     Ok(())
 }
 
-fn request_reply_id(parsed: &Value) -> Option<Value> {
-    let obj = parsed.as_object()?;
-    let method = obj.get("method").and_then(Value::as_str);
-    if matches!(
-        method,
-        Some("notifications/initialized") | Some("notifications/cancelled")
-    ) {
-        return None;
+#[allow(dead_code)]
+fn is_silent_notification(line: &str) -> bool {
+    let Ok(parsed) = serde_json::from_str::<Value>(line) else {
+        return false;
+    };
+    is_silent_notification_value(&parsed)
+}
+
+fn is_silent_notification_value(parsed: &Value) -> bool {
+    let Some(obj) = parsed.as_object() else {
+        return false;
+    };
+    if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return false;
     }
-    obj.get("id").cloned()
+    let Some(method) = obj.get("method").and_then(Value::as_str) else {
+        return false;
+    };
+    method.starts_with("notifications/") && !obj.contains_key("id")
+}
+
+fn error_reply_id(parsed: &Value) -> Value {
+    parsed
+        .as_object()
+        .and_then(|obj| obj.get("id"))
+        .filter(|id| id.is_string() || id.is_number() || id.is_null())
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn read_endpoint(path: &Path) -> Result<Endpoint, String> {
@@ -513,5 +531,104 @@ mod tests {
         let resp: Value = serde_json::from_str(lines[0]).unwrap();
         assert_eq!(resp["id"], 42);
         assert_eq!(resp["error"]["code"], -32001);
+    }
+
+    #[test]
+    fn invalid_requests_without_id_stay_synchronized_before_ping_call() {
+        assert!(!is_silent_notification(r#"{"foo":1}"#));
+        assert!(!is_silent_notification("[1]"));
+        assert!(!is_silent_notification(r#"{"jsonrpc":"2.0","method":"ping"}"#));
+        assert!(!is_silent_notification(
+            r#"{"jsonrpc":"2.0","id":1,"method":"notifications/initialized"}"#
+        ));
+        assert!(is_silent_notification(
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#
+        ));
+        assert!(is_silent_notification(
+            r#"{"jsonrpc":"2.0","method":"notifications/custom"}"#
+        ));
+
+        let dir = TempDir::new("sync-invalid");
+        let endpoint_path = dir.path.join(ENDPOINT_FILE_NAME);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let token = "ef".repeat(32);
+
+        fs::write(
+            &endpoint_path,
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "port": port,
+                "token": token,
+                "pid": 4321,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let expected_token = token.clone();
+        let server_thread = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut writer = BufWriter::new(stream);
+
+            let mut auth_line = String::new();
+            reader.read_line(&mut auth_line).unwrap();
+            let auth: Value = serde_json::from_str(auth_line.trim()).unwrap();
+            assert_eq!(auth, json!({ "token": expected_token }));
+            writeln!(writer, "{}", json!({ "ok": true })).unwrap();
+            writer.flush().unwrap();
+
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap() > 0 {
+                let req: Value = serde_json::from_str(line.trim()).unwrap();
+                let resp = if req.get("method").and_then(Value::as_str) == Some("tools/call") {
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": req["id"],
+                        "result": {
+                            "content": [{ "type": "text", "text": "{\"status\":\"ok\"}" }],
+                            "isError": false
+                        }
+                    })
+                } else {
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": Value::Null,
+                        "error": { "code": -32600, "message": "Invalid Request" }
+                    })
+                };
+                writeln!(writer, "{resp}").unwrap();
+                writer.flush().unwrap();
+                line.clear();
+            }
+        });
+
+        let stdin_data = concat!(
+            "{\"foo\":1}\n",
+            "[1]\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"ping\",\"arguments\":{}}}\n"
+        );
+        let mut stdout_buf = Vec::new();
+        run_with_endpoint_and_stdio(
+            &endpoint_path,
+            Cursor::new(stdin_data.as_bytes()),
+            &mut stdout_buf,
+        )
+        .unwrap();
+        server_thread.join().unwrap();
+
+        let out_str = String::from_utf8(stdout_buf).unwrap();
+        let lines: Vec<&str> = out_str.lines().collect();
+        assert_eq!(lines.len(), 3);
+        let r1: Value = serde_json::from_str(lines[0]).unwrap();
+        let r2: Value = serde_json::from_str(lines[1]).unwrap();
+        let r3: Value = serde_json::from_str(lines[2]).unwrap();
+        assert_eq!(r1["id"], Value::Null);
+        assert_eq!(r1["error"]["code"], -32600);
+        assert_eq!(r2["id"], Value::Null);
+        assert_eq!(r2["error"]["code"], -32600);
+        assert_eq!(r3["id"], 2);
+        assert_eq!(r3["result"]["isError"], false);
     }
 }

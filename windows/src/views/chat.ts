@@ -426,7 +426,8 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     drawModelButton();
     Sound.play("send");
 
-    State.chatHistory.push({ id: nextId++, role: "user", content: query });
+    const userMsg: ChatMessage = { id: nextId++, role: "user", content: query };
+    State.chatHistory.push(userMsg);
     State.applyMochiRunState({ state: MOCHI_RUN_THINKING_PHASE, tool: null, detail: null });
     syncControls();
     onHeightChange();
@@ -452,6 +453,8 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       }
       Sound.play("finish");
     } catch (err) {
+      const last = State.chatHistory.at(-1);
+      if (last && last.id === userMsg.id) State.chatHistory.pop();
       const msg = String(err).replace(/^Error:\s*/, "");
       State.applyMochiRunState({ state: MOCHI_RUN_FAILED_PHASE, tool: null, detail: msg });
       State.noteMessage = msg;

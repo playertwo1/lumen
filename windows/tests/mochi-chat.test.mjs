@@ -167,3 +167,40 @@ test("oculta tags <mochi_tool_call> parciais e completas durante streaming e res
   assert.equal(finalReplies[0].textContent, "Ping concluído: lumen-mochi-m1");
   assert.ok(!finalReplies[0].textContent.includes("mochi_tool_call"));
 });
+
+test("erro na 1ª mensagem reverte State.chatHistory, preserva State.droppedFile e permite reenvio", async () => {
+  State.droppedFile = { path: "C:\\tmp\\doc.txt", name: "doc.txt", kind: "file" };
+  let attempt = 0;
+  answers.chat_send = () => {
+    attempt += 1;
+    if (attempt === 1) return Promise.reject(new Error("falha temporária"));
+    return Promise.resolve({ text: "ok com arquivo" });
+  };
+
+  $(".chat-input").value = "analise o arquivo";
+  $(".send-btn").fire("click");
+  await flush();
+  await flush();
+  view.sync();
+
+  assert.equal(State.chatHistory.length, 0);
+  assert.equal(State.view, "note");
+  assert.equal(State.noteMessage, "falha temporária");
+  assert.equal($(".mochi-run-error").style.display, "block");
+  assert.equal($(".mochi-run-error").textContent, "falha temporária");
+  assert.deepEqual(State.droppedFile, { path: "C:\\tmp\\doc.txt", name: "doc.txt", kind: "file" });
+
+  // Usuário volta ao chat e tenta novamente.
+  State.view = "prompt";
+  $(".chat-input").value = "analise o arquivo";
+  $(".send-btn").fire("click");
+  await flush();
+  await flush();
+  view.sync();
+
+  const reqs = sent("chat_send");
+  assert.equal(reqs.length, 2);
+  assert.equal(reqs[1].context?.kind, "file");
+  assert.equal(reqs[1].context?.path, "C:\\tmp\\doc.txt");
+  assert.equal(State.chatHistory.length, 2);
+});

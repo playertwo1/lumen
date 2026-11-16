@@ -12,24 +12,38 @@ use super::permissions::{
     ApprovalFuture, ApprovalPromptRequest, ApprovalRequester, UserApprovalReply,
 };
 use super::registry::RiskLevel;
+use super::MochiRuntime;
 
 /// Solicitante de aprovação humana conectado ao canal da ilha (`crate::pipe`).
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct TauriApprovalRequester {
     pub app: AppHandle,
+    run_binding: Option<(MochiRuntime, u64)>,
 }
 
 #[allow(dead_code)]
 impl TauriApprovalRequester {
     pub fn new(app: AppHandle) -> Self {
-        Self { app }
+        Self {
+            app,
+            run_binding: None,
+        }
+    }
+
+    pub fn for_run(app: AppHandle, runtime: MochiRuntime, run_id: u64) -> Self {
+        Self {
+            app,
+            run_binding: Some((runtime, run_id)),
+        }
     }
 }
 
 impl ApprovalRequester for TauriApprovalRequester {
     fn request<'a>(&'a self, prompt: ApprovalPromptRequest) -> ApprovalFuture<'a> {
-        Box::pin(async move { request_mochi_approval(&self.app, prompt).await })
+        Box::pin(async move {
+            request_mochi_approval_for_run(&self.app, prompt, self.run_binding.clone()).await
+        })
     }
 }
 
@@ -102,15 +116,17 @@ pub(crate) async fn await_pipe_reply(
 struct PendingCleanupGuard {
     app: AppHandle,
     request_id: String,
+    run_binding: Option<(MochiRuntime, u64)>,
     armed: bool,
 }
 
 #[allow(dead_code)]
 impl PendingCleanupGuard {
-    fn new(app: AppHandle, request_id: String) -> Self {
+    fn new(app: AppHandle, request_id: String, run_binding: Option<(MochiRuntime, u64)>) -> Self {
         Self {
             app,
             request_id,
+            run_binding,
             armed: true,
         }
     }
@@ -122,6 +138,9 @@ impl PendingCleanupGuard {
 
 impl Drop for PendingCleanupGuard {
     fn drop(&mut self) {
+        if let Some((runtime, run_id)) = &self.run_binding {
+            runtime.set_pending_request(*run_id, None);
+        }
         if self.armed {
             pipe::expire_mochi_request(&self.app, &self.request_id);
         }
@@ -134,6 +153,15 @@ pub async fn request_mochi_approval(
     app: &AppHandle,
     prompt: ApprovalPromptRequest,
 ) -> UserApprovalReply {
+    request_mochi_approval_for_run(app, prompt, None).await
+}
+
+#[allow(dead_code)]
+async fn request_mochi_approval_for_run(
+    app: &AppHandle,
+    prompt: ApprovalPromptRequest,
+    run_binding: Option<(MochiRuntime, u64)>,
+) -> UserApprovalReply {
     let allow_always = effective_allow_always(&prompt);
     let request_id = pipe::next_mochi_request_id();
     let payload = build_hook_payload(&request_id, &prompt);
@@ -142,9 +170,17 @@ pub async fn request_mochi_approval(
         return UserApprovalReply::NoResponse;
     };
 
-    let mut guard = PendingCleanupGuard::new(app.clone(), request_id.clone());
+    if let Some((runtime, run_id)) = &run_binding {
+        runtime.set_pending_request(*run_id, Some(request_id.clone()));
+    }
+
+    let mut guard = PendingCleanupGuard::new(app.clone(), request_id.clone(), run_binding.clone());
     let reply = await_pipe_reply(&mut rx, ACK_TIMEOUT, DECISION_TIMEOUT).await;
     guard.disarm();
+
+    if let Some((runtime, run_id)) = &run_binding {
+        runtime.set_pending_request(*run_id, None);
+    }
 
     let declined = matches!(reply, Some(Reply::Decline));
     if !matches!(reply, Some(Reply::Decision(_))) {
@@ -158,12 +194,16 @@ pub async fn request_mochi_approval(
 struct PendingMapGuard<'a> {
     pending: &'a Pending,
     request_id: String,
+    run_binding: Option<(MochiRuntime, u64)>,
     armed: bool,
 }
 
 #[cfg(test)]
 impl<'a> Drop for PendingMapGuard<'a> {
     fn drop(&mut self) {
+        if let Some((runtime, run_id)) = &self.run_binding {
+            runtime.set_pending_request(*run_id, None);
+        }
         if self.armed {
             self.pending.remove_mochi(&self.request_id);
         }
@@ -178,6 +218,26 @@ pub(crate) async fn request_via_pending(
     ack_timeout: Duration,
     decision_timeout: Duration,
 ) -> UserApprovalReply {
+    request_via_pending_for_run(
+        pending,
+        request_id,
+        prompt,
+        ack_timeout,
+        decision_timeout,
+        None,
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(crate) async fn request_via_pending_for_run(
+    pending: &Pending,
+    request_id: String,
+    prompt: ApprovalPromptRequest,
+    ack_timeout: Duration,
+    decision_timeout: Duration,
+    run_binding: Option<(MochiRuntime, u64)>,
+) -> UserApprovalReply {
     let allow_always = effective_allow_always(&prompt);
     let mut rx = pending.insert_mochi(
         request_id.clone(),
@@ -185,13 +245,20 @@ pub(crate) async fn request_via_pending(
         ack_timeout,
         decision_timeout,
     );
+    if let Some((runtime, run_id)) = &run_binding {
+        runtime.set_pending_request(*run_id, Some(request_id.clone()));
+    }
     let mut guard = PendingMapGuard {
         pending,
         request_id: request_id.clone(),
+        run_binding: run_binding.clone(),
         armed: true,
     };
     let reply = await_pipe_reply(&mut rx, ack_timeout, decision_timeout).await;
     guard.armed = false;
+    if let Some((runtime, run_id)) = &run_binding {
+        runtime.set_pending_request(*run_id, None);
+    }
     pending.remove_mochi(&request_id);
     map_pipe_reply_to_user_reply(reply, allow_always)
 }
