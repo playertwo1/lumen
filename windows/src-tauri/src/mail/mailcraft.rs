@@ -183,23 +183,39 @@ pub fn resolve_cli_binary(bin: &str) -> PathBuf {
     PathBuf::from(trimmed)
 }
 
-#[cfg(windows)]
-fn find_windows_mailcraft_cli() -> Option<PathBuf> {
+/// Locais onde o instalador do MailCraft põe `file_name` no Windows (em ordem de preferência).
+#[cfg(any(windows, test))]
+pub fn mailcraft_exe_candidates(file_name: &str) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     for var in ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"] {
         if let Some(root) = std::env::var_os(var) {
-            candidates.push(PathBuf::from(root).join("MailCraft").join("mailcraft-cli.exe"));
+            candidates.push(PathBuf::from(root).join("MailCraft").join(file_name));
         }
     }
     if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-        candidates.push(PathBuf::from(&local).join("Programs").join("MailCraft").join("mailcraft-cli.exe"));
-        candidates.push(PathBuf::from(local).join("MailCraft").join("mailcraft-cli.exe"));
+        candidates.push(PathBuf::from(&local).join("Programs").join("MailCraft").join(file_name));
+        candidates.push(PathBuf::from(local).join("MailCraft").join(file_name));
     }
-    candidates.into_iter().find(|p| p.is_file())
+    candidates
+}
+
+#[cfg(windows)]
+fn find_windows_mailcraft_cli() -> Option<PathBuf> {
+    mailcraft_exe_candidates("mailcraft-cli.exe").into_iter().find(|p| p.is_file())
 }
 
 #[cfg(not(windows))]
 fn find_windows_mailcraft_cli() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(windows)]
+fn find_windows_mailcraft_app() -> Option<PathBuf> {
+    mailcraft_exe_candidates("mailcraft.exe").into_iter().find(|p| p.is_file())
+}
+
+#[cfg(not(windows))]
+fn find_windows_mailcraft_app() -> Option<PathBuf> {
     None
 }
 
@@ -209,6 +225,33 @@ fn is_read_only_command(cmd: &str) -> bool {
 
 fn mailcraft_gui_running() -> bool {
     cfg!(windows) && crate::platform::process_running("mailcraft.exe")
+}
+
+/// Abre o MailCraft com `--control <port>` sem fechar um app que o usuário já tem aberto.
+pub fn open_app_with_control(port: u16) -> Result<String, String> {
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok() {
+        return Ok(format!("MailCraft já está aberto com o canal de controle na porta {port}."));
+    }
+    if mailcraft_gui_running() {
+        return Err("O MailCraft está aberto sem o canal de controle. Feche o MailCraft e clique em Abrir MailCraft de novo.".to_string());
+    }
+    let exe = find_windows_mailcraft_app().ok_or("Não encontrei o MailCraft (mailcraft.exe) instalado neste computador.")?;
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("--control").arg(port.to_string());
+    if let Some(dir) = exe.parent() {
+        cmd.current_dir(dir);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // Sem isso o MailCraft morre junto com o Lumen.
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    cmd.spawn().map_err(|e| format!("Não foi possível abrir o MailCraft: {e}"))?;
+    Ok(format!("MailCraft aberto com o canal de controle na porta {port}."))
 }
 
 pub fn key_path(settings: &Path, port: u16) -> PathBuf {
@@ -1319,6 +1362,25 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpListener;
+
+    #[test]
+    fn mailcraft_exe_candidates_stay_inside_mailcraft_folder() {
+        let candidates = mailcraft_exe_candidates("mailcraft.exe");
+        #[cfg(windows)]
+        assert!(!candidates.is_empty(), "o Windows sempre tem ProgramFiles");
+        for p in &candidates {
+            assert!(p.ends_with(Path::new("MailCraft").join("mailcraft.exe")), "caminho inesperado: {}", p.display());
+        }
+    }
+
+    #[test]
+    fn open_app_with_control_reuses_listening_control_channel() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("porta livre");
+        let port = listener.local_addr().expect("endereço local").port();
+        let msg = open_app_with_control(port).expect("canal já ouvindo não é erro");
+        assert!(msg.contains("já está aberto"), "mensagem: {msg}");
+        drop(listener);
+    }
 
     #[test]
     fn loopback_and_command_allowlist_enforce_no_send() {

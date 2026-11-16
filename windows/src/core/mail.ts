@@ -194,6 +194,11 @@ export const MailBridge = {
     if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
     return invoke<InboxSummaryResult>("mail_summarize_inbox", { limit });
   },
+  // Sem `call`: a mensagem de erro do Rust (ex.: MailCraft não encontrado) precisa chegar à tela.
+  openMailCraft: async (): Promise<string> => {
+    if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
+    return invoke<string>("mail_open_mailcraft");
+  },
   prepareDraft: async (payload: { replyToId?: string | null; to: string; subject: string; body: string }): Promise<DraftResult> => {
     if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
     return invoke<DraftResult>("mail_prepare_draft", payload);

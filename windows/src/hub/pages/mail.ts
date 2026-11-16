@@ -233,6 +233,37 @@ export async function mailOverviewPage(page: HTMLElement, ctx: HubContext) {
   const summaryBody = h("div", { class: "mail-summary-body" });
   summaryWrap.append(summaryMeta, summaryBody);
 
+  let openingMailCraft = false;
+  const openStatus = h("div", { class: "mail-status-line is-empty", role: "status", "aria-live": "polite" });
+  const openBtn = button("Abrir MailCraft", () => {
+    if (openingMailCraft) return;
+    openingMailCraft = true;
+    openBtn.disabled = true;
+    openBtn.setAttribute("aria-busy", "true");
+    openBtn.textContent = "Abrindo…";
+    openStatus.className = "mail-status-line";
+    openStatus.textContent = "Abrindo o MailCraft…";
+    void MailBridge.openMailCraft()
+      .then((msg) => {
+        openStatus.className = "mail-status-line ok";
+        openStatus.textContent = msg;
+        // Relê a config: o comando liga o canal de controle e pode ter gravado o provedor.
+        void MailBridge.configGet().then((next) => {
+          cfg = next ?? cfg;
+        });
+      })
+      .catch((err) => {
+        openStatus.className = "mail-status-line err";
+        openStatus.textContent = String(err).replace(/^Error:\s*/, "");
+      })
+      .finally(() => {
+        openingMailCraft = false;
+        openBtn.disabled = false;
+        openBtn.removeAttribute("aria-busy");
+        openBtn.textContent = "Abrir MailCraft";
+      });
+  });
+
   let summarizing = false;
   const summarizeBtn = button("Resumir caixa agora", () => {
     if (summarizing) return;
@@ -276,7 +307,7 @@ export async function mailOverviewPage(page: HTMLElement, ctx: HubContext) {
           text: "Leitura sob demanda das mensagens recentes. O Lumen nunca altera nem envia e-mails daqui.",
         }),
       ),
-      summarizeBtn,
+      h("div", { class: "mail-section-actions" }, openBtn, summarizeBtn, openStatus),
     ),
     summaryWrap,
   );
