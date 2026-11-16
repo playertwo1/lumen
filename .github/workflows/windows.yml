@@ -75,7 +75,7 @@ jobs:
           [IO.File]::WriteAllText($manifestPath, $manifest, [Text.UTF8Encoding]::new($false))
           & $mt -manifest $manifestPath "-outputresource:$testExe;#1"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $testExe
+          cargo test --manifest-path src-tauri/Cargo.toml --lib
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Validate Lumen release notes
