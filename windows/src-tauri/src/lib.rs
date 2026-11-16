@@ -1307,6 +1307,8 @@ pub fn run() {
             flow::pill_state,
             flow::pill_hot,
             flow::pill_hover,
+            flow::pill_drag_start,
+            flow::pill_drag_end,
             flow::pill_action,
             notes::notes_state,
             notes::notes_start,

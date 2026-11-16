@@ -168,7 +168,8 @@ export function buildHeader(actions: ViewActions): ViewHost {
     svg(ICONS.envelope, 17, { stroke: 1.7 }),
   );
 
-  const gearBtn = h("button", { title: tl("Settings"), onclick: () => go("settings") }, svg(ICONS.gearLine, 18, { stroke: 1.6 }));
+  // Direto em Ajustes → Geral: o painel rápido da ilha só repetia o caminho.
+  const gearBtn = h("button", { title: tl("Settings"), onclick: () => openHub("general") }, svg(ICONS.gearLine, 18, { stroke: 1.6 }));
   const soundBtn = h("button", { title: tl("Mute"), onclick: () => actions.toggleSound() }, svg(ICONS.speakerLine, 18, { stroke: 1.6 }));
   // Folds back to the compact island now, without waiting for the timer (the
   // Mac's ✕). A card waiting for an answer keeps the island open: no ✕ then.
@@ -184,7 +185,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
     actions.setView(v);
   }
 
-  function openHub(page: "notes" | "mailOverview") {
+  function openHub(page: "notes" | "mailOverview" | "general") {
     actions.blip();
     actions.openSettingsWindow(page);
   }

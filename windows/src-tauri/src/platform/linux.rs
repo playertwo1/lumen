@@ -1109,7 +1109,7 @@ pub fn set_pill_edge(win: &WebviewWindow, edge: &str) {
         layer::gtk_layer_set_anchor(ptr, layer::EDGE_BOTTOM, bottom as i32);
         layer::gtk_layer_set_anchor(ptr, layer::EDGE_LEFT, left as i32);
         layer::gtk_layer_set_anchor(ptr, layer::EDGE_RIGHT, right as i32);
-        layer::gtk_layer_set_anchor(ptr, layer::EDGE_TOP, 0);
+        layer::gtk_layer_set_anchor(ptr, layer::EDGE_TOP, (edge == "top") as i32);
     }
 }
 
