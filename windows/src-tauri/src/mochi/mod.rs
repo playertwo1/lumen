@@ -9,11 +9,13 @@
 
 pub mod approval_bridge;
 pub mod audit;
+pub mod mcp_config;
+pub mod mcp_server;
 pub mod permissions;
 pub mod registry;
 
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::Value;
 use tauri::Manager;
@@ -55,6 +57,7 @@ pub struct MochiRuntime {
     pub registry: Arc<ToolRegistry>,
     pub permissions: Arc<PermissionEngine>,
     pub audit: Arc<AuditLog>,
+    mcp: Arc<Mutex<Option<mcp_server::McpServerHandle>>>,
 }
 
 impl Default for MochiRuntime {
@@ -93,6 +96,35 @@ impl MochiRuntime {
             registry,
             permissions,
             audit,
+            mcp: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Clona o runtime sem reter referência a `McpServerHandle` (evita ciclo no loop MCP).
+    pub(crate) fn detached_for_mcp(&self) -> Self {
+        Self {
+            registry: Arc::clone(&self.registry),
+            permissions: Arc::clone(&self.permissions),
+            audit: Arc::clone(&self.audit),
+            mcp: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub(crate) fn set_mcp_handle(&self, handle: mcp_server::McpServerHandle) {
+        let mut guard = self.mcp.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(previous) = guard.take() {
+            previous.shutdown();
+        }
+        *guard = Some(handle);
+    }
+
+    pub(crate) fn shutdown_mcp(&self) {
+        let handle = {
+            let mut guard = self.mcp.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.take()
+        };
+        if let Some(handle) = handle {
+            handle.shutdown();
         }
     }
 
@@ -388,7 +420,7 @@ pub fn approval_requester(app: &tauri::AppHandle) -> TauriApprovalRequester {
     TauriApprovalRequester::new(app.clone())
 }
 
-/// Inicializa permissões do Mochi na partida do Tauri (cria config v1 apenas na 1ª execução).
+/// Inicializa permissões do Mochi e o servidor MCP local na partida do Tauri.
 pub fn setup(app: &tauri::AppHandle) {
     let config_path = permissions::default_config_path();
     let marker_path = permissions::default_init_marker_path();
@@ -403,6 +435,24 @@ pub fn setup(app: &tauri::AppHandle) {
                 crate::log::line(format!("mochi permissions fail-closed: {reason}"));
             }
         }
+
+        let endpoint_path = mcp_server::default_endpoint_path();
+        let runtime_clone = runtime.inner().clone();
+        match tauri::async_runtime::block_on(mcp_server::McpServerHandle::start(
+            runtime_clone,
+            Some(app.clone()),
+            endpoint_path,
+        )) {
+            Ok(handle) => runtime.set_mcp_handle(handle),
+            Err(err) => crate::log::line(format!("mochi mcp server start failed: {err}")),
+        }
+    }
+}
+
+/// Encerra o servidor MCP local do Mochi e remove o arquivo de descoberta.
+pub fn shutdown(app: &tauri::AppHandle) {
+    if let Some(runtime) = app.try_state::<MochiRuntime>() {
+        runtime.shutdown_mcp();
     }
 }
 

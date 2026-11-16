@@ -35,6 +35,7 @@ import { startHub, type PageId } from "../hub/shell";
 import { FLOW_PAGE_RENDERERS } from "../hub/pages";
 import { claudeModelControl } from "./claude-models";
 import { agentsSection } from "./agents";
+import { mcpSection } from "./mcp";
 import { chatGptAccountSection } from "./chatgpt";
 import { phoneSection } from "./phone";
 import { whatsappSection } from "./whatsapp";
@@ -1941,7 +1942,10 @@ async function render() {
   const status = (await Bridge.hooksStatus()) ?? {
     installed: false, planRelayInstalled: false, settingsPath: "", hookPath: "", hookReady: false,
   };
-  const agents = await Bridge.agentHooksList();
+  const [agents, mcpAgents] = await Promise.all([
+    Bridge.agentHooksList(),
+    MochiBridge.mcpStatus().catch(() => []),
+  ]);
 
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
   const claudeRelay = !hasKey && ((await Bridge.claudeReady()) ?? false);
@@ -2002,7 +2006,7 @@ async function render() {
   const sections: Partial<Record<PageId, () => HTMLElement[]>> = {
     general: () => [generalSection()],
     pills: () => [activePillsSection(connected)],
-    agents: () => [claudeSection(status), agentsSection(agents), planSection(status)],
+    agents: () => [claudeSection(status), agentsSection(agents), mcpSection(mcpAgents, status.hookReady), planSection(status)],
     chat: () => [
       subscriptionsSection(),
       apiSection(hasKey, claudeRelay),

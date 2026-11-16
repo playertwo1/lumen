@@ -584,6 +584,24 @@ fn agent_hooks_apply(agent: String, install: bool, fingerprint: String) -> Resul
     Ok(backups)
 }
 
+#[tauri::command]
+fn mochi_mcp_status() -> Vec<mochi::mcp_config::McpAgentStatus> {
+    mochi::mcp_config::status()
+}
+
+#[tauri::command]
+fn mochi_mcp_preview(agent: String, install: bool) -> Result<config_file::Plan, String> {
+    mochi::mcp_config::preview(&agent, install)
+}
+
+#[tauri::command]
+fn mochi_mcp_apply(agent: String, install: bool, fingerprint: String) -> Result<String, String> {
+    let backups = mochi::mcp_config::apply(&agent, install, &fingerprint)?;
+    let done = if install { "installed" } else { "removed" };
+    log::line(format!("mochi mcp {done} for {agent}"));
+    Ok(backups)
+}
+
 // ── Plan usage ────────────────────────────────────────────────────────────────
 
 /// The diff of putting the plan usage relay into (or taking it out of) the
@@ -1384,6 +1402,9 @@ pub fn run() {
             mochi::mochi_permissions_reset_default,
             mochi::mochi_audit_list,
             mochi::mochi_audit_clear,
+            mochi_mcp_status,
+            mochi_mcp_preview,
+            mochi_mcp_apply,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1462,6 +1483,7 @@ pub fn run() {
                     permission_notifications::shutdown(&toasts);
                 }
                 phone_link::stop_on_exit(app);
+                mochi::shutdown(app);
                 google::shutdown(app);
                 notes::shutdown(app);
                 tasks::shutdown(app);

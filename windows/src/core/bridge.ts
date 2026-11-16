@@ -801,6 +801,15 @@ export interface AgentHookPlan {
   fingerprint: string;
 }
 
+export interface McpAgentStatus {
+  id: string;
+  name: string;
+  path: string;
+  cliFound: boolean;
+  registered: boolean;
+  commandMatches: boolean;
+}
+
 export interface HookPreview {
   diff: string;
   backup: string;
@@ -1016,4 +1025,9 @@ export interface MochiAuditEntry {
 export const MochiBridge = {
   auditList: (limit?: number) => call<MochiAuditEntry[]>("mochi_audit_list", { limit: limit ?? null }),
   auditClear: () => call<void>("mochi_audit_clear"),
+  mcpStatus: () => call<McpAgentStatus[]>("mochi_mcp_status"),
+  mcpPreview: (agent: string, install: boolean) =>
+    callOrThrow<AgentHookPlan>("mochi_mcp_preview", { agent, install }),
+  mcpApply: (agent: string, install: boolean, fingerprint: string) =>
+    callOrThrow<string>("mochi_mcp_apply", { agent, install, fingerprint }),
 };

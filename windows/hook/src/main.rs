@@ -60,6 +60,7 @@ const DROPPED_FIELDS: &[&str] = &["tool_response", "tool_output", "transcript_pa
 /// less than this anyway.
 const MAX_FIELD_LEN: usize = 2_000;
 
+mod mcp;
 mod statusline;
 
 /// The live diff needs the whole text of a file edit, once it has happened:
@@ -114,6 +115,9 @@ struct Event {
 }
 
 fn main() {
+    if std::env::args().skip(1).any(|a| a == "--mcp") {
+        std::process::exit(mcp::run());
+    }
     if std::env::args().skip(1).any(|a| a == "--statusline") {
         statusline::run();
     }
