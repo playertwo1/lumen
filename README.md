@@ -7,7 +7,7 @@
 **Ilha flutuante inteligente para Windows que acompanha seus agentes de IA, permissões, ditado offline, anotações e integrações sem tirar você do foco.**
 
 <p>
-  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.7"><img src="https://img.shields.io/badge/release-windows--v0.7.7-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.7"></a>
+  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.8"><img src="https://img.shields.io/badge/release-windows--v0.7.8-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.8"></a>
   <a href="https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 e 11"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=black" alt="Tauri 2">
   <img src="https://img.shields.io/badge/Rust-TypeScript-F74C00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust e TypeScript">
@@ -67,10 +67,11 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 > Os instaladores ainda não possuem certificado Authenticode, então o SmartScreen pode exibir aviso de editor desconhecido; clique em **Mais informações → Executar mesmo assim**. Após instalar, novas versões podem ser verificadas em **Ajustes → Geral → Atualizações** com conferência de SHA-256.
 
 <details>
-<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.7</code></summary>
+<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.8</code></summary>
 
 | Versão | Data | Destaques |
 |---|---|---|
+| [`windows-v0.7.8`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.8) | 16 nov. 2026 | **Whisper Large v3 Turbo** como opção de modelo do ditado (offline, mais preciso em português), texto ditado que fica na área de transferência, ícone cristal e base do assistente Mochi (Fase M1) |
 | [`windows-v0.7.7`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.7) | 16 nov. 2026 | Notch e pílula do ditado arrastáveis até qualquer borda da tela, pílula **Em cima** ou **Escondida**, e engrenagem abrindo direto Ajustes → Geral |
 | [`windows-v0.7.6`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.6) | 16 nov. 2026 | **Triagem do MailCraft** no lugar do cartão do Outlook: separa contas, renovações de assinatura, importantes, promoções e spam e recomenda o que apagar, sem apagar nada |
 | [`windows-v0.7.5`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.5) | 15 nov. 2026 | Atalhos de Anotador e E-mail no Notch aberto, botão **Limpar** para avisos do Mail, seta `↗` Abrir para Mail/Codex/Claude/Antigravity e QR code de pareamento ampliado no Hub |

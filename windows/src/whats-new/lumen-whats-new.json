@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.8",
+      "items": [
+        {
+          "icon": "mic",
+          "title": { "pt-BR": "Whisper Large v3 Turbo no ditado" },
+          "detail": { "pt-BR": "Baixe em Ajustes → Reconhecimento e escolha o Whisper: acerta mais em português, no seu PC." }
+        },
+        {
+          "icon": "keyboard",
+          "title": { "pt-BR": "O texto ditado fica copiado" },
+          "detail": { "pt-BR": "É colado no campo em que você digita e continua na área de transferência para o Ctrl+V." }
+        },
+        {
+          "icon": "sparkles",
+          "title": { "pt-BR": "Novo ícone cristal" },
+          "detail": { "pt-BR": "O Lumen ganhou o ícone de cristal no app, na bandeja e no instalador." }
+        }
+      ]
+    },
+    {
       "version": "0.7.7",
       "items": [
         {
