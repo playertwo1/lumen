@@ -125,6 +125,7 @@ pub fn setup(app: &AppHandle) {
     let prefs = flow.store.lock().unwrap().prefs.clone();
     pill::update(app, |s| {
         s.edge = pill::edge_name(prefs.edge).into();
+        s.offset = prefs.pill_offset;
         s.hide_idle = prefs.hide_pill;
         s.key = key_id(prefs.key, &prefs.key_combo);
     });
@@ -510,6 +511,7 @@ pub fn flow_set_prefs(app: AppHandle, flow: State<Arc<Flow>>, prefs: Prefs) {
     };
     pill::update(&app, |s| {
         s.edge = pill::edge_name(prefs.edge).into();
+        s.offset = prefs.pill_offset;
         s.hide_idle = prefs.hide_pill;
         s.key = key_id(prefs.key, &prefs.key_combo);
     });
@@ -689,6 +691,30 @@ pub fn pill_hover(app: AppHandle, inside: bool) {
     if inside {
         pill::watch_pointer_leave(&app);
     }
+}
+
+#[tauri::command]
+pub fn pill_drag_start(app: AppHandle, grab_x: f64, grab_y: f64) {
+    pill::drag_start(&app, grab_x, grab_y);
+}
+
+/// The pill was let go: it sticks to the nearest edge, and stays there next time.
+#[tauri::command]
+pub fn pill_drag_end(app: AppHandle, flow: State<Arc<Flow>>) {
+    let Some((edge, offset)) = pill::drag_end(&app) else { return };
+    let prefs = {
+        let mut store = flow.store.lock().unwrap();
+        store.prefs.edge = edge;
+        store.prefs.pill_offset = offset;
+        store.save_prefs();
+        store.prefs.clone()
+    };
+    pill::update(&app, |s| {
+        s.edge = pill::edge_name(edge).into();
+        s.offset = offset;
+    });
+    pill::reposition(&app);
+    let _ = app.emit("flow-prefs", &prefs);
 }
 
 #[tauri::command]

@@ -299,10 +299,10 @@ function reportHot() {
   const H = window.innerHeight;
   const open = look() !== "resting";
   // The pill: a generous zone around the small resting one, the capsule once open.
-  if (state.edge === "bottom") {
+  if (state.edge === "bottom" || state.edge === "top") {
     const w = open ? 200 : 96;
     const h = open ? 46 : 26;
-    rects.push([(W - w) / 2, H - h, w, h]);
+    rects.push([(W - w) / 2, state.edge === "top" ? 0 : H - h, w, h]);
   } else if (state.edge === "bottom-left") {
     const w = open ? 200 : 96;
     const h = open ? 46 : 26;
@@ -362,6 +362,47 @@ function distanceTo(elm: HTMLElement, x: number, y: number): number {
   const dy = Math.max(r.top - y, 0, y - r.bottom);
   return Math.hypot(dx, dy);
 }
+
+// ── Drag: hold the pill and move it; let go and it sticks to the nearest edge ──
+
+let press: { x: number; y: number; id: number } | null = null;
+let dragging = false;
+let justDragged = false;
+
+root.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || !capsule?.contains(e.target as Node)) return;
+  press = { x: e.clientX, y: e.clientY, id: e.pointerId };
+});
+document.addEventListener("pointermove", (e) => {
+  if (!press || dragging || Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6) return;
+  dragging = true;
+  try {
+    root.setPointerCapture(press.id);
+  } catch {
+    // The pointer is already gone: the drag ends on the next pointerup anyway.
+  }
+  void FlowBridge.pillDragStart(press.x, press.y);
+});
+function release() {
+  press = null;
+  if (!dragging) return;
+  dragging = false;
+  // The click that follows this pointerup must not press a button of the pill.
+  justDragged = true;
+  setTimeout(() => (justDragged = false), 0);
+  void FlowBridge.pillDragEnd();
+}
+document.addEventListener("pointerup", release);
+document.addEventListener("pointercancel", release);
+document.addEventListener(
+  "click",
+  (e) => {
+    if (!justDragged) return;
+    e.stopPropagation();
+    e.preventDefault();
+  },
+  true,
+);
 
 // ── The animation loop (only while something moves) ───────────────────────────
 
@@ -518,11 +559,14 @@ async function main() {
   const status = await FlowBridge.status();
   if (status) platform = status.platform;
   state = (await FlowBridge.pillState()) ?? state;
-  visible = state.enabled || state.noteStartedAt !== null || state.announcement !== null || state.voice !== null || state.phase !== "idle";
+  // Escondida: dictation still works, the pill never shows (Rust keeps the window hidden too).
+  const shows = (s: PillState) =>
+    s.edge !== "hidden" && (s.enabled || s.noteStartedAt !== null || s.announcement !== null || s.voice !== null || s.phase !== "idle");
+  visible = shows(state);
   render();
   void onEvent<PillState>("pill-state", (s) => {
     state = s;
-    visible = s.enabled || s.noteStartedAt !== null || s.announcement !== null || s.voice !== null || s.phase !== "idle";
+    visible = shows(s);
     if (s.phase === "listening") target.fill(0);
     render();
   });

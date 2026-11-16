@@ -74,6 +74,9 @@ pub enum Edge {
     BottomRight,
     Left,
     Right,
+    Top,
+    /// Never shown; the dictation key still works.
+    Hidden,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -100,6 +103,8 @@ pub struct Prefs {
     /// KeyboardEvent.code names ("AltLeft", "ShiftLeft", "KeyF").
     pub key_combo: Vec<String>,
     pub edge: Edge,
+    /// Where along its edge the pill sits after a drag: 0 = start (left/top), 1 = end, 0.5 = middle.
+    pub pill_offset: f64,
     /// Hide the pill while nothing is dictated: it shows only for a dictation, a call being recorded or a message.
     pub hide_pill: bool,
     /// The microphone by name; empty is the system's default.
@@ -132,6 +137,7 @@ impl Default for Prefs {
             key: FlowKey::default(),
             key_combo: Vec::new(),
             edge: Edge::Bottom,
+            pill_offset: 0.5,
             hide_pill: false,
             mic: String::new(),
             keep_days: 30,
@@ -600,6 +606,8 @@ mod tests {
             (Edge::BottomRight, "\"bottom-right\""),
             (Edge::Left, "\"left\""),
             (Edge::Right, "\"right\""),
+            (Edge::Top, "\"top\""),
+            (Edge::Hidden, "\"hidden\""),
         ] {
             assert_eq!(serde_json::to_string(&edge).unwrap(), s);
             assert_eq!(serde_json::from_str::<Edge>(s).unwrap(), edge);

@@ -32,6 +32,8 @@ pub struct PillState {
     /// "idle", "listening", "thinking", "locked", "copied", "failed", "pastedAgain".
     pub phase: String,
     pub edge: String,
+    /// Where along its edge the pill sits (0..1), after a drag; 0.5 is the middle.
+    pub offset: f64,
     /// The dictation key, as the page writes it ("right_ctrl"…).
     pub key: String,
     /// When the call being recorded started (ms since 1970), or none.
@@ -139,7 +141,7 @@ pub fn setup(app: &AppHandle) {
     }
     let pill = Arc::new(Pill {
         mode,
-        state: Mutex::new(PillState { phase: "idle".into(), edge: "bottom".into(), ..Default::default() }),
+        state: Mutex::new(PillState { phase: "idle".into(), edge: "bottom".into(), offset: 0.5, ..Default::default() }),
         hot: Mutex::new(Vec::new()),
         shown: AtomicBool::new(false),
         hovered: AtomicBool::new(false),
@@ -229,7 +231,56 @@ pub fn edge_name(edge: Edge) -> &'static str {
         Edge::BottomRight => "bottom-right",
         Edge::Left => "left",
         Edge::Right => "right",
+        Edge::Top => "top",
+        Edge::Hidden => "hidden",
     }
+}
+
+/// Where a pill let go at `(px, py)` sticks: the nearest edge of the work area
+/// `(ax, ay, aw, ah)`, and how far along that edge (0..1). Never in the middle of the screen.
+pub fn snap(px: f64, py: f64, ax: f64, ay: f64, aw: f64, ah: f64) -> (Edge, f64) {
+    let along_x = ((px - ax) / aw.max(1.0)).clamp(0.0, 1.0);
+    let along_y = ((py - ay) / ah.max(1.0)).clamp(0.0, 1.0);
+    let sides = [
+        (px - ax, Edge::Left, along_y),
+        (ax + aw - px, Edge::Right, along_y),
+        (py - ay, Edge::Top, along_x),
+        (ay + ah - py, Edge::Bottom, along_x),
+    ];
+    let (_, edge, along) = sides.into_iter().fold(sides[3], |best, s| if s.0 < best.0 { s } else { best });
+    (edge, along)
+}
+
+static DRAGGING: AtomicBool = AtomicBool::new(false);
+
+/// The pill follows the pointer, held where it was grabbed (window-logical px).
+pub fn drag_start(app: &AppHandle, grab_x: f64, grab_y: f64) {
+    let Some(pill) = get(app) else { return };
+    // A layer surface (Linux Wayland) is placed by the compositor: no free drag there.
+    if pill.mode == DesktopMode::Layer || pill.mode == DesktopMode::Off || DRAGGING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        while DRAGGING.load(Ordering::Acquire) {
+            if let (Some(win), Some((cx, cy))) = (window(&app), platform::cursor_physical()) {
+                let scale = win.scale_factor().unwrap_or(1.0);
+                let _ = win.set_position(PhysicalPosition::new((cx - grab_x * scale) as i32, (cy - grab_y * scale) as i32));
+            }
+            std::thread::sleep(Duration::from_millis(12));
+        }
+    });
+}
+
+/// The pill is let go: it sticks to the edge nearest the pointer. Returns the new edge and offset.
+pub fn drag_end(app: &AppHandle) -> Option<(Edge, f64)> {
+    if !DRAGGING.swap(false, Ordering::AcqRel) {
+        return None;
+    }
+    let (cx, cy) = platform::cursor_physical()?;
+    let m = monitor(app, true)?;
+    let wa = m.work_area();
+    Some(snap(cx, cy, wa.position.x as f64, wa.position.y as f64, wa.size.width as f64, wa.size.height as f64))
 }
 
 /// Changes what the pill shows, and shows or hides it.
@@ -237,15 +288,16 @@ pub fn update(app: &AppHandle, change: impl FnOnce(&mut PillState)) {
     let Some(pill) = get(app) else { return };
     let (state, edge_changed) = {
         let mut s = pill.state.lock().unwrap();
-        let edge_before = s.edge.clone();
+        let before = (s.edge.clone(), s.offset);
         change(&mut s);
-        (s.clone(), s.edge != edge_before)
+        (s.clone(), (s.edge.clone(), s.offset) != before)
     };
     let _ = app.emit_to(LABEL, "pill-state", &state);
-    let visible = (state.enabled && !state.hide_idle) || state.note_started_at.is_some() || state.announcement.is_some() || state.voice.is_some() || state.phase != "idle";
+    let visible = state.edge != "hidden"
+        && ((state.enabled && !state.hide_idle) || state.note_started_at.is_some() || state.announcement.is_some() || state.voice.is_some() || state.phase != "idle");
     let was = pill.shown.swap(visible, Ordering::Relaxed);
     if visible && (!was || edge_changed) {
-        place(app, &pill, &state.edge, state.phase == "listening");
+        place(app, &pill, &state.edge, state.offset, state.phase == "listening");
     }
     if visible != was {
         show(app, &pill, visible);
@@ -299,7 +351,14 @@ fn monitor(app: &AppHandle, on_cursor: bool) -> Option<tauri::Monitor> {
     app.primary_monitor().ok().flatten()
 }
 
-fn place(app: &AppHandle, pill: &Pill, edge: &str, on_cursor: bool) {
+/// The middle of the pill along its edge, `offset` (0..1) of the way, kept `margin`
+/// from the corners so its bubble stays on screen.
+fn along(start: i32, length: i32, offset: f64, margin: i32) -> i32 {
+    let c = start + (offset.clamp(0.0, 1.0) * length as f64).round() as i32;
+    c.clamp(start + margin.min(length / 2), start + length - margin.min(length / 2))
+}
+
+fn place(app: &AppHandle, pill: &Pill, edge: &str, offset: f64, on_cursor: bool) {
     let Some(win) = window(app) else { return };
     let (lw, lh) = size_for(edge);
     match pill.mode {
@@ -310,12 +369,15 @@ fn place(app: &AppHandle, pill: &Pill, edge: &str, on_cursor: bool) {
             let (pw, ph) = ((lw * scale).round() as i32, (lh * scale).round() as i32);
             let (ax, ay, aw, ah) = (wa.position.x, wa.position.y, wa.size.width as i32, wa.size.height as i32);
             let gap = (4.0 * scale).round() as i32;
+            let margin = (130.0 * scale).round() as i32;
+            // The window may reach past the screen's edge: only the pill and its bubble show.
             let (x, y) = match edge {
-                "left" => (ax + gap, ay + (ah - ph) / 2),
-                "right" => (ax + aw - pw - gap, ay + (ah - ph) / 2),
+                "left" => (ax + gap, along(ay, ah, offset, margin) - ph / 2),
+                "right" => (ax + aw - pw - gap, along(ay, ah, offset, margin) - ph / 2),
+                "top" => (along(ax, aw, offset, margin) - pw / 2, ay + gap),
                 "bottom-left" => (ax + gap, ay + ah - ph - gap),
                 "bottom-right" => (ax + aw - pw - gap, ay + ah - ph - gap),
-                _ => (ax + (aw - pw) / 2, ay + ah - ph - gap),
+                _ => (along(ax, aw, offset, margin) - pw / 2, ay + ah - ph - gap),
             };
             #[cfg(target_os = "linux")]
             let _ = win.set_resizable(true);
@@ -331,6 +393,15 @@ fn place(app: &AppHandle, pill: &Pill, edge: &str, on_cursor: bool) {
             });
         }
         DesktopMode::Off => {}
+    }
+}
+
+/// Puts the pill back on its edge (after a drag that ended where it already was).
+pub fn reposition(app: &AppHandle) {
+    let Some(pill) = get(app) else { return };
+    let s = pill.state();
+    if pill.shown.load(Ordering::Relaxed) {
+        place(app, &pill, &s.edge, s.offset, false);
     }
 }
 
@@ -435,11 +506,37 @@ mod tests {
         assert_eq!(edge_name(Edge::BottomRight), "bottom-right");
         assert_eq!(edge_name(Edge::Left), "left");
         assert_eq!(edge_name(Edge::Right), "right");
+        assert_eq!(edge_name(Edge::Top), "top");
+        assert_eq!(edge_name(Edge::Hidden), "hidden");
+    }
+
+    #[test]
+    fn a_dropped_pill_sticks_to_the_nearest_edge() {
+        // Work area 1000×800 at (0, 0).
+        let s = |x, y| snap(x, y, 0.0, 0.0, 1000.0, 800.0);
+        assert_eq!(s(500.0, 790.0), (Edge::Bottom, 0.5));
+        assert_eq!(s(250.0, 5.0), (Edge::Top, 0.25));
+        assert_eq!(s(3.0, 400.0), (Edge::Left, 0.5));
+        assert_eq!(s(990.0, 200.0), (Edge::Right, 0.25));
+        // Dropped in the middle of the screen: still on an edge, never left floating.
+        let (edge, _) = s(500.0, 380.0);
+        assert_eq!(edge, Edge::Top);
+        // Outside the work area: clamped onto it.
+        assert_eq!(s(-50.0, 900.0).1, 0.0);
+    }
+
+    #[test]
+    fn the_pill_keeps_clear_of_the_corners() {
+        assert_eq!(along(0, 1000, 0.5, 130), 500);
+        assert_eq!(along(0, 1000, 0.0, 130), 130);
+        assert_eq!(along(0, 1000, 1.0, 130), 870);
+        assert_eq!(along(100, 200, 0.0, 130), 200);
 
         assert_eq!(size_for("bottom"), BOTTOM);
         assert_eq!(size_for("bottom-left"), BOTTOM);
         assert_eq!(size_for("bottom-right"), BOTTOM);
         assert_eq!(size_for("left"), SIDE);
         assert_eq!(size_for("right"), SIDE);
+        assert_eq!(size_for("top"), BOTTOM);
     }
 }

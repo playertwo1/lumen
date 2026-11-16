@@ -33,7 +33,7 @@ export type FlowKeyId = FlowKey | `custom:${string}` | "wayland" | "";
 export function flowKeyId(prefs: { key: FlowKey; keyCombo?: string[] }): FlowKeyId {
   return prefs.key === "custom" ? `custom:${(prefs.keyCombo ?? []).join("+")}` : prefs.key;
 }
-export type Edge = "bottom" | "bottom-left" | "bottom-right" | "left" | "right";
+export type Edge = "bottom" | "bottom-left" | "bottom-right" | "left" | "right" | "top" | "hidden";
 export type Style = "verbatim" | "natural" | "polished";
 export type SummaryEngine = "claude" | "chatgpt" | "gemini" | "chat" | "off";
 
@@ -50,6 +50,8 @@ export interface FlowPrefs {
   /** The keys of a shortcut of one's own (KeyboardEvent.code names), when `key` is "custom". */
   keyCombo: string[];
   edge: Edge;
+  /** Where along its edge the pill sits after a drag: 0 = start, 1 = end, 0.5 = middle. */
+  pillOffset: number;
   /** Hide the pill until a dictation, a call or a message needs it. */
   hidePill: boolean;
   mic: string;
@@ -316,6 +318,10 @@ export const FlowBridge = {
   pillState: () => call<PillState>("pill_state"),
   pillHot: (rects: [number, number, number, number][]) => call<void>("pill_hot", { rects }),
   pillHover: (inside: boolean) => call<void>("pill_hover", { inside }),
+  /** The pill follows the pointer from where it was grabbed (window-logical px)… */
+  pillDragStart: (grabX: number, grabY: number) => call<void>("pill_drag_start", { grabX, grabY }),
+  /** …until it is let go: then it sticks to the nearest edge of the screen. */
+  pillDragEnd: () => call<void>("pill_drag_end"),
   pillAction: (action: string, id?: number) => call<void>("pill_action", { action, id: id ?? null }),
   /** The pill has said what « OK Coucou » answered. */
   voiceDone: (id: number) => call<void>("voice_done", { id, text: null }),

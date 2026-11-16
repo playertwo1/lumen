@@ -81,7 +81,10 @@ export async function flowSettingsPage(page: HTMLElement, ctx: HubContext) {
         p.keyCombo = combo;
       }).then(() => ctx.navigate("flowsettings"))))]
     : [];
-  const edges: [Edge, string][] = [["bottom", t("Bottom")], ["bottom-left", t("Bottom-left")], ["bottom-right", t("Bottom-right")], ["left", t("Left")], ["right", t("Right")]];
+  const edges: [Edge, string][] = [
+    ["bottom", t("Bottom")], ["bottom-left", t("Bottom-left")], ["bottom-right", t("Bottom-right")],
+    ["left", t("Left")], ["right", t("Right")], ["top", "Em cima"], ["hidden", "Escondida"],
+  ];
   page.append(label(t("Keys")));
   const keysCard = card(
     row(t("Hold a key to dictate anywhere"), null, toggle(prefs.enabled, (on) => void ctx.setPrefs((p) => (p.enabled = on)))),
@@ -92,7 +95,15 @@ export async function flowSettingsPage(page: HTMLElement, ctx: HubContext) {
         select(keys, prefs.key, (key) => void ctx.setPrefs((p) => (p.key = key)).then(() => ctx.navigate("flowsettings")))),
     ...recordRow,
     divider(),
-    row(t("Where the pill is"), null, segmented(edges, prefs.edge, (edge) => void ctx.setPrefs((p) => (p.edge = edge)))),
+    row(
+      t("Where the pill is"),
+      "Ou segure a pílula e arraste: ao soltar, ela gruda na borda mais próxima (embaixo, em cima, esquerda ou direita). Escondida: o ditado continua funcionando, sem pílula na tela.",
+      // A preset puts the pill back in the middle of its edge.
+      segmented(edges, prefs.edge, (edge) => void ctx.setPrefs((p) => {
+        p.edge = edge;
+        p.pillOffset = 0.5;
+      })),
+    ),
     divider(),
     row(
       t("Hide the pill until I dictate"),

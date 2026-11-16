@@ -34,6 +34,15 @@ body {
   padding-bottom: 2px;
 }
 
+/* Top: the pill against the edge, its bubble below it (column-reverse puts the
+   bubble, first in the DOM, at the bottom). */
+#pill.top {
+  flex-direction: column-reverse;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
 #pill.bottom-left {
   flex-direction: column;
   align-items: flex-start;
