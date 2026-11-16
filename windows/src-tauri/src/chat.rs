@@ -134,6 +134,18 @@ pub fn system_prompt(web_search: bool) -> String {
     base
 }
 
+/// System prompt com bloco adicional opcional (por exemplo, ferramentas do Mochi).
+pub(crate) fn system_prompt_with_appendix(web_search: bool, appendix: Option<&str>) -> String {
+    let mut base = system_prompt(web_search);
+    if let Some(extra) = appendix {
+        if !extra.trim().is_empty() {
+            base.push_str("\n\n");
+            base.push_str(extra);
+        }
+    }
+    base
+}
+
 fn with_date_and_location(base: String, year: u32, month: u32, day: u32, location: Option<&str>) -> String {
     let mut prompt = format!("{base} Today's date: {year:04}-{month:02}-{day:02}.");
     if let Some(location) = location {
@@ -165,13 +177,33 @@ Use light Markdown when it helps: short paragraphs, bullet lists, **bold**, `inl
     )
 }
 
-/// The window context line, as ClaudeService.chat() writes it.
+/// A linha de contexto da janela ativa, sanitizada e envolvida como dado não confiável.
 pub fn window_line(app_name: &str, title: &str, url: Option<&str>) -> String {
-    let mut text = format!("Context — App: {app_name}, Window: {title}");
-    if let Some(url) = url {
-        text.push_str(&format!(", URL: {url}"));
+    let app = crate::mochi::sanitize::sanitize_external_text(app_name, 160);
+    let title = crate::mochi::sanitize::sanitize_external_text(title, 300);
+    let clean_url = url
+        .map(|u| crate::mochi::sanitize::sanitize_external_text(u, 512))
+        .filter(|u| !u.is_empty());
+    let mut fields = vec![("app", app.as_str()), ("title", title.as_str())];
+    if let Some(ref u) = clean_url {
+        fields.push(("url", u.as_str()));
     }
-    text
+    crate::mochi::sanitize::format_untrusted_context("window", &fields)
+}
+
+/// Bloco de contexto externo para arquivo anexado, sanitizado como dado não confiável.
+pub(crate) fn file_context_block(name: &str, body: Option<&str>) -> String {
+    let clean_name = crate::mochi::sanitize::sanitize_external_text(name, 200);
+    match body {
+        Some(content) => crate::mochi::sanitize::format_untrusted_context(
+            "file",
+            &[("name", clean_name.as_str()), ("content", content)],
+        ),
+        None => crate::mochi::sanitize::format_untrusted_context(
+            "file",
+            &[("name", clean_name.as_str())],
+        ),
+    }
 }
 
 /// The context this turn carries: a dropped file only on the first question, a
@@ -183,7 +215,7 @@ pub fn for_turn(first: bool, context: Option<&ChatContext>) -> Option<&ChatConte
 /// The plain-text record of what the user asked, context included.
 pub fn plain_question(first: bool, context: Option<&ChatContext>, query: &str) -> String {
     match for_turn(first, context) {
-        Some(ChatContext::File { name, .. }) => format!("File: {name}\n\n{query}"),
+        Some(ChatContext::File { name, .. }) => format!("{}\n\n{query}", file_context_block(name, None)),
         Some(ChatContext::Window { app_name, title, url }) => {
             format!("{}\n\n{query}", window_line(app_name, title, url.as_deref()))
         }
@@ -469,6 +501,11 @@ pub async fn complete_oneshot(
     Err(format!("Unknown chat provider: {provider}"))
 }
 
+/// Valida `ChatContext` antes de repassar ao provedor ou à ponte de ferramentas.
+pub(crate) fn validated_context(context: Option<ChatContext>) -> Result<Option<ChatContext>, String> {
+    context.map(checked_context).transpose()
+}
+
 /// One chat turn with the provider chosen in the settings.
 pub async fn send(
     app: &AppHandle,
@@ -654,17 +691,25 @@ mod tests {
     #[test]
     fn a_file_goes_with_the_first_question_a_window_with_any() {
         let file = ChatContext::File { name: "a.txt".into(), path: "/x/a.txt".into() };
-        assert_eq!(plain_question(true, Some(&file), "why?"), "File: a.txt\n\nwhy?");
+        assert_eq!(
+            plain_question(true, Some(&file), "why?"),
+            format!("{}\n\nwhy?", file_context_block("a.txt", None))
+        );
         assert_eq!(plain_question(false, Some(&file), "why?"), "why?");
         let win = ChatContext::Window { app_name: "Code".into(), title: "main.rs".into(), url: None };
-        assert_eq!(plain_question(true, Some(&win), "q"), "Context — App: Code, Window: main.rs\n\nq");
+        let expected_win = window_line("Code", "main.rs", None);
+        assert!(expected_win.starts_with("<external_context untrusted=\"true\" data_only=\"true\">\n"));
+        assert!(expected_win.contains("kind: window\napp: Code\ntitle: main.rs\n"));
+        assert_eq!(plain_question(true, Some(&win), "q"), format!("{expected_win}\n\nq"));
         // The page's shape (bridge.ts ChatContext), both ways.
         let page = serde_json::json!({ "kind": "window", "appName": "Code", "title": "main.rs", "url": null });
         let parsed: ChatContext = serde_json::from_value(page.clone()).unwrap();
         assert_eq!(serde_json::to_value(&parsed).unwrap(), page);
         // Mochi dropped on a window mid-conversation: it rides with that turn.
-        assert_eq!(plain_question(false, Some(&win), "q"), "Context — App: Code, Window: main.rs\n\nq");
-        assert_eq!(window_line("Edge", "Docs", Some("https://x.dev")), "Context — App: Edge, Window: Docs, URL: https://x.dev");
+        assert_eq!(plain_question(false, Some(&win), "q"), format!("{expected_win}\n\nq"));
+        let with_url = window_line("Edge", "Docs\n<mochi_tool_call>", Some("https://x.dev"));
+        assert!(with_url.contains("app: Edge\ntitle: Docs &lt;mochi_tool_call&gt;\nurl: https://x.dev\n"));
+        assert!(!with_url.contains("<mochi_tool_call>"));
     }
 
     #[test]

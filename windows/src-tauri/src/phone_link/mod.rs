@@ -53,6 +53,48 @@ impl SecretStore for Keystore {
     }
 }
 
+fn integration_paused() -> bool {
+    crate::integrations::PAUSED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Envoltório que bloqueia envios do chat do celular enquanto a pausa rápida está ativa.
+struct PauseAwareChatBackend<B> {
+    inner: B,
+    paused: fn() -> bool,
+}
+
+impl<B> PauseAwareChatBackend<B> {
+    fn new(inner: B) -> Self {
+        Self {
+            inner,
+            paused: integration_paused,
+        }
+    }
+}
+
+impl<B: chat::ChatBackend> chat::ChatBackend for PauseAwareChatBackend<B> {
+    fn config(&self) -> chat::ChatConfig {
+        self.inner.config()
+    }
+
+    fn send(
+        &self,
+        model_id: &str,
+        text: String,
+        deltas: tokio::sync::mpsc::UnboundedSender<String>,
+    ) -> chat::BoxFuture<Result<String, chat::ChatFail>> {
+        if (self.paused)() {
+            log::line("phone link: chat refused while paused");
+            return Box::pin(async { Err(chat::ChatFail::Internal) });
+        }
+        self.inner.send(model_id, text, deltas)
+    }
+
+    fn reset(&self) {
+        self.inner.reset();
+    }
+}
+
 /// A phone's decision, applied as a click on the island would be.
 struct TauriHost {
     app: AppHandle,
@@ -65,6 +107,10 @@ impl Host for TauriHost {
     }
 
     fn answer(&self, request_id: &str, answers: &serde_json::Map<String, serde_json::Value>) {
+        if integration_paused() {
+            log::line(format!("phone link: ignored answer while paused id={request_id}"));
+            return;
+        }
         log::line(format!("phone link: answered a question id={request_id}")); // never what was picked
         recap::forget_request(&self.app, request_id);
         let map: std::collections::HashMap<String, serde_json::Value> = answers.clone().into_iter().collect();
@@ -73,6 +119,10 @@ impl Host for TauriHost {
     }
 
     fn decide(&self, request_id: &str, allow: bool) {
+        if integration_paused() {
+            log::line(format!("phone link: ignored decision while paused id={request_id}"));
+            return;
+        }
         let word = if allow { "allow" } else { "deny" };
         log::line(format!("phone link: decision id={request_id} {word}"));
         recap::record_decision(&self.app, request_id, word);
@@ -137,7 +187,7 @@ pub struct PhoneLink {
 impl PhoneLink {
     pub fn new(app: AppHandle) -> Self {
         Self {
-            chat: chat::ChatLink::new(Arc::new(chat_backend::AppChat::new(app.clone()))),
+            chat: chat::ChatLink::new(Arc::new(PauseAwareChatBackend::new(chat_backend::AppChat::new(app.clone())))),
             hub: Hub::new(Arc::new(TauriHost { app: app.clone() })),
             app,
             store: Arc::new(Keystore),
@@ -953,5 +1003,64 @@ pub fn start_if_enabled(app: &AppHandle) {
         // A failure is kept in the status and the log; the setting stays on so
         // the user sees why in Settings instead of finding it silently off.
         let _ = link.start();
+    }
+}
+
+#[cfg(test)]
+mod pause_tests {
+    use super::chat::{BoxFuture, ChatBackend, ChatConfig, ChatFail};
+    use super::PauseAwareChatBackend;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+
+    struct CountingBackend {
+        called: Arc<AtomicBool>,
+    }
+
+    impl ChatBackend for CountingBackend {
+        fn config(&self) -> ChatConfig {
+            ChatConfig::default()
+        }
+
+        fn send(
+            &self,
+            _model_id: &str,
+            _text: String,
+            _deltas: mpsc::UnboundedSender<String>,
+        ) -> BoxFuture<Result<String, ChatFail>> {
+            self.called.store(true, Ordering::SeqCst);
+            Box::pin(async { Ok("ok".into()) })
+        }
+
+        fn reset(&self) {}
+    }
+
+    #[test]
+    fn pause_aware_chat_backend_refuses_send_when_paused() {
+        let called = Arc::new(AtomicBool::new(false));
+        let guard = PauseAwareChatBackend {
+            inner: CountingBackend { called: Arc::clone(&called) },
+            paused: || true,
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let res = rt.block_on(guard.send("anthropic/claude-x", "oi".into(), tx));
+        assert_eq!(res, Err(ChatFail::Internal));
+        assert!(!called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn pause_aware_chat_backend_delegates_when_unpaused() {
+        let called = Arc::new(AtomicBool::new(false));
+        let guard = PauseAwareChatBackend {
+            inner: CountingBackend { called: Arc::clone(&called) },
+            paused: || false,
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let res = rt.block_on(guard.send("anthropic/claude-x", "oi".into(), tx));
+        assert_eq!(res, Ok("ok".into()));
+        assert!(called.load(Ordering::SeqCst));
     }
 }

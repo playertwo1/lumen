@@ -1025,6 +1025,7 @@ export interface MochiAuditEntry {
 export const MochiBridge = {
   auditList: (limit?: number) => call<MochiAuditEntry[]>("mochi_audit_list", { limit: limit ?? null }),
   auditClear: () => call<void>("mochi_audit_clear"),
+  cancelExecution: () => call<boolean>("mochi_cancel_execution"),
   mcpStatus: () => call<McpAgentStatus[]>("mochi_mcp_status"),
   mcpPreview: (agent: string, install: boolean) =>
     callOrThrow<AgentHookPlan>("mochi_mcp_preview", { agent, install }),

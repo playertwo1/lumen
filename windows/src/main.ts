@@ -3,7 +3,7 @@
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
-import { State, type Settings } from "./core/state";
+import { State, type MochiRunStatePayload, type Settings } from "./core/state";
 import { Island } from "./island/island";
 import { registerHookHandlers } from "./island/hooks";
 import { registerPhoneLink } from "./island/phone-link";
@@ -215,6 +215,8 @@ async function main() {
   });
   await onEvent("google-backup-completed", () => island.cloudBackup());
   await onEvent<{ count?: number; unread?: number }>("mail-inbox-summarized", () => island.mailInboxSummarized());
+  await onEvent<MochiRunStatePayload>("mochi-run-state", (payload) => State.applyMochiRunState(payload));
+  await onEvent<boolean>("mochi-paused", (on) => State.applyPaused(Boolean(on)));
 
   island.launch();
 

@@ -510,13 +510,7 @@ fn quit_app(app: AppHandle) {
 /// not just the island stopping showing things.
 #[tauri::command]
 fn set_paused(app: AppHandle, paused: bool) {
-    integrations::set_paused(paused);
-    #[cfg(windows)]
-    if paused {
-        if let Some(toasts) = app.try_state::<permission_notifications::PermissionToasts>() {
-            permission_notifications::clear_all(&toasts);
-        }
-    }
+    mochi::set_paused(&app, paused);
 }
 
 // ── Claude Code hooks ─────────────────────────────────────────────────────────
@@ -751,21 +745,13 @@ async fn chat_send(
     app: AppHandle,
     shared: State<'_, Shared>,
     chat: State<'_, Chat>,
+    runtime: State<'_, mochi::MochiRuntime>,
     query: String,
     context: Option<ChatContext>,
     mail: Option<bool>,
 ) -> Result<ChatReply, String> {
     let settings = shared.settings.lock().unwrap().clone();
-    // The chat's Mail switch: the latest Outlook messages ride under the request, and the
-    // system prompt says how to write a plan (mail/plan.rs) that runs only after a click.
-    if mail == Some(true) {
-        let query = mail::decorate(&query).await;
-        mail::MAIL_TURN.store(true, std::sync::atomic::Ordering::Relaxed);
-        let reply = chat::send(&app, &chat, &settings, query, context).await;
-        mail::MAIL_TURN.store(false, std::sync::atomic::Ordering::Relaxed);
-        return reply;
-    }
-    chat::send(&app, &chat, &settings, query, context).await
+    mochi::chat_bridge::chat_send_with_mochi(&app, &chat, &settings, &runtime, query, context, mail).await
 }
 
 /// The models a provider offers, for the picker in the chat view. Only asked
@@ -1402,6 +1388,7 @@ pub fn run() {
             mochi::mochi_permissions_reset_default,
             mochi::mochi_audit_list,
             mochi::mochi_audit_clear,
+            mochi::mochi_cancel_execution,
             mochi_mcp_status,
             mochi_mcp_preview,
             mochi_mcp_apply,

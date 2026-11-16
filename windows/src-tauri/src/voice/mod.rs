@@ -112,6 +112,14 @@ enum Mode {
     FollowUp { until: Instant },
 }
 
+fn is_paused() -> bool {
+    crate::integrations::PAUSED.load(Ordering::Relaxed)
+}
+
+fn should_process_voice(paused: bool, dictating: bool, recording: bool) -> bool {
+    !paused && !dictating && !recording
+}
+
 fn run(app: AppHandle, stop: Arc<AtomicBool>) {
     let mic = crate::flow::get(&app).map(|f| f.store.lock().unwrap().prefs.mic.clone()).unwrap_or_default();
     let (tx, rx) = mpsc::channel::<Vec<f32>>();
@@ -160,8 +168,12 @@ fn run(app: AppHandle, stop: Arc<AtomicBool>) {
             }
             _ => {}
         }
-        // Dictation and calls have the microphone: Coucou doesn't listen meanwhile.
-        if pill::dictating(&app) || crate::notes::is_recording(&app) {
+        // Ditado, reunião ou pausa rápida silenciam o microfone do assistente.
+        if !should_process_voice(is_paused(), pill::dictating(&app), crate::notes::is_recording(&app)) {
+            if is_paused() {
+                mode = Mode::Wake;
+                show(&app, None);
+            }
             vad.reset();
             continue;
         }
@@ -200,6 +212,11 @@ fn run(app: AppHandle, stop: Arc<AtomicBool>) {
             let Some(question) = question else { continue };
             mode = Mode::Wake;
             vad.hangover = 25;
+            if is_paused() {
+                crate::log::line("voice: ignored wake command while paused");
+                show(&app, None);
+                continue;
+            }
             show(&app, Some(VoiceView { phase: "thinking".into(), heard: question.clone(), answer: String::new() }));
             let reply = brain.respond(&app, &question);
             let answer = reply.as_ref().map(|r| r.text.clone()).unwrap_or_default();
@@ -547,6 +564,14 @@ mod tests {
         assert_eq!(pick_voice(&voices, "male").as_deref(), Some("b"));
         assert_eq!(pick_voice(&voices, "female").as_deref(), Some("c"));
         assert_eq!(pick_voice(&[], "female"), None);
+    }
+
+    #[test]
+    fn quick_pause_blocks_voice_capture_and_reply() {
+        assert!(should_process_voice(false, false, false));
+        assert!(!should_process_voice(true, false, false));
+        assert!(!should_process_voice(false, true, false));
+        assert!(!should_process_voice(false, false, true));
     }
 }
 

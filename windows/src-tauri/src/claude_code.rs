@@ -158,7 +158,13 @@ pub fn chat_prompt(history: &[Value], first: bool, context: Option<&ChatContext>
     }
     match chat::for_turn(first, context) {
         Some(ChatContext::File { name, path }) => {
-            out.push_str(&format!("File: {name} (read it at {path})\n\n"));
+            let clean_name = crate::mochi::sanitize::sanitize_external_text(name, 200);
+            let clean_path = crate::mochi::sanitize::sanitize_external_text(path, 512);
+            out.push_str(&crate::mochi::sanitize::format_untrusted_context(
+                "file",
+                &[("name", clean_name.as_str()), ("path", clean_path.as_str())],
+            ));
+            out.push_str("\n\n");
         }
         Some(ChatContext::Window { app_name, title, url }) => {
             out.push_str(&chat::window_line(app_name, title, url.as_deref()));
@@ -229,11 +235,13 @@ mod tests {
             "The conversation so far:\n<conversation>\n<user>\na\n</user>\n<assistant>\nb\n</assistant>\n</conversation>\n\nThe user's new message:\nc"
         );
         let file = ChatContext::File { name: "a.pdf".into(), path: "/inbox/a.pdf".into() };
-        assert_eq!(chat_prompt(&[], true, Some(&file), "why?"), "File: a.pdf (read it at /inbox/a.pdf)\n\nwhy?");
+        let expected_file = "<external_context untrusted=\"true\" data_only=\"true\">\nkind: file\nname: a.pdf\npath: /inbox/a.pdf\n</external_context>\n\nwhy?";
+        assert_eq!(chat_prompt(&[], true, Some(&file), "why?"), expected_file);
         assert!(chat_prompt(&history, false, Some(&file), "why?").ends_with("message:\nwhy?"));
         let win = ChatContext::Window { app_name: "Code".into(), title: "main.rs".into(), url: None };
-        assert_eq!(chat_prompt(&[], true, Some(&win), "q"), "Context — App: Code, Window: main.rs\n\nq");
-        assert!(chat_prompt(&history, false, Some(&win), "q").ends_with("message:\nContext — App: Code, Window: main.rs\n\nq"));
+        let expected_win = format!("{}\n\nq", chat::window_line("Code", "main.rs", None));
+        assert_eq!(chat_prompt(&[], true, Some(&win), "q"), expected_win);
+        assert!(chat_prompt(&history, false, Some(&win), "q").ends_with(&format!("message:\n{expected_win}")));
     }
 
     #[test]

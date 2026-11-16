@@ -13,6 +13,35 @@ import type { Bindings } from "./shortcuts";
 import { DEFAULT_OUTFIT, type Outfit } from "../mochi/wardrobe";
 import { pillColor } from "./pill-colors";
 import { Spotify, musicPlaying } from "./spotify";
+import { N_ } from "../i18n/i18n";
+
+export type MochiRunPhase = "thinking" | "awaiting_click" | "executing" | "done" | "failed";
+
+export interface MochiRunStatePayload {
+  state: MochiRunPhase;
+  tool?: string | null;
+  detail?: string | null;
+}
+
+export const MOCHI_RUN_THINKING_PHASE: MochiRunPhase = "thinking";
+export const MOCHI_RUN_DONE_PHASE: MochiRunPhase = "done";
+export const MOCHI_RUN_FAILED_PHASE: MochiRunPhase = "failed";
+
+export const MOCHI_RUN_LABEL_KEY: Record<MochiRunPhase, string> = {
+  thinking: N_("Thinking…"),
+  awaiting_click: N_("Waiting for click…"),
+  executing: N_("Executing…"),
+  done: N_("Completed"),
+  failed: N_("Failed"),
+};
+
+const RUN_OVERRIDE_BY_PHASE: Record<MochiRunPhase, BotStateName | null> = {
+  thinking: "thinking",
+  awaiting_click: "approval",
+  executing: "working",
+  done: null,
+  failed: null,
+};
 
 export type AgentSource = "claudeCode" | "n8n" | "agent";
 export type PillBadge = "approval" | "finished" | "error";
@@ -250,6 +279,7 @@ class AppState {
 
   isPinned = false;
   paused = false;
+  mochiRunState: MochiRunStatePayload | null = null;
 
   uploadProgress = 0;
   uploadDuration = 2.4;
@@ -346,6 +376,26 @@ class AppState {
   /** Marks the UI dirty; the island re-renders on the next frame. */
   notify() {
     for (const fn of this.listeners) fn();
+  }
+
+  applyMochiRunState(payload: MochiRunStatePayload | null) {
+    const same =
+      this.mochiRunState?.state === payload?.state &&
+      (this.mochiRunState?.tool ?? null) === (payload?.tool ?? null) &&
+      (this.mochiRunState?.detail ?? null) === (payload?.detail ?? null);
+    const nextOverride = payload ? RUN_OVERRIDE_BY_PHASE[payload.state] : null;
+    if (same && (this.stateOverride === "dizzy" || this.stateOverride === nextOverride)) return;
+    this.mochiRunState = payload;
+    if (this.stateOverride !== "dizzy") {
+      this.stateOverride = nextOverride;
+    }
+    this.notify();
+  }
+
+  applyPaused(paused: boolean) {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    this.notify();
   }
 
   get focusTask(): AgentTask | null {

@@ -9,17 +9,68 @@
 
 pub mod approval_bridge;
 pub mod audit;
+pub mod chat_bridge;
 pub mod mcp_config;
 pub mod mcp_server;
 pub mod permissions;
 pub mod registry;
+pub mod sanitize;
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::Manager;
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
+
+pub const MOCHI_RUN_STATE_EVENT: &str = "mochi-run-state";
+pub const MOCHI_PAUSED_EVENT: &str = "mochi-paused";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MochiRunState {
+    Thinking,
+    AwaitingClick,
+    Executing,
+    Done,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MochiRunStatePayload {
+    pub state: MochiRunState,
+    pub tool: Option<String>,
+    pub detail: Option<String>,
+}
+
+pub(crate) trait RunProgressObserver: Send + Sync {
+    fn on_awaiting_click(&self, tool_id: &str);
+    fn on_executing(&self, tool_id: &str);
+}
+
+struct ObservedRequester<'a> {
+    inner: &'a dyn ApprovalRequester,
+    tool_id: &'a str,
+    observer: Option<&'a dyn RunProgressObserver>,
+}
+
+impl ApprovalRequester for ObservedRequester<'_> {
+    fn request<'a>(&'a self, prompt: ApprovalPromptRequest) -> ApprovalFuture<'a> {
+        if let Some(obs) = self.observer {
+            obs.on_awaiting_click(self.tool_id);
+        }
+        self.inner.request(prompt)
+    }
+}
+
+#[derive(Debug)]
+struct ActiveRun {
+    run_id: u64,
+    cancel_tx: watch::Sender<bool>,
+    pending_request_id: Option<String>,
+}
 
 #[allow(unused_imports)]
 pub use approval_bridge::TauriApprovalRequester;
@@ -58,6 +109,8 @@ pub struct MochiRuntime {
     pub permissions: Arc<PermissionEngine>,
     pub audit: Arc<AuditLog>,
     mcp: Arc<Mutex<Option<mcp_server::McpServerHandle>>>,
+    next_run_id: Arc<AtomicU64>,
+    active_run: Arc<Mutex<Option<ActiveRun>>>,
 }
 
 impl Default for MochiRuntime {
@@ -97,6 +150,8 @@ impl MochiRuntime {
             permissions,
             audit,
             mcp: Arc::new(Mutex::new(None)),
+            next_run_id: Arc::new(AtomicU64::new(1)),
+            active_run: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -107,6 +162,8 @@ impl MochiRuntime {
             permissions: Arc::clone(&self.permissions),
             audit: Arc::clone(&self.audit),
             mcp: Arc::new(Mutex::new(None)),
+            next_run_id: Arc::new(AtomicU64::new(1)),
+            active_run: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -156,6 +213,67 @@ impl MochiRuntime {
         ctx.paused || crate::integrations::PAUSED.load(Ordering::Relaxed)
     }
 
+    /// Inicia o rastreamento de uma execução cancelável e devolve `(run_id, cancel_rx)`.
+    pub fn begin_run(&self) -> (u64, watch::Receiver<bool>) {
+        let run_id = self.next_run_id.fetch_add(1, Ordering::Relaxed);
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        let previous = {
+            let mut guard = self.active_run.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.replace(ActiveRun {
+                run_id,
+                cancel_tx,
+                pending_request_id: None,
+            })
+        };
+        if let Some(prev) = previous {
+            let _ = prev.cancel_tx.send(true);
+        }
+        (run_id, cancel_rx)
+    }
+
+    /// Registra ou limpa o pedido de aprovação em aberto da execução ativa.
+    pub fn set_pending_request(&self, run_id: u64, request_id: Option<String>) {
+        let mut guard = self.active_run.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(active) = guard.as_mut() {
+            if active.run_id == run_id {
+                active.pending_request_id = request_id;
+            }
+        }
+    }
+
+    /// Encerra o rastreamento quando a execução termina normalmente ou falha.
+    pub fn finish_run(&self, run_id: u64) {
+        let mut guard = self.active_run.lock().unwrap_or_else(PoisonError::into_inner);
+        if guard.as_ref().is_some_and(|active| active.run_id == run_id) {
+            *guard = None;
+        }
+    }
+
+    /// Cancela imediatamente a execução ativa (espera de modelo, espera de clique ou ferramenta).
+    pub fn cancel_execution(&self, app: Option<&AppHandle>) -> bool {
+        let taken = {
+            let mut guard = self.active_run.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.take()
+        };
+        let Some(mut active) = taken else {
+            return false;
+        };
+        let _ = active.cancel_tx.send(true);
+        let pending_id = active.pending_request_id.take();
+        if let Some(app) = app {
+            if let Some(req_id) = pending_id {
+                crate::pipe::expire_mochi_request(app, &req_id);
+            }
+            emit_run_state(
+                app,
+                MochiRunState::Failed,
+                None,
+                Some("Execução cancelada pelo usuário.".into()),
+            );
+        }
+        true
+    }
+
     /// Lista apenas ferramentas habilitadas e disponíveis para o contexto atual.
     pub fn list_available(&self, ctx: &ToolContext) -> Vec<ToolDescriptor> {
         self.registry.list_available(ctx)
@@ -196,6 +314,19 @@ impl MochiRuntime {
         tool_ctx: &ToolContext,
         requester: &dyn ApprovalRequester,
         cancel_rx: watch::Receiver<bool>,
+    ) -> Result<ToolExecutionOutcome, ToolError> {
+        self.invoke_tool_observed(tool_id, arguments, tool_ctx, requester, cancel_rx, None)
+            .await
+    }
+
+    pub(crate) async fn invoke_tool_observed(
+        &self,
+        tool_id: &str,
+        arguments: Value,
+        tool_ctx: &ToolContext,
+        requester: &dyn ApprovalRequester,
+        cancel_rx: watch::Receiver<bool>,
+        observer: Option<&dyn RunProgressObserver>,
     ) -> Result<ToolExecutionOutcome, ToolError> {
         if self.is_paused(tool_ctx) {
             let risk = self.known_risk_or_low(tool_id, tool_ctx);
@@ -263,6 +394,11 @@ impl MochiRuntime {
             }
         };
 
+        let observed_requester = ObservedRequester {
+            inner: requester,
+            tool_id: tool.id,
+            observer,
+        };
         let mut cancel_watch = cancel_rx.clone();
         let permit = tokio::select! {
             biased;
@@ -276,7 +412,7 @@ impl MochiRuntime {
                 );
                 return Err(ToolError::Cancelled);
             }
-            res = self.permissions.authorize(tool.id, tool.risk, &dry_run_summary, requester) => {
+            res = self.permissions.authorize(tool.id, tool.risk, &dry_run_summary, &observed_requester) => {
                 match res {
                     Ok(permit) => permit,
                     Err(err) => {
@@ -299,6 +435,10 @@ impl MochiRuntime {
                 }
             }
         };
+
+        if let Some(obs) = observer {
+            obs.on_executing(tool.id);
+        }
 
         let output = match self
             .execute_with_permit(&tool, arguments.clone(), tool_ctx, &permit, cancel_rx)
@@ -484,6 +624,43 @@ pub fn mochi_audit_list(
     limit: Option<usize>,
 ) -> Result<Vec<audit::AuditEntry>, String> {
     Ok(runtime.audit.list(limit))
+}
+
+pub(crate) fn emit_run_state(
+    app: &AppHandle,
+    state: MochiRunState,
+    tool: Option<&str>,
+    detail: Option<String>,
+) {
+    let _ = app.emit_to(
+        crate::island::WINDOW_LABEL,
+        MOCHI_RUN_STATE_EVENT,
+        MochiRunStatePayload {
+            state,
+            tool: tool.map(str::to_string),
+            detail,
+        },
+    );
+}
+
+/// Atualiza a pausa rápida unificada (integrações, ferramentas, voz e celular).
+pub fn set_paused(app: &AppHandle, paused: bool) {
+    crate::integrations::set_paused(paused);
+    if paused {
+        if let Some(runtime) = app.try_state::<MochiRuntime>() {
+            let _ = runtime.cancel_execution(Some(app));
+        }
+        #[cfg(windows)]
+        if let Some(toasts) = app.try_state::<crate::permission_notifications::PermissionToasts>() {
+            crate::permission_notifications::clear_all(&toasts);
+        }
+    }
+    let _ = app.emit_to(crate::island::WINDOW_LABEL, MOCHI_PAUSED_EVENT, paused);
+}
+
+#[tauri::command]
+pub fn mochi_cancel_execution(app: AppHandle, runtime: tauri::State<'_, MochiRuntime>) -> bool {
+    runtime.cancel_execution(Some(&app))
 }
 
 #[tauri::command]
@@ -1486,5 +1663,27 @@ mod tests {
         runtime.audit().clear().unwrap();
         assert!(runtime.audit().list(None).is_empty());
         assert_eq!(std::fs::read_to_string(temp.audit_path()).unwrap().trim(), "[]");
+    }
+
+    #[test]
+    fn active_run_cancel_execution_wakes_watchers_and_is_idempotent() {
+        let (_temp, runtime) =
+            runtime_with_valid_perms("active-run", ToolRegistry::with_default_tools());
+        assert!(!runtime.cancel_execution(None));
+
+        let (run_id, rx) = runtime.begin_run();
+        assert!(!*rx.borrow());
+        runtime.set_pending_request(run_id, Some("mochi-1".into()));
+
+        assert!(runtime.cancel_execution(None));
+        assert!(*rx.borrow());
+        assert!(!runtime.cancel_execution(None));
+
+        let (_run2, mut rx2) = runtime.begin_run();
+        let (run3, _rx3) = runtime.begin_run();
+        // Novo begin_run cancela eventual run anterior órfão.
+        assert!(*rx2.borrow_and_update());
+        runtime.finish_run(run3);
+        assert!(!runtime.cancel_execution(None));
     }
 }
