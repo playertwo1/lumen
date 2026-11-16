@@ -5,32 +5,35 @@
 import { h, clear } from "../../views/dom";
 import { t } from "../../i18n/i18n";
 import { onEvent } from "../../core/bridge";
-import { FlowBridge, flowKeyId, type Edge, type FlowKey, type ModelsStatus, type SummaryBackends, type SummaryEngine } from "../../core/flow";
+import { FlowBridge, flowKeyId, type Edge, type FlowKey, type ModelState, type ModelsStatus, type SpeechModel, type SummaryBackends, type SummaryEngine } from "../../core/flow";
 import { comboFromKeys } from "../keys";
 import type { HubContext } from "../shell";
 import { pageSave } from "../save";
 import { anchor, button, card, divider, keyKeycap, keycap, keyLabel, label, number, row, segmented, select, toggle } from "../ui";
 
-/** Download / progress / installed, for the voice model. Redraws itself. */
-export function modelsControl(ctx: HubContext, onReady?: () => void): HTMLElement {
+const modelState = (models: ModelsStatus, which: SpeechModel): ModelState =>
+  (which === "whisper" ? models.whisper : models.parakeet) ?? { state: "missing" };
+
+/** Download / progress / installed, for a voice model. Redraws itself. */
+export function modelsControl(ctx: HubContext, onReady?: () => void, which: SpeechModel = "parakeet"): HTMLElement {
   const el = h("div", { style: "display:flex;align-items:center;gap:8px" });
   let confirming = false;
   const draw = (models: ModelsStatus) => {
     clear(el);
-    const m = models.parakeet;
+    const m = modelState(models, which);
     if (m.state === "missing") {
-      el.append(button(t("Download"), () => void FlowBridge.download(), "primary"));
+      el.append(button(t("Download"), () => void FlowBridge.download(which), "primary"));
     } else if (m.state === "downloading") {
       const bar = h("div", { class: "hub-progress" }, h("i", { style: `width:${Math.round(m.fraction * 100)}%` }));
       el.append(bar, h("span", { class: "hub-note", text: `${Math.round(m.fraction * 100)} %` }));
     } else if (m.state === "failed") {
       el.append(h("span", { class: "hub-note", text: m.error, title: m.error, style: "max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }));
-      el.append(button(t("Retry"), () => void FlowBridge.download()));
+      el.append(button(t("Retry"), () => void FlowBridge.download(which)));
     } else if (confirming) {
       el.append(
         button(t("Remove the models"), () => {
           confirming = false;
-          void FlowBridge.removeModels();
+          void FlowBridge.removeModels(which);
         }, "danger", true),
         button(t("Cancel"), () => {
           confirming = false;
@@ -49,10 +52,10 @@ export function modelsControl(ctx: HubContext, onReady?: () => void): HTMLElemen
   draw(ctx.status.models);
   void onEvent<ModelsStatus>("speech-models", (models) => {
     if (!el.isConnected) return;
-    const wasReady = ctx.status.models.parakeet.state === "ready";
+    const wasReady = modelState(ctx.status.models, which).state === "ready";
     ctx.status.models = models;
     draw(models);
-    if (!wasReady && models.parakeet.state === "ready") onReady?.();
+    if (!wasReady && modelState(models, which).state === "ready") onReady?.();
   });
   return el;
 }
@@ -149,9 +152,19 @@ export async function flowSettingsPage(page: HTMLElement, ctx: HubContext) {
 
   // ── Recognition ──
   page.append(label(t("Recognition")));
+  const speechModels: [SpeechModel, string][] = [["parakeet", "Parakeet (rápido)"], ["whisper", "Whisper Large v3 Turbo (mais preciso)"]];
   page.append(anchor("flow.recognition", card(
     row(t("Parakeet, on your computer"), t("The most accurate, offline, 25 languages. Downloaded once (about {0} MB).", { 0: number(status.models.downloadMb) }), modelsControl(ctx)),
+    divider(),
+    row("Whisper Large v3 Turbo, no seu computador",
+      `Acerta mais em português, porém é mais lento sem placa de vídeo. Só para o ditado; as notas de chamada continuam no Parakeet. Baixado uma vez (cerca de ${number(status.models.whisperMb ?? 1036)} MB).`,
+      modelsControl(ctx, undefined, "whisper")),
+    divider(),
+    row("Modelo do ditado",
+      "Se o Whisper não estiver baixado, o ditado usa o Parakeet.",
+      select(speechModels, prefs.speechModel ?? "parakeet", (model) => void ctx.setPrefs((p) => (p.speechModel = model)))),
     h("div", { class: "hub-note", text: t("Your voice never leaves this computer: Parakeet turns it into text here, and the recording is dropped as soon as it is pasted.") }),
+    h("div", { class: "hub-note", text: "O texto ditado é colado no campo em que você está digitando e também fica na área de transferência, então Ctrl+V cola de novo." }),
   )));
 
   // ── Notetaker ──

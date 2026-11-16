@@ -68,7 +68,11 @@ export interface FlowPrefs {
   muteOthers: boolean;
   /** One short press of the key starts hands-free dictation, instead of two. */
   oneTapHandsFree: boolean;
+  /** The dictation model. */
+  speechModel: SpeechModel;
 }
+
+export type SpeechModel = "parakeet" | "whisper";
 
 export type ModelState =
   | { state: "missing" }
@@ -79,6 +83,9 @@ export type ModelState =
 export interface ModelsStatus {
   parakeet: ModelState;
   downloadMb: number;
+  /** Whisper Large v3 Turbo, the optional dictation model. */
+  whisper?: ModelState;
+  whisperMb?: number;
 }
 
 export interface FlowStatus {
@@ -287,8 +294,8 @@ export const FlowBridge = {
   runningApps: () => call<{ id: string; name: string }[]>("flow_running_apps"),
   copy: (text: string) => call<boolean>("flow_copy", { text }),
   pasteAgain: () => call<void>("flow_paste_again"),
-  download: () => call<void>("flow_models_download"),
-  removeModels: () => call<void>("flow_models_remove"),
+  download: (model: SpeechModel = "parakeet") => call<void>("flow_models_download", { model }),
+  removeModels: (model: SpeechModel = "parakeet") => call<void>("flow_models_remove", { model }),
 
   notes: () => call<NotesState>("notes_state"),
   startNote: () => callOrThrow<string>("notes_start"),

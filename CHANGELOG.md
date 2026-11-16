@@ -1,5 +1,12 @@
 # Changelog
 
+## Windows 0.7.8 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Whisper Large v3 Turbo no ditado** — em Ajustes → Reconhecimento dá para baixar o Whisper Large v3 Turbo (cerca de 1 GB, uma vez) e escolher em **Modelo do ditado** entre Parakeet (rápido) e Whisper (mais preciso em português, mais lento sem placa de vídeo). Roda neste computador, sem enviar a voz, com o idioma do app; as notas de chamada e o comando de voz continuam no Parakeet. Sem o Whisper baixado, o ditado usa o Parakeet.
+- **O texto ditado fica copiado** — depois de ditar, o texto é colado no campo em que você está digitando (uma conversa, por exemplo) e também fica na área de transferência, então Ctrl+V cola de novo. Antes, o Lumen devolvia o que estava copiado antes.
+- **Ícone cristal** — o Lumen ganhou o ícone de cristal no app, na bandeja e nos instaladores.
+- **Base do assistente Mochi (Fase M1)** — registro de ferramentas (só a ferramenta de teste `ping`), permissões por risco que negam tudo quando a configuração falta ou está corrompida, cartão Permitir/Negar na ilha, registro local redigido das ferramentas usadas, servidor MCP local e pausa rápida no chat. Nenhuma ferramenta real ainda.
+
 ## Windows 0.7.7 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Arraste o notch até qualquer borda** — segure a ilha (fora do Mochi e dos botões) e arraste: ao soltar, ela gruda na borda mais próxima da tela (em cima, embaixo, esquerda ou direita), no ponto em que foi solta, e o lugar fica salvo. Nunca fica solta no meio da tela. Os lugares fixos (topo central e os quatro cantos) continuam em Ajustes → Posição. Só no Windows.

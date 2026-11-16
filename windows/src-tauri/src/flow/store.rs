@@ -128,6 +128,8 @@ pub struct Prefs {
     pub voice_gender: String,
     /// One short press of the key starts hands-free dictation, instead of two.
     pub one_tap_hands_free: bool,
+    /// The dictation model: "parakeet" or "whisper" (Whisper Large v3 Turbo).
+    pub speech_model: String,
 }
 
 impl Default for Prefs {
@@ -150,6 +152,7 @@ impl Default for Prefs {
             voice_output: "system".into(),
             voice_gender: "female".into(),
             one_tap_hands_free: false,
+            speech_model: "parakeet".into(),
         }
     }
 }

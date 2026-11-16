@@ -12,6 +12,19 @@
 - [x] Comparar os SHA-256 dos instaladores publicados com o preflight. Os hashes diferiram; os assets finais foram baixados, conferidos com os digests do GitHub e examinados diretamente pelo Defender sem detecções (evento 1001, exame `{9AD2DD74-E9E4-4DCE-8E77-D2954870AA9F}`).
 - Nunca executar esta lista de publicação sem o proprietário pedir release.
 
+## Windows 0.7.8 — Whisper Large v3 Turbo no ditado, texto ditado mantido na área de transferência, ícone cristal e Fase M1 do Mochi (publicação local)
+
+- [x] Pedido explícito do proprietário em 2026-11-16 para fazer commit e release (`playertwo1/lumen`, publicação local `no-github-actions`).
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.8: 3 items in 1 languages`), `npx tsc --noEmit`, `npm test` (`750/750`), `cargo test --lib` (`824` passaram, `9` ignorados; o exe de teste precisou do manifesto Common-Controls v6 embutido com `mt.exe`, falha de ambiente que também ocorre sem a mudança), `cargo test` em `windows/hook/` (`42/42`) e `npm run pack`.
+- [x] Microsoft Defender (`MpCmdRun.exe -Scan -ScanType 3 -File <arquivo> -DisableRemediation`) examinou individualmente os quatro artefatos gerados: código 0 e `found no threats`.
+- [x] SHA-256 dos artefatos:
+  - Setup `Lumen-Windows-0.7.8-setup.exe`: `2F95354F3E53168CA2A17E49B375D9EF8A87856A18B0D6704C69172CB8EC47EE`.
+  - MSI `Lumen-Windows-0.7.8.msi`: `69A05C6E7DEB867FDC8A253A71795A63BC0CB78DE63236B2867AAB89B08D1055`.
+  - App portátil `lumen.exe`: `7221AD2B93486A69DD8709295D3D8562DD5302C9873DF324DA3537B5F1E7402F`.
+  - Hook `lumen-hook.exe`: `28A727DA8A485EBE3ECF38200E4A28FC350F27ACD70B78471EEC220B8D8ACD4F`.
+- [x] Push para `origin` (`playertwo1/lumen`), tag `windows-v0.7.8`, publicação via `gh release create windows-v0.7.8` e atualização da release móvel `windows-latest`.
+- [ ] Proprietário validar no notebook: baixar o Whisper, ditar em português com Parakeet e com Whisper (precisão e velocidade), texto colado no campo e Ctrl+V colando de novo. Continua **NOT_RUN**.
+
 ## Windows 0.7.7 — Notch e pílula arrastáveis até a borda, pílula Em cima/Escondida e engrenagem direto nos Ajustes (publicação local)
 
 - [x] Pedido explícito do proprietário em 2026-11-16 para fazer commit e gerar uma release `.exe` versionada (`playertwo1/lumen`, publicação local `no-github-actions`).

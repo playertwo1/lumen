@@ -11,13 +11,14 @@ pub mod audio;
 
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use sherpa_onnx::{
     OfflineRecognizer, OfflineRecognizerConfig, OfflineSpeakerDiarization, OfflineSpeakerDiarizationConfig,
-    OfflineTransducerModelConfig,
+    OfflineTransducerModelConfig, OfflineWhisperModelConfig,
 };
 use tauri::{AppHandle, Emitter};
 
@@ -109,6 +110,47 @@ pub static DIARIZER: ModelSet = ModelSet {
     ],
 };
 
+/// OpenAI's Whisper Large v3 Turbo, int8 (about 1 GB): an optional dictation
+/// model, more accurate than Parakeet in Portuguese and slower. Notes and the
+/// voice wake-up stay on Parakeet, which gives each word its time.
+pub static WHISPER: ModelSet = ModelSet {
+    id: "whisper-large-v3-turbo-int8",
+    files: &[
+        ModelFile {
+            name: "turbo-encoder.int8.onnx",
+            url: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-encoder.int8.onnx",
+            size: 674_716_297,
+            sha256: "b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b",
+        },
+        ModelFile {
+            name: "turbo-decoder.int8.onnx",
+            url: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-decoder.int8.onnx",
+            size: 361_080_764,
+            sha256: "20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547",
+        },
+        ModelFile {
+            name: "turbo-tokens.txt",
+            url: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/turbo-tokens.txt",
+            size: 816_730,
+            sha256: "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+        },
+    ],
+};
+
+/// Dictation uses Whisper instead of Parakeet (Flow prefs `speechModel`).
+static DICTATE_WITH_WHISPER: AtomicBool = AtomicBool::new(false);
+
+/// Picks the dictation model; the one no longer used frees its memory.
+pub fn set_dictation_model(whisper: bool) {
+    if DICTATE_WITH_WHISPER.swap(whisper, Ordering::Relaxed) != whisper && !whisper {
+        *whisper_slot().lock().unwrap() = None;
+    }
+}
+
+fn whisper_chosen() -> bool {
+    DICTATE_WITH_WHISPER.load(Ordering::Relaxed) && WHISPER.is_present()
+}
+
 pub fn models_dir() -> PathBuf {
     crate::settings::local_dir().join("Models")
 }
@@ -131,36 +173,66 @@ pub struct ModelsStatus {
     pub parakeet: ModelState,
     /// Size of the whole download in MB, both sets.
     pub download_mb: u64,
+    /// The optional Whisper dictation model.
+    pub whisper: ModelState,
+    pub whisper_mb: u64,
+}
+
+/// "parakeet" (with the diarizer) or "whisper".
+fn sets_of(which: &str) -> &'static [&'static ModelSet] {
+    static WHISPER_SETS: [&ModelSet; 1] = [&WHISPER];
+    static PARAKEET_SETS: [&ModelSet; 2] = [&PARAKEET, &DIARIZER];
+    if which == "whisper" {
+        &WHISPER_SETS
+    } else {
+        &PARAKEET_SETS
+    }
 }
 
 struct Downloads {
-    running: bool,
+    /// The download under way, if any.
+    running: Option<&'static str>,
     fraction: f64,
-    error: Option<String>,
+    /// The last failure, with what it was downloading.
+    error: Option<(&'static str, String)>,
 }
 
 fn downloads() -> &'static Mutex<Downloads> {
     static D: OnceLock<Mutex<Downloads>> = OnceLock::new();
-    D.get_or_init(|| Mutex::new(Downloads { running: false, fraction: 0.0, error: None }))
+    D.get_or_init(|| Mutex::new(Downloads { running: None, fraction: 0.0, error: None }))
 }
 
-/// Both sets count as one download: dictation and the Notetaker are ready together.
-pub fn status() -> ModelsStatus {
-    let d = downloads().lock().unwrap();
-    let parakeet = if d.running {
+fn state_of(d: &Downloads, which: &'static str) -> ModelState {
+    if d.running == Some(which) {
         ModelState::Downloading { fraction: d.fraction }
-    } else if PARAKEET.is_present() && DIARIZER.is_present() {
+    } else if sets_of(which).iter().all(|s| s.is_present()) {
         ModelState::Ready
-    } else if let Some(error) = &d.error {
+    } else if let Some((_, error)) = d.error.as_ref().filter(|(w, _)| *w == which) {
         ModelState::Failed { error: error.clone() }
     } else {
         ModelState::Missing
-    };
-    ModelsStatus { parakeet, download_mb: (PARAKEET.total_size() + DIARIZER.total_size()) / 1_000_000 }
+    }
+}
+
+/// Parakeet and the diarizer count as one download: dictation and the Notetaker are ready together.
+pub fn status() -> ModelsStatus {
+    let d = downloads().lock().unwrap();
+    let mb = |which| sets_of(which).iter().map(|s| s.total_size()).sum::<u64>() / 1_000_000;
+    ModelsStatus {
+        parakeet: state_of(&d, "parakeet"),
+        download_mb: mb("parakeet"),
+        whisper: state_of(&d, "whisper"),
+        whisper_mb: mb("whisper"),
+    }
 }
 
 pub fn is_ready() -> bool {
     PARAKEET.is_present()
+}
+
+/// A model can turn a dictation into text.
+pub fn dictation_ready() -> bool {
+    PARAKEET.is_present() || whisper_chosen()
 }
 
 fn emit_status(app: &AppHandle) {
@@ -169,24 +241,25 @@ fn emit_status(app: &AppHandle) {
 }
 
 /// Downloads what is missing, with the progress in `speech-models` events.
-pub fn download(app: AppHandle) {
+pub fn download(app: AppHandle, which: &str) {
+    let which: &'static str = if which == "whisper" { "whisper" } else { "parakeet" };
     {
         let mut d = downloads().lock().unwrap();
-        if d.running {
+        if d.running.is_some() {
             return;
         }
-        d.running = true;
+        d.running = Some(which);
         d.fraction = 0.0;
         d.error = None;
     }
     emit_status(&app);
     tauri::async_runtime::spawn(async move {
-        let result = download_all(&app).await;
+        let result = download_all(&app, sets_of(which)).await;
         {
             let mut d = downloads().lock().unwrap();
-            d.running = false;
+            d.running = None;
             if let Err(err) = &result {
-                d.error = Some(err.clone());
+                d.error = Some((which, err.clone()));
             }
         }
         match result {
@@ -200,8 +273,8 @@ pub fn download(app: AppHandle) {
     });
 }
 
-async fn download_all(app: &AppHandle) -> Result<(), String> {
-    let total = PARAKEET.total_size() + DIARIZER.total_size();
+async fn download_all(app: &AppHandle, sets: &[&ModelSet]) -> Result<(), String> {
+    let total: u64 = sets.iter().map(|s| s.total_size()).sum();
     let mut done: u64 = 0;
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(20))
@@ -210,7 +283,7 @@ async fn download_all(app: &AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
     let mut last_emit = Instant::now();
-    for set in [&PARAKEET, &DIARIZER] {
+    for set in sets {
         let dir = set.dir();
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         for file in set.files {
@@ -256,10 +329,11 @@ async fn download_all(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Deletes the models (Settings → Remove the models).
-pub fn remove(app: &AppHandle) {
+pub fn remove(app: &AppHandle, which: &str) {
     unload();
-    let _ = std::fs::remove_dir_all(PARAKEET.dir());
-    let _ = std::fs::remove_dir_all(DIARIZER.dir());
+    for set in sets_of(which) {
+        let _ = std::fs::remove_dir_all(set.dir());
+    }
     downloads().lock().unwrap().error = None;
     emit_status(app);
 }
@@ -312,8 +386,60 @@ pub fn recognizer() -> Option<Arc<OfflineRecognizer>> {
     r
 }
 
-/// Loads the model in the background, so the first dictation is not slowed down.
+fn whisper_slot() -> &'static Mutex<Option<Arc<OfflineRecognizer>>> {
+    static W: OnceLock<Mutex<Option<Arc<OfflineRecognizer>>>> = OnceLock::new();
+    W.get_or_init(|| Mutex::new(None))
+}
+
+/// Whisper's language code ("pt") from the app's language; empty lets it guess.
+fn whisper_language() -> String {
+    let lang = crate::i18n::current().split(['-', '_']).next().unwrap_or("").to_lowercase();
+    if lang.len() == 2 { lang } else { String::new() }
+}
+
+/// The loaded Whisper, loading it on first use.
+fn whisper_recognizer() -> Option<Arc<OfflineRecognizer>> {
+    if let Some(r) = whisper_slot().lock().unwrap().clone() {
+        return Some(r);
+    }
+    if !WHISPER.is_present() {
+        return None;
+    }
+    let _guard = load_lock().lock().unwrap();
+    if let Some(r) = whisper_slot().lock().unwrap().clone() {
+        return Some(r);
+    }
+    let mut config = OfflineRecognizerConfig::default();
+    config.model_config.whisper = OfflineWhisperModelConfig {
+        encoder: Some(WHISPER.path("turbo-encoder.int8.onnx")),
+        decoder: Some(WHISPER.path("turbo-decoder.int8.onnx")),
+        language: Some(whisper_language()),
+        task: Some("transcribe".into()),
+        tail_paddings: -1,
+        ..Default::default()
+    };
+    config.model_config.tokens = Some(WHISPER.path("turbo-tokens.txt"));
+    config.model_config.num_threads = threads();
+    let started = Instant::now();
+    let r = OfflineRecognizer::create(&config).map(Arc::new);
+    match &r {
+        Some(_) => crate::log::line(format!("Whisper loaded in {:?}", started.elapsed())),
+        None => crate::log::line("Whisper could not be loaded"),
+    }
+    *whisper_slot().lock().unwrap() = r.clone();
+    r
+}
+
+/// Loads the dictation model in the background, so the first dictation is not slowed down.
 pub fn preload() {
+    if whisper_chosen() {
+        if whisper_slot().lock().unwrap().is_none() {
+            std::thread::spawn(|| {
+                let _ = whisper_recognizer();
+            });
+        }
+        return;
+    }
     if !PARAKEET.is_present() || recognizer_slot().lock().unwrap().is_some() {
         return;
     }
@@ -322,9 +448,20 @@ pub fn preload() {
     });
 }
 
-/// Frees the model's memory (dictation turned off, models removed).
+/// Frees the models' memory (dictation turned off, models removed).
 pub fn unload() {
     *recognizer_slot().lock().unwrap() = None;
+    *whisper_slot().lock().unwrap() = None;
+}
+
+/// A dictation into text, with the model picked for dictation.
+pub fn transcribe_dictation(samples: &[f32]) -> Option<Transcript> {
+    if whisper_chosen() {
+        if let Some(rec) = whisper_recognizer() {
+            return Some(transcribe_with(&rec, samples));
+        }
+    }
+    transcribe(samples)
 }
 
 /// What was said, and each word with its place in the audio.
@@ -361,6 +498,10 @@ pub fn padded(chunk: &[f32]) -> Vec<f32> {
 /// Transcribes 16 kHz mono audio.
 pub fn transcribe(samples: &[f32]) -> Option<Transcript> {
     let rec = recognizer()?;
+    Some(transcribe_with(&rec, samples))
+}
+
+fn transcribe_with(rec: &OfflineRecognizer, samples: &[f32]) -> Transcript {
     let mut out = Transcript::default();
     for (offset, chunk) in audio::split_for_model(samples, SAMPLE_RATE, MAX_CHUNK_SECONDS) {
         if chunk.len() < (SAMPLE_RATE as usize) / 4 {
@@ -389,7 +530,7 @@ pub fn transcribe(samples: &[f32]) -> Option<Transcript> {
         }
         out.words.extend(words);
     }
-    Some(out)
+    out
 }
 
 /// Parakeet's tokens (" Ne", " vous", " dem", "ande", "z") → words with times.
@@ -475,7 +616,10 @@ mod tests {
     fn the_downloads_add_up() {
         assert_eq!(PARAKEET.total_size(), 652_184_281 + 11_845_275 + 6_355_277 + 93_939);
         assert!(DIARIZER.total_size() < 40_000_000);
-        for set in [&PARAKEET, &DIARIZER] {
+        assert_eq!(WHISPER.total_size(), 674_716_297 + 361_080_764 + 816_730);
+        assert_eq!(sets_of("whisper").len(), 1);
+        assert_eq!(sets_of("parakeet").len(), 2);
+        for set in [&PARAKEET, &DIARIZER, &WHISPER] {
             for f in set.files {
                 assert_eq!(f.sha256.len(), 64, "{}", f.name);
                 assert!(f.url.starts_with("https://huggingface.co/"), "{}", f.name);
