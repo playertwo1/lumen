@@ -36,7 +36,7 @@
       "icons/lumen/icon.ico"
     ],
     "resources": { "../target/release/coucou-hook.exe": "lumen-hook.exe" },
-    "shortDescription": "Bússola de papel para suas sessões e ideias.",
+    "shortDescription": "Cristal luminoso para suas sessões e ideias.",
     "longDescription": "O Lumen organiza suas sessões de agentes e integrações numa ilha discreta. Revise permissões, responda perguntas, converse e anexe arquivos sem sair do que está fazendo.",
     "windows": {
       "wix": {

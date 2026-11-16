@@ -46,6 +46,31 @@ body.hub-window ::selection {
   height: 100vh;
 }
 
+.lumen-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.88);
+  pointer-events: none;
+  animation: lumen-intro-out 150ms ease-out 800ms both;
+}
+
+.lumen-intro img {
+  display: block;
+  width: min(176px, 42vw);
+  height: auto;
+}
+
+@keyframes lumen-intro-out {
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lumen-intro { animation: none; }
+}
+
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
 
 .hub-side {
