@@ -11,13 +11,15 @@ import { fileURLToPath } from "node:url";
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "src-tauri", "icons", "lumen");
 
-// Original Bússola de papel icon: indigo tile, sand face and terracotta needle.
+// Lumen crystal: violet facets and a warm, luminous core.
 const SS = 4; // supersampling factor
 
-const INK = [38, 34, 75];
-const PAPER = [244, 232, 201];
-const SHADE = [210, 191, 150];
-const CLAY = [190, 92, 65];
+const TILE = [12, 10, 17];
+const VIOLET_DARK = [31, 24, 55];
+const VIOLET = [82, 43, 165];
+const VIOLET_LIGHT = [150, 99, 255];
+const GOLD = [247, 190, 95];
+const CREAM = [255, 239, 195];
 
 function insideRoundRect(x, y, size, radius) {
   const cx = Math.max(radius, Math.min(size - radius, x));
@@ -35,22 +37,24 @@ function insidePoly(x, y, points) {
   return inside;
 }
 
-function renderCompass(size) {
+const FACETS = [
+  { color: VIOLET_DARK, shape: [[0, -0.30], [-0.13, -0.21], [-0.06, 0.03], [0, -0.04]] },
+  { color: VIOLET_LIGHT, shape: [[0, -0.30], [0.13, -0.21], [0.06, -0.04], [0, -0.12]] },
+  { color: [53, 34, 93], shape: [[-0.13, -0.21], [-0.21, 0.03], [-0.06, 0.18], [0, -0.04], [-0.06, 0.03]] },
+  { color: VIOLET, shape: [[0.13, -0.21], [0.21, 0.03], [0.09, 0.18], [0.06, -0.04], [0, -0.12]] },
+  { color: [61, 39, 117], shape: [[-0.06, 0.03], [0, -0.04], [0, 0.30], [-0.06, 0.30], [-0.16, 0.18]] },
+  { color: [37, 29, 71], shape: [[0, -0.04], [0.09, 0.18], [0.06, 0.30], [0, 0.30]] },
+];
+
+function renderCrystal(size, tile = true) {
   const px = new Uint8Array(size * size * 4);
   const cx = size / 2;
   const cy = size / 2;
-  const radius = size * 0.36;
   const p = (x, y) => [cx + x * size, cy + y * size];
-  const points = [
-    { color: CLAY, shape: [p(0, 0), p(-0.075, -0.035), p(0, -0.31), p(0.075, -0.035)] },
-    { color: INK, shape: [p(0, 0), p(0.075, -0.035), p(0.31, 0), p(0.075, 0.035)] },
-    { color: SHADE, shape: [p(0, 0), p(0.075, 0.035), p(0, 0.31), p(-0.075, 0.035)] },
-    { color: CLAY, shape: [p(0, 0), p(-0.075, 0.035), p(-0.31, 0), p(-0.075, -0.035)] },
-    { color: SHADE, shape: [p(0, -0.015), p(0.04, -0.055), p(0.19, -0.19), p(0.12, -0.035)] },
-    { color: PAPER, shape: [p(0.015, 0), p(0.055, 0.04), p(0.19, 0.19), p(0.035, 0.12)] },
-    { color: INK, shape: [p(0, 0.015), p(-0.04, 0.055), p(-0.19, 0.19), p(-0.12, 0.035)] },
-    { color: SHADE, shape: [p(-0.015, 0), p(-0.055, -0.04), p(-0.19, -0.19), p(-0.035, -0.12)] },
-  ];
+  const facets = FACETS.map((facet) => ({ color: facet.color, shape: facet.shape.map(([x, y]) => p(x, y)) }));
+  const core = [p(0, -0.10), p(0.09, 0), p(0, 0.12), p(-0.09, 0)];
+  const tileSize = size * 0.91;
+  const tileOffset = (size - tileSize) / 2;
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -59,12 +63,9 @@ function renderCompass(size) {
         for (let sx = 0; sx < SS; sx++) {
           const px = x + (sx + 0.5) / SS;
           const py = y + (sy + 0.5) / SS;
-          let color = insideRoundRect(px, py, size, size * 0.19) ? INK : null;
-          if ((px - cx) ** 2 + (py - cy) ** 2 <= radius ** 2) color = PAPER;
-          for (const point of points) {
-            if (insidePoly(px, py, point.shape)) color = point.color;
-          }
-          if ((px - cx) ** 2 + (py - cy) ** 2 <= (size * 0.047) ** 2) color = INK;
+          let color = tile && insideRoundRect(px - tileOffset, py - tileOffset, tileSize, size * 0.18) ? TILE : null;
+          for (const facet of facets) if (insidePoly(px, py, facet.shape)) color = facet.color;
+          if (insidePoly(px, py, core)) color = px < cx ? CREAM : GOLD;
           if (!color) continue;
           sum[0] += color[0];
           sum[1] += color[1];
@@ -156,7 +157,7 @@ function encodeICO(entries) {
 
 mkdirSync(OUT, { recursive: true });
 
-const png = (size) => encodePNG(size, renderCompass(size));
+const png = (size) => encodePNG(size, renderCrystal(size));
 
 const files = {
   "32x32.png": png(32),
@@ -172,3 +173,7 @@ for (const [name, data] of Object.entries(files)) {
 const ico = encodeICO([16, 24, 32, 48, 64, 128, 256].map((size) => ({ size, png: png(size) })));
 writeFileSync(join(OUT, "icon.ico"), ico);
 console.log(`icon.ico — ${ico.length} bytes`);
+
+const tray = encodePNG(32, renderCrystal(32, false));
+writeFileSync(join(OUT, "tray.png"), tray);
+console.log(`tray.png — ${tray.length} bytes`);

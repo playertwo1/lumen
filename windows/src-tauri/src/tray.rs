@@ -52,8 +52,10 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let update = MenuItem::with_id(app, "update", "", true, None::<&str>)?;
     app.manage(UpdateItem { menu: menu.clone(), item: update, version: Mutex::new(None) });
 
-    let mut builder = TrayIconBuilder::with_id("coucou")
+    let tray_icon = Image::from_bytes(include_bytes!("../icons/lumen/tray.png"))?;
+    let builder = TrayIconBuilder::with_id("coucou")
         .tooltip(crate::PRODUCT_NAME)
+        .icon(tray_icon)
         .menu(&menu)
         .on_menu_event(|app: &AppHandle, event| match event.id.as_ref() {
             "quit" => app.exit(0),
@@ -64,10 +66,6 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
                 let _ = app.emit_to(WINDOW_LABEL, "tray", id.to_string());
             }
         });
-
-    if let Some(icon) = app.default_window_icon().cloned() {
-        builder = builder.icon(icon);
-    }
 
     builder.build(app)?;
     Ok(())
@@ -134,15 +132,15 @@ pub fn tint_blue(rgba: &[u8]) -> Vec<u8> {
 }
 
 /// The island says whether a new version waits (consent, newer, not put off with
-/// Later): blue Mochi in the tray, or the usual one.
+/// Later): blue crystal in the tray, or the usual one.
 #[tauri::command]
 pub fn tray_update_hint(app: AppHandle, on: bool) {
     let Some(tray) = app.tray_by_id("coucou") else { return };
-    let Some(base) = app.default_window_icon() else { return };
+    let Ok(base) = Image::from_bytes(include_bytes!("../icons/lumen/tray.png")) else { return };
     let icon = if on {
         Image::new_owned(tint_blue(base.rgba()), base.width(), base.height())
     } else {
-        base.clone().to_owned()
+        base
     };
     let _ = tray.set_icon(Some(icon));
 }

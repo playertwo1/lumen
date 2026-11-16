@@ -96,13 +96,38 @@ const DEFAULT_STATUS: FlowStatus = {
 
 export async function startHub(root: HTMLElement, opts: HubOptions) {
   document.body.classList.add("hub-window");
+  let introPlayed = false;
+  const playLumenIntro = () => {
+    if (!LUMEN_WINDOWS || introPlayed) return;
+    introPlayed = true;
+    const intro = document.createElement("div");
+    intro.className = "lumen-intro";
+    intro.setAttribute("aria-hidden", "true");
+    const picture = document.createElement("picture");
+    const still = document.createElement("source");
+    still.media = "(prefers-reduced-motion: reduce)";
+    still.srcset = "/lumen-crystal.png";
+    const image = document.createElement("img");
+    image.src = "/lumen-crystal.gif";
+    image.alt = "";
+    picture.append(still, image);
+    intro.append(picture);
+    document.body.append(intro);
+    window.setTimeout(() => intro.remove(), 950);
+  };
   // The window is created hidden and only shown and hidden afterwards: its
   // canvases animate only while it is on screen (#792).
-  await onEvent<boolean>("hub-visible", setWindowShown);
+  await onEvent<boolean>("hub-visible", (shown) => {
+    setWindowShown(shown);
+    if (shown) playLumenIntro();
+  });
   // While you dictate: the loudest of the pill's bands.
   await onEvent<number[]>("flow-bands", (bands) => setVoiceLevel(Math.max(0, ...bands)));
   const shown = await FlowBridge.hubShown();
-  if (shown !== null) setWindowShown(shown);
+  if (shown !== null) {
+    setWindowShown(shown);
+    if (shown) playLumenIntro();
+  }
   let current: PageId = "dictation";
   let activeAnchor: string | null = null;
   let searchHits: SettingsSearchHit[] = [];
