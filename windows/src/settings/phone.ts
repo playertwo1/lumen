@@ -145,7 +145,6 @@ export function phoneSection(on: boolean, makeToggle: Toggle, settings: Settings
     const leftCol = h(
       "div",
       { class: "phone-col" },
-      pairingCard,
       relaySlot(makeToggle, () => void refreshPairing()),
     );
     const rightCol = h(
@@ -154,7 +153,7 @@ export function phoneSection(on: boolean, makeToggle: Toggle, settings: Settings
       permissionsCard,
     );
 
-    detail.append(h("div", { class: "phone-workbench" }, leftCol, rightCol), extrasCard);
+    detail.append(pairingCard, h("div", { class: "phone-workbench" }, leftCol, rightCol), extrasCard);
   };
 
   /** Kept up to date while the window is open and the link is on; nothing runs otherwise. */

@@ -4194,6 +4194,9 @@ button.hub-icon.tasks-cal-close {
 
 .phone-detail {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .phone-workbench {
@@ -4201,6 +4204,14 @@ button.hub-icon.tasks-cal-close {
   grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
+}
+
+.phone-col:has(> .phone-relay-slot:empty) {
+  display: none;
+}
+
+.phone-workbench:has(> .phone-col > .phone-relay-slot:empty) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .phone-col {
@@ -4294,20 +4305,27 @@ button.hub-icon.tasks-cal-close {
 }
 
 .phone-pairing-sheet {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
   padding-top: 4px;
 }
 
 .hub-page #settings-root .phone-qr {
-  width: 164px;
-  padding: 8px;
-  border-radius: 12px;
+  width: min(100%, 496px);
+  padding: 12px;
+  border-radius: 14px;
   background: #ffffff;
   border: 1px solid var(--hub-line-strong);
   flex: 0 0 auto;
+  box-sizing: border-box;
+}
+
+.hub-page #settings-root .phone-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .phone-pairing-controls {
@@ -4315,6 +4333,7 @@ button.hub-icon.tasks-cal-close {
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  flex: 1 1 210px;
 }
 
 .phone-input-row {
@@ -4616,7 +4635,7 @@ button.hub-icon.tasks-cal-close {
 
 @media (max-width: 720px) {
   .phone-pairing-sheet {
-    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
   }
 
   .phone-service-grid {
