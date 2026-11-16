@@ -7947,6 +7947,18 @@
     },
     "Unavailable": {
       "zh-Hans": "不可用", "hi": "उपलब्ध नहीं", "es": "No disponible", "ar": "غير متاح", "fr": "Indisponible", "bn": "উপলভ্য নয়", "pt-BR": "Indisponível", "ru": "Недоступно", "id": "Tidak tersedia", "de": "Nicht verfügbar", "tr": "Kullanılamıyor", "ko": "사용할 수 없음", "ja": "利用できません"
+    },
+    "Always allow": {
+      "zh-Hans": "始终允许", "hi": "हमेशा अनुमति दें", "es": "Permitir siempre", "ar": "السماح دائمًا", "fr": "Toujours autoriser", "bn": "সর্বদা অনুমতি দিন", "pt-BR": "Sempre permitir", "ru": "Разрешать всегда", "id": "Selalu izinkan", "de": "Immer zulassen", "tr": "Her zaman izin ver", "ko": "항상 허용", "ja": "常に許可"
+    },
+    "Risk: Low": {
+      "zh-Hans": "风险：低", "hi": "जोखिम: कम", "es": "Riesgo: Bajo", "ar": "المخاطرة: منخفضة", "fr": "Risque : faible", "bn": "ঝুঁকি: কম", "pt-BR": "Risco: Baixo", "ru": "Риск: низкий", "id": "Risiko: Rendah", "de": "Risiko: Niedrig", "tr": "Risk: Düşük", "ko": "위험: 낮음", "ja": "リスク: 低"
+    },
+    "Risk: Medium": {
+      "zh-Hans": "风险：中", "hi": "जोखिम: मध्यम", "es": "Riesgo: Medio", "ar": "المخاطرة: متوسطة", "fr": "Risque : moyen", "bn": "ঝুঁকি: মাঝারি", "pt-BR": "Risco: Médio", "ru": "Риск: средний", "id": "Risiko: Sedang", "de": "Risiko: Mittel", "tr": "Risk: Orta", "ko": "위험: 보통", "ja": "リスク: 中"
+    },
+    "Risk: High": {
+      "zh-Hans": "风险：高", "hi": "जोखिम: उच्च", "es": "Riesgo: Alto", "ar": "المخاطرة: عالية", "fr": "Risque : élevé", "bn": "ঝুঁকি: উচ্চ", "pt-BR": "Risco: Alto", "ru": "Риск: высокий", "id": "Risiko: Tinggi", "de": "Risiko: Hoch", "tr": "Risk: Yüksek", "ko": "위험: 높음", "ja": "リスク: 高"
     }
   }
 }

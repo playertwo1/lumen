@@ -35,7 +35,7 @@ import { MAIL_ID, type MailCardData } from "../core/mail";
 import { focusTargetLabel } from "../core/compact";
 import { buildMailCard } from "./mail";
 import type { Outfit, OutfitSelection } from "../mochi/wardrobe";
-import { language, t, tl, type Msg } from "../i18n/i18n";
+import { language, N_, t, tl, type Msg } from "../i18n/i18n";
 import type { ViewCommand } from "../island/shortcuts";
 
 export interface ViewActions {
@@ -52,7 +52,7 @@ export interface ViewActions {
   /** The ↗ button: opens whatever the focused pill points at. */
   openTarget(): void;
   openUrl(url: string): void;
-  decide(d: "allow" | "deny"): void;
+  decide(d: "allow" | "deny" | "always"): void;
   /** Answers the question Claude Code asked: question text → chosen label. */
   answer(answers: Record<string, string | string[]>): void;
   /** Hands the pending request back to the terminal. */
@@ -620,6 +620,12 @@ function foldButton(actions: ViewActions): HTMLElement {
   );
 }
 
+const MOCHI_RISK_LABELS: Record<"low" | "medium" | "high", string> = {
+  low: N_("Risk: Low"),
+  medium: N_("Risk: Medium"),
+  high: N_("Risk: High"),
+};
+
 function buildApproval(actions: ViewActions): ViewHost {
   const who = h("div");
   const code = h("div", { class: "code" });
@@ -632,35 +638,73 @@ function buildApproval(actions: ViewActions): ViewHost {
   // moments after a new request appears are ignored.
   let shownFor: string | null = null;
   let shownAt = 0;
-  const guarded = (d: "allow" | "deny") => () => {
+  const guarded = (d: "allow" | "deny" | "always") => () => {
+    const pending = State.pendingApproval;
+    const currentReq = pending?.requestId ?? null;
+    if (currentReq !== shownFor) {
+      shownFor = currentReq;
+      shownAt = performance.now();
+      return;
+    }
     if (performance.now() - shownAt < CLICK_GUARD_MS) return;
+    if (
+      d === "always" &&
+      !(pending?.coucouKind === "mochi_tool" && pending.allowAlways === true && pending.mochiRisk !== "high")
+    ) {
+      return;
+    }
     actions.decide(d);
   };
   const inTerminal = () => {
+    const currentReq = State.pendingApproval?.requestId ?? null;
+    if (currentReq !== shownFor) {
+      shownFor = currentReq;
+      shownAt = performance.now();
+      return;
+    }
     if (performance.now() - shownAt < CLICK_GUARD_MS) return;
     actions.answerInTerminal();
   };
   return {
     el,
     sync() {
-      const req = State.pendingApproval?.requestId ?? null;
+      const pending = State.pendingApproval;
+      const req = pending?.requestId ?? null;
       if (req !== shownFor) {
         shownFor = req;
         shownAt = performance.now();
       }
+      const isMochi = pending?.coucouKind === "mochi_tool";
       clear(who);
-      who.append(agentWho(State.focusTask, t("needs permission")));
-      // The whole point of approving here rather than in the terminal: this line
-      // is the command, the file path or the URL being authorised, not just the
-      // name of the tool asking.
-      code.textContent = State.pendingApproval?.command || State.pendingApproval?.tool || "…";
+      if (isMochi && pending) {
+        const riskKey = MOCHI_RISK_LABELS[pending.mochiRisk ?? "high"];
+        who.append(
+          h(
+            "div",
+            { class: "who-row" },
+            dot("#F5A524", 8),
+            h("span", { class: "n", text: "Lumen" }),
+            h("span", { text: `${pending.tool} · ${t(riskKey)}` }),
+          ),
+        );
+        code.textContent = pending.mochiSummary || pending.command || pending.tool || "…";
+      } else {
+        who.append(agentWho(State.focusTask, t("needs permission")));
+        // The whole point of approving here rather than in the terminal: this line
+        // is the command, the file path or the URL being authorised, not just the
+        // name of the tool asking.
+        code.textContent = pending?.command || pending?.tool || "…";
+      }
       // Two buttons, built once per kind of card. Rebuilding them between a
       // mouse-down and a mouse-up would swallow the click. "Always" is gone until
-      // the remembered-rules list exists to back it. Antigravity waits on the card:
-      // a third button hands the command back to its own prompt in the terminal,
-      // where its "Always allow" lives (as on the Mac).
-      const agy = State.pendingApproval?.pillId === "agent_antigravity";
-      const key = agy ? "agy" : "built";
+      // the remembered-rules list exists to back it (except Mochi medium tools).
+      // Antigravity waits on the card: a third button hands the command back to its
+      // own prompt in the terminal, where its "Always allow" lives (as on the Mac).
+      const agy = pending?.pillId === "agent_antigravity";
+      const allowAlways = isMochi && pending?.allowAlways === true && pending?.mochiRisk !== "high";
+      const key = isMochi
+        ? (allowAlways ? "mochi-medium" : "mochi-high")
+        : (agy ? "agy" : "built");
       if (rowKey === key) return;
       rowKey = key;
       clear(row);
@@ -668,6 +712,7 @@ function buildApproval(actions: ViewActions): ViewHost {
         btn(tl("Deny"), "secondary", guarded("deny"), "N"),
         btn(tl("Allow"), "primary", guarded("allow"), "Y"),
       );
+      if (allowAlways) row.append(btn(tl("Always allow"), "secondary", guarded("always")));
       if (agy) row.append(btn(tl("Reply in terminal"), "secondary", inTerminal));
     },
   };

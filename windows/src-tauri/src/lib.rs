@@ -637,11 +637,25 @@ fn approval_decision(app: AppHandle, request_id: String, decision: String) {
     resolve_approval(&app, &request_id, &decision);
 }
 
+fn accepts_approval_decision(decision: &str, mochi_allow_always: bool) -> bool {
+    match decision {
+        "allow" | "deny" => true,
+        "always" => mochi_allow_always,
+        _ => false,
+    }
+}
+
 pub(crate) fn resolve_approval(app: &AppHandle, request_id: &str, decision: &str) -> bool {
-    if !matches!(decision, "allow" | "deny") || !pipe::answer(app, request_id, decision) {
+    let allow_always = pipe::is_mochi_allow_always(app, request_id);
+    if !accepts_approval_decision(decision, allow_always) {
         return false;
     }
-    recap::record_decision(app, request_id, decision);
+    let Some(outcome) = pipe::answer_with_outcome(app, request_id, decision) else {
+        return false;
+    };
+    if !outcome.is_mochi {
+        recap::record_decision(app, request_id, decision);
+    }
     true
 }
 
@@ -1502,5 +1516,14 @@ mod tests {
         assert_eq!(super::resolve_focus_target_kind("agent_claude-desktop"), super::FocusTargetKind::ClaudeDesktop);
         assert_eq!(super::resolve_focus_target_kind("agent_antigravity"), super::FocusTargetKind::Antigravity);
         assert_eq!(super::resolve_focus_target_kind("agent_cursor"), super::FocusTargetKind::SessionOrFallback);
+    }
+
+    #[test]
+    fn accepts_approval_decision_permits_always_only_when_mochi_allows_it() {
+        assert!(super::accepts_approval_decision("allow", false));
+        assert!(super::accepts_approval_decision("deny", false));
+        assert!(!super::accepts_approval_decision("always", false));
+        assert!(super::accepts_approval_decision("always", true));
+        assert!(!super::accepts_approval_decision("other", true));
     }
 }

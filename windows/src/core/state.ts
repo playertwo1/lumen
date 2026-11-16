@@ -50,6 +50,15 @@ export interface ApprovalInfo {
   command: string;
   /** Set when Claude Code is asking a question rather than for a permission. */
   questions?: AskedQuestion[];
+  /** Set when an internal Mochi tool needs confirmation in the island card. */
+  coucouKind?: "mochi_tool";
+  mochiSummary?: string;
+  mochiRisk?: "low" | "medium" | "high";
+  allowAlways?: boolean;
+}
+
+function isMochiApproval(info: ApprovalInfo): boolean {
+  return info.coucouKind === "mochi_tool" || info.pillId === "mochi";
 }
 
 /** One question of an AskUserQuestion call. */
@@ -375,6 +384,7 @@ class AppState {
   beginApproval(info: ApprovalInfo) {
     this.pendingApproval = info;
     this.isPinned = true;
+    if (isMochiApproval(info)) return;
     if (this.focusBeforeApproval == null) this.focusBeforeApproval = this.focusId;
     this.setFocus(info.pillId);
   }
@@ -388,21 +398,33 @@ class AppState {
     if (!req) return;
     this.pendingApproval = null;
     this.isPinned = false;
-    this.updateTask(req.pillId, "working");
-    this.setPillBadge(req.pillId, null);
+    const reqIsMochi = isMochiApproval(req);
+    if (!reqIsMochi) {
+      this.updateTask(req.pillId, "working");
+      this.setPillBadge(req.pillId, null);
+    }
 
     // If another request is waiting in line, promote it next
     const next = this.approvalQueue.shift();
     if (next) {
+      if (!reqIsMochi && isMochiApproval(next)) {
+        const previous = this.focusBeforeApproval;
+        this.focusBeforeApproval = null;
+        if (previous && this.focusId === req.pillId && this.tasks.some((t) => t.id === previous)) {
+          this.focusId = previous;
+        }
+      }
       this.beginApproval(next);
-      this.updateTask(next.pillId, next.questions ? "question" : "approval");
+      if (!isMochiApproval(next)) {
+        this.updateTask(next.pillId, next.questions ? "question" : "approval");
+      }
       this.notify();
       return;
     }
 
     const previous = this.focusBeforeApproval;
     this.focusBeforeApproval = null;
-    if (previous && this.focusId === req.pillId && this.tasks.some((t) => t.id === previous)) {
+    if (!reqIsMochi && previous && this.focusId === req.pillId && this.tasks.some((t) => t.id === previous)) {
       this.focusId = previous;
     }
     this.notify();

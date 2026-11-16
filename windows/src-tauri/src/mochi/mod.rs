@@ -7,6 +7,7 @@
 
 #![cfg_attr(not(test), allow(dead_code))]
 
+pub mod approval_bridge;
 pub mod permissions;
 pub mod registry;
 
@@ -17,6 +18,8 @@ use serde_json::Value;
 use tauri::Manager;
 use tokio::sync::watch;
 
+#[allow(unused_imports)]
+pub use approval_bridge::TauriApprovalRequester;
 #[allow(unused_imports)]
 pub use permissions::{
     bootstrap_default_if_first_run, load_config_from, parse_config, ApprovalFuture,
@@ -149,6 +152,21 @@ impl MochiRuntime {
         })
     }
 
+    /// Executa a ferramenta usando `TauriApprovalRequester` conectado ao `AppHandle` para confirmações.
+    #[allow(dead_code)]
+    pub async fn invoke_tool_with_app(
+        &self,
+        app: &tauri::AppHandle,
+        tool_id: &str,
+        arguments: Value,
+        tool_ctx: &ToolContext,
+        cancel_rx: watch::Receiver<bool>,
+    ) -> Result<ToolExecutionOutcome, ToolError> {
+        let requester = approval_requester(app);
+        self.invoke_tool(tool_id, arguments, tool_ctx, &requester, cancel_rx)
+            .await
+    }
+
     async fn execute_with_permit(
         &self,
         tool: &ToolDefinition,
@@ -178,6 +196,12 @@ impl MochiRuntime {
             }
         }
     }
+}
+
+/// Cria um solicitante de aprovação conectado à ilha e às notificações do `AppHandle`.
+#[allow(dead_code)]
+pub fn approval_requester(app: &tauri::AppHandle) -> TauriApprovalRequester {
+    TauriApprovalRequester::new(app.clone())
 }
 
 /// Inicializa permissões do Mochi na partida do Tauri (cria config v1 apenas na 1ª execução).
