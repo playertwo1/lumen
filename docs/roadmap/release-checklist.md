@@ -12,6 +12,19 @@
 - [x] Comparar os SHA-256 dos instaladores publicados com o preflight. Os hashes diferiram; os assets finais foram baixados, conferidos com os digests do GitHub e examinados diretamente pelo Defender sem detecções (evento 1001, exame `{9AD2DD74-E9E4-4DCE-8E77-D2954870AA9F}`).
 - Nunca executar esta lista de publicação sem o proprietário pedir release.
 
+## Windows 0.7.9 — Claude Code via `claude.cmd` corrigido na limpeza do ditado, no chat sem chave e nos resumos (publicação local)
+
+- [x] Pedido explícito do proprietário em 2026-11-16 para fazer commit e release (`playertwo1/lumen`, publicação local `no-github-actions`).
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.9: 2 items in 1 languages`), `cargo test --lib` (`825` passaram, `10` ignorados; manifesto Common-Controls v6 embutido no exe de teste com `mt.exe`), execução real ignorada `a_real_run_takes_a_multi_line_system_prompt` contra o `claude.cmd` do npm (respondeu `pong`) e `npm run pack`. Interface sem mudança desde a 0.7.8 (`750/750`).
+- [x] Microsoft Defender (`MpCmdRun.exe -Scan -ScanType 3 -File <arquivo> -DisableRemediation`) examinou individualmente os quatro artefatos gerados: código 0 e `found no threats`.
+- [x] SHA-256 dos artefatos:
+  - Setup `Lumen-Windows-0.7.9-setup.exe`: `74ECA2D8E66A39FD1DD5FB76C7FAE55196E915C45C2F830F0CF5B3A1E57C181C`.
+  - MSI `Lumen-Windows-0.7.9.msi`: `9274098DD9D1982524D3E3EE7EC58542FACA14C44C799D3FCB3E1BB0748C9E5A`.
+  - App portátil `lumen.exe`: `1C85CBFC71E11AF91A7FAFDC7088CEF69E2C52265F138691DDC1D20A23AA24E0`.
+  - Hook `lumen-hook.exe`: `EDBE691B65120072DFF141D32DB727137510B85C56ADBF92AE6EF08AF9BBA373`.
+- [x] Push para `origin` (`playertwo1/lumen`), tag `windows-v0.7.9`, publicação via `gh release create windows-v0.7.9` e atualização da release móvel `windows-latest`.
+- [ ] Proprietário validar no notebook: ditar com a limpeza ligada e ver o texto revisado (sem `clean-up skipped` no log). Continua **NOT_RUN**.
+
 ## Windows 0.7.8 — Whisper Large v3 Turbo no ditado, texto ditado mantido na área de transferência, ícone cristal e Fase M1 do Mochi (publicação local)
 
 - [x] Pedido explícito do proprietário em 2026-11-16 para fazer commit e release (`playertwo1/lumen`, publicação local `no-github-actions`).

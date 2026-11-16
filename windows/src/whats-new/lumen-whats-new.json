@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.7.9",
+      "items": [
+        {
+          "icon": "sparkles",
+          "title": { "pt-BR": "Limpeza do ditado pelo Claude corrigida" },
+          "detail": { "pt-BR": "Com o Claude Code instalado pelo npm, a revisão do texto ditado voltou a funcionar." }
+        },
+        {
+          "icon": "chat",
+          "title": { "pt-BR": "Chat e resumos pelo Claude Code" },
+          "detail": { "pt-BR": "O chat sem chave da API e os resumos das notas também usam o Claude Code sem erro." }
+        }
+      ]
+    },
+    {
       "version": "0.7.8",
       "items": [
         {
