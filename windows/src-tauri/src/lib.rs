@@ -1382,6 +1382,8 @@ pub fn run() {
             mochi::mochi_permissions_status,
             mochi::mochi_permissions_revoke,
             mochi::mochi_permissions_reset_default,
+            mochi::mochi_audit_list,
+            mochi::mochi_audit_clear,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

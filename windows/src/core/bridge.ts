@@ -985,3 +985,35 @@ export const GoogleBridge = {
     return callOrThrow<GoogleCalendarEvent>("google_calendar_create_from_task", { input });
   },
 };
+
+export type MochiRiskLevel = "low" | "medium" | "high";
+
+export type MochiAuditDecision =
+  | "autoLow"
+  | "allowedOnce"
+  | "allowedAlways"
+  | "alreadyAlwaysAllowed"
+  | "denied"
+  | "timedOut"
+  | "blockedPaused"
+  | "blockedFailClosed"
+  | "cancelled"
+  | "rejected";
+
+export type MochiAuditResult = "success" | "failed" | "blocked" | "cancelled";
+
+export interface MochiAuditEntry {
+  timestampMs: number;
+  isoTime: string;
+  toolId: string;
+  risk: MochiRiskLevel;
+  decision: MochiAuditDecision;
+  result: MochiAuditResult;
+  summary: string;
+}
+
+/** Núcleo local do assistente Mochi (src-tauri/src/mochi). */
+export const MochiBridge = {
+  auditList: (limit?: number) => call<MochiAuditEntry[]>("mochi_audit_list", { limit: limit ?? null }),
+  auditClear: () => call<void>("mochi_audit_clear"),
+};

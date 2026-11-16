@@ -7,11 +7,13 @@ import "./settings.css";
 import {
   Bridge,
   GoogleBridge,
+  MochiBridge,
   onEvent,
   type ChatGptAccountStatus,
   type GoogleStatus,
   type HookPreview,
   type HookStatus,
+  type MochiAuditEntry,
   type ShortcutsReport,
   type SubscriptionStatus,
 } from "../core/bridge";
@@ -52,9 +54,9 @@ const KEY_STORE = navigator.userAgent.includes("Windows")
 let settings: Settings = { ...DEFAULT_SETTINGS };
 let version = "";
 
-const windowRoot = document.getElementById("hub")!;
+const windowRoot = document.getElementById("hub");
 /** Where the Notch page being shown draws its sections. */
-let root: HTMLElement = windowRoot;
+let root: HTMLElement = windowRoot ?? document.body;
 let hub: { redraw(): void; current(): PageId } | null = null;
 
 async function save() {
@@ -1363,7 +1365,7 @@ function whatsappSections(): HTMLElement[] {
  */
 let generalSync: (() => void) | null = null;
 
-function generalSection(): HTMLElement {
+export function generalSection(): HTMLElement {
   const volume = h("input", {
     type: "range", min: "0", max: "0.2", step: "0.005",
     value: String(settings.soundVolume),
@@ -1529,6 +1531,7 @@ function generalSection(): HTMLElement {
       autostart,
     ),
     ...recapRows(),
+    ...mochiAuditRows(),
     ...updateRows(toggle, version),
     languageRow(),
   );
@@ -1812,6 +1815,67 @@ function recapRows(): HTMLElement[] {
   ];
 }
 
+/** Settings → General → Assistant tool log (local, redacted). */
+export function mochiAuditRows(): HTMLElement[] {
+  const T = {
+    label: t("Tool log"),
+    clear: t("Clear tool log"),
+    cleared: t("Tool log cleared."),
+    about: t("Stored only on this computer and redacted — never raw arguments, secrets or personal paths."),
+  };
+  const countHint = h("span", { class: "hint" });
+  const feedback = h("span", { class: "hint" });
+  let clearTimer: number | null = null;
+  let clearedActive = false;
+
+  const setCount = (entries: MochiAuditEntry[] | null | undefined) => {
+    const count = Array.isArray(entries) ? entries.length : 0;
+    countHint.textContent = tn("{count} local entry", "{count} local entries", count);
+  };
+  setCount([]);
+  void MochiBridge.auditList().then((entries) => {
+    setCount(clearedActive ? [] : entries);
+  }).catch(() => {});
+
+  const clearBtn = h("button", {
+    class: "danger",
+    text: T.clear,
+    onclick: async () => {
+      clearBtn.disabled = true;
+      if (clearTimer !== null) {
+        window.clearTimeout(clearTimer);
+        clearTimer = null;
+      }
+      await MochiBridge.auditClear();
+      clearedActive = true;
+      setCount([]);
+      feedback.textContent = T.cleared;
+      clearTimer = window.setTimeout(() => {
+        clearTimer = null;
+        clearedActive = false;
+        clearBtn.disabled = false;
+        feedback.textContent = "";
+      }, 2400);
+    },
+  }) as HTMLButtonElement;
+
+  return [
+    h("div", { class: "row" },
+      h("label", { text: T.label }),
+      countHint,
+    ),
+    h("div", { class: "row" },
+      h("label", {}),
+      clearBtn,
+      feedback,
+    ),
+    h("div", { class: "row" },
+      h("label", {}),
+      h("span", { class: "hint", style: "flex:1 1 0;min-width:0", text: T.about }),
+    ),
+  ];
+}
+
 // ── Language ──────────────────────────────────────────────────────────────────
 
 /** The shortcuts section on screen, told about the events listened to once in main. */
@@ -1833,6 +1897,7 @@ function applyDirection() {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  if (!windowRoot) return;
   const boot = await Bridge.boot();
   if (boot) {
     settings = { ...settings, ...boot.settings };
@@ -1972,4 +2037,4 @@ async function render() {
   }
 }
 
-void main();
+if (windowRoot) void main();

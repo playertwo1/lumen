@@ -8,6 +8,7 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 pub mod approval_bridge;
+pub mod audit;
 pub mod permissions;
 pub mod registry;
 
@@ -20,6 +21,11 @@ use tokio::sync::watch;
 
 #[allow(unused_imports)]
 pub use approval_bridge::TauriApprovalRequester;
+#[allow(unused_imports)]
+pub use audit::{
+    redact_summary, AuditDecision, AuditEntry, AuditLog, AuditResult, AUDIT_FILE_NAME,
+    MAX_AUDIT_ENTRIES,
+};
 #[allow(unused_imports)]
 pub use permissions::{
     bootstrap_default_if_first_run, load_config_from, parse_config, ApprovalFuture,
@@ -48,6 +54,7 @@ pub struct ToolExecutionOutcome {
 pub struct MochiRuntime {
     pub registry: Arc<ToolRegistry>,
     pub permissions: Arc<PermissionEngine>,
+    pub audit: Arc<AuditLog>,
 }
 
 impl Default for MochiRuntime {
@@ -57,19 +64,35 @@ impl Default for MochiRuntime {
 }
 
 impl MochiRuntime {
-    /// Cria o runtime padrão (`ping` habilitada + `PermissionEngine` em `%APPDATA%\Coucou\mochi-permissions.json`).
+    /// Cria o runtime padrão (`ping` habilitada, permissões em `%APPDATA%\Coucou\mochi-permissions.json`
+    /// e auditoria em `%LOCALAPPDATA%\Coucou\mochi-audit.json`).
     pub fn new_default() -> Self {
-        Self::new(
+        Self::new_with_parts(
             Arc::new(ToolRegistry::with_default_tools()),
             Arc::new(PermissionEngine::new_default()),
+            Arc::new(AuditLog::new_default()),
         )
     }
 
     /// Cria o runtime usando `ToolRegistry` e `PermissionEngine` explícitos.
     pub fn new(registry: Arc<ToolRegistry>, permissions: Arc<PermissionEngine>) -> Self {
+        #[cfg(test)]
+        let audit = Arc::new(AuditLog::new_in_memory());
+        #[cfg(not(test))]
+        let audit = Arc::new(AuditLog::new_default());
+        Self::new_with_parts(registry, permissions, audit)
+    }
+
+    /// Cria o runtime usando `ToolRegistry`, `PermissionEngine` e `AuditLog` explícitos.
+    pub fn new_with_parts(
+        registry: Arc<ToolRegistry>,
+        permissions: Arc<PermissionEngine>,
+        audit: Arc<AuditLog>,
+    ) -> Self {
         Self {
             registry,
             permissions,
+            audit,
         }
     }
 
@@ -90,6 +113,12 @@ impl MochiRuntime {
         &self.permissions
     }
 
+    /// Retorna referência ao registro local redigido de auditoria.
+    #[allow(dead_code)]
+    pub fn audit(&self) -> &Arc<AuditLog> {
+        &self.audit
+    }
+
     /// Informa se a execução está bloqueada pela pausa rápida do contexto ou do aplicativo.
     pub fn is_paused(&self, ctx: &ToolContext) -> bool {
         ctx.paused || crate::integrations::PAUSED.load(Ordering::Relaxed)
@@ -100,10 +129,34 @@ impl MochiRuntime {
         self.registry.list_available(ctx)
     }
 
+    fn known_risk_or_low(&self, tool_id: &str, tool_ctx: &ToolContext) -> RiskLevel {
+        self.registry
+            .get_if_available(tool_id, tool_ctx)
+            .map(|def| def.risk)
+            .unwrap_or(RiskLevel::Low)
+    }
+
+    fn record_audit(
+        &self,
+        tool_id: &str,
+        risk: RiskLevel,
+        decision: AuditDecision,
+        result: AuditResult,
+        summary: &str,
+    ) -> Option<AuditEntry> {
+        match self.audit.record(tool_id, risk, decision, result, summary) {
+            Ok(entry) => Some(entry),
+            Err(err) => {
+                crate::log::line(format!("mochi audit write failed: {err}"));
+                None
+            }
+        }
+    }
+
     /// Pipeline único e obrigatório de execução de ferramentas:
     /// 1. pausa -> 2. registro/disponibilidade -> 3. schema estrito -> 4. dry_run ->
     /// 5. autorização (`PermissionEngine::authorize` -> `PermitToken`) ->
-    /// 6. execução autenticada (`execute_with_permit`) -> 7. `verify` -> 8. `audit_summary`.
+    /// 6. execução autenticada (`execute_with_permit`) -> 7. `verify` -> 8. `audit_summary` -> 9. `AuditLog`.
     pub async fn invoke_tool(
         &self,
         tool_id: &str,
@@ -113,34 +166,165 @@ impl MochiRuntime {
         cancel_rx: watch::Receiver<bool>,
     ) -> Result<ToolExecutionOutcome, ToolError> {
         if self.is_paused(tool_ctx) {
+            let risk = self.known_risk_or_low(tool_id, tool_ctx);
+            self.record_audit(
+                tool_id,
+                risk,
+                AuditDecision::BlockedPaused,
+                AuditResult::Blocked,
+                &ToolError::Paused.to_string(),
+            );
             return Err(ToolError::Paused);
         }
         if *cancel_rx.borrow() {
+            let risk = self.known_risk_or_low(tool_id, tool_ctx);
+            self.record_audit(
+                tool_id,
+                risk,
+                AuditDecision::Cancelled,
+                AuditResult::Cancelled,
+                &ToolError::Cancelled.to_string(),
+            );
             return Err(ToolError::Cancelled);
         }
 
-        let tool = self.registry.get_if_available(tool_id, tool_ctx)?;
-        validate_schema(&tool.input_schema, &arguments)?;
-        let dry_run_summary = (tool.dry_run)(&arguments)?;
+        let tool = match self.registry.get_if_available(tool_id, tool_ctx) {
+            Ok(tool) => tool,
+            Err(err) => {
+                self.record_audit(
+                    tool_id,
+                    RiskLevel::Low,
+                    AuditDecision::Rejected,
+                    AuditResult::Blocked,
+                    &err.to_string(),
+                );
+                return Err(err);
+            }
+        };
+
+        if let Err(err) = validate_schema(&tool.input_schema, &arguments) {
+            self.record_audit(
+                tool.id,
+                tool.risk,
+                AuditDecision::Rejected,
+                AuditResult::Blocked,
+                &err.to_string(),
+            );
+            return Err(err);
+        }
+
+        let dry_run_summary = match (tool.dry_run)(&arguments) {
+            Ok(summary) => summary,
+            Err(err) => {
+                let result = match &err {
+                    ToolError::InvalidInput(_) => AuditResult::Blocked,
+                    _ => AuditResult::Failed,
+                };
+                self.record_audit(
+                    tool.id,
+                    tool.risk,
+                    AuditDecision::Rejected,
+                    result,
+                    &err.to_string(),
+                );
+                return Err(err);
+            }
+        };
 
         let mut cancel_watch = cancel_rx.clone();
         let permit = tokio::select! {
             biased;
             _ = wait_for_cancel(&mut cancel_watch) => {
+                self.record_audit(
+                    tool.id,
+                    tool.risk,
+                    AuditDecision::Cancelled,
+                    AuditResult::Cancelled,
+                    &ToolError::Cancelled.to_string(),
+                );
                 return Err(ToolError::Cancelled);
             }
             res = self.permissions.authorize(tool.id, tool.risk, &dry_run_summary, requester) => {
-                res?
+                match res {
+                    Ok(permit) => permit,
+                    Err(err) => {
+                        let decision = match &err {
+                            ToolError::Timeout => AuditDecision::TimedOut,
+                            ToolError::PermissionDenied(_) if !self.permissions.status().healthy => {
+                                AuditDecision::BlockedFailClosed
+                            }
+                            _ => AuditDecision::Denied,
+                        };
+                        self.record_audit(
+                            tool.id,
+                            tool.risk,
+                            decision,
+                            AuditResult::Blocked,
+                            &err.to_string(),
+                        );
+                        return Err(err);
+                    }
+                }
             }
         };
 
-        let output = self
+        let output = match self
             .execute_with_permit(&tool, arguments.clone(), tool_ctx, &permit, cancel_rx)
-            .await?;
+            .await
+        {
+            Ok(output) => output,
+            Err(err) => {
+                let (decision, result, summary) = match &err {
+                    ToolError::Paused => (
+                        AuditDecision::BlockedPaused,
+                        AuditResult::Blocked,
+                        err.to_string(),
+                    ),
+                    ToolError::Cancelled => (
+                        AuditDecision::Cancelled,
+                        AuditResult::Cancelled,
+                        err.to_string(),
+                    ),
+                    ToolError::PermissionDenied(_) => (
+                        AuditDecision::from(permit.decision()),
+                        AuditResult::Blocked,
+                        err.to_string(),
+                    ),
+                    _ => (
+                        AuditDecision::from(permit.decision()),
+                        AuditResult::Failed,
+                        safe_tool_audit_summary(&tool, &arguments, &Err(err.clone())),
+                    ),
+                };
+                self.record_audit(tool.id, tool.risk, decision, result, &summary);
+                return Err(err);
+            }
+        };
 
-        (tool.verify)(&arguments, &output)?;
+        if let Err(err) = (tool.verify)(&arguments, &output) {
+            let summary = safe_tool_audit_summary(&tool, &arguments, &Err(err.clone()));
+            self.record_audit(
+                tool.id,
+                tool.risk,
+                AuditDecision::from(permit.decision()),
+                AuditResult::Failed,
+                &summary,
+            );
+            return Err(err);
+        }
+
         let ok_result = Ok(output.clone());
-        let audit_summary = (tool.audit_summary)(&arguments, &ok_result);
+        let raw_summary = (tool.audit_summary)(&arguments, &ok_result);
+        let audit_summary = self
+            .record_audit(
+                tool.id,
+                tool.risk,
+                AuditDecision::from(permit.decision()),
+                AuditResult::Success,
+                &raw_summary,
+            )
+            .map(|entry| entry.summary)
+            .unwrap_or_else(|| audit::redact_summary(&raw_summary));
 
         Ok(ToolExecutionOutcome {
             tool_id: tool.id.to_string(),
@@ -244,6 +428,38 @@ pub fn mochi_permissions_reset_default(
     Ok(runtime.permissions.status())
 }
 
+#[tauri::command]
+pub fn mochi_audit_list(
+    runtime: tauri::State<'_, MochiRuntime>,
+    limit: Option<usize>,
+) -> Result<Vec<audit::AuditEntry>, String> {
+    Ok(runtime.audit.list(limit))
+}
+
+#[tauri::command]
+pub fn mochi_audit_clear(runtime: tauri::State<'_, MochiRuntime>) -> Result<(), String> {
+    runtime.audit.clear()
+}
+
+fn safe_tool_audit_summary(
+    tool: &ToolDefinition,
+    arguments: &Value,
+    result: &Result<Value, ToolError>,
+) -> String {
+    let from_tool = (tool.audit_summary)(arguments, result);
+    match result {
+        Ok(_) => from_tool,
+        Err(err) => {
+            let trimmed = from_tool.trim();
+            if trimmed.is_empty() {
+                err.to_string()
+            } else {
+                format!("{trimmed}: {err}")
+            }
+        }
+    }
+}
+
 async fn wait_for_cancel(cancel_rx: &mut watch::Receiver<bool>) {
     loop {
         if *cancel_rx.borrow_and_update() {
@@ -291,6 +507,10 @@ mod tests {
             self.dir.join(permissions::PERMISSIONS_FILE_NAME)
         }
 
+        fn audit_path(&self) -> PathBuf {
+            self.dir.join(audit::AUDIT_FILE_NAME)
+        }
+
         fn write_raw(&self, content: &str) {
             std::fs::write(self.config_path(), content.as_bytes()).unwrap();
         }
@@ -306,7 +526,8 @@ mod tests {
         let temp = TempPermissionsDir::new(tag);
         temp.write_raw("{\"version\":1,\"alwaysAllow\":[]}\n");
         let perms = Arc::new(PermissionEngine::load_from(temp.config_path()));
-        let runtime = MochiRuntime::new(Arc::new(registry), perms);
+        let audit = Arc::new(AuditLog::load_from(temp.audit_path()));
+        let runtime = MochiRuntime::new_with_parts(Arc::new(registry), perms, audit);
         (temp, runtime)
     }
 
@@ -983,5 +1204,237 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, ToolError::Cancelled);
         assert!(!EXECUTED.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn runtime_records_redacted_audit_for_all_outcomes_without_leaking_secrets_or_paths() {
+        let mut registry = ToolRegistry::with_default_tools();
+        registry.register_and_enable(unavailable_probe_tool()).unwrap();
+        registry.register_and_enable(execution_fail_probe_tool()).unwrap();
+        registry.register_and_enable(bad_verify_probe_tool()).unwrap();
+
+        // Ferramenta de teste que tenta vazar o valor de um argumento com segredo e caminho pessoal
+        // tanto no resumo de auditoria quanto na mensagem de erro.
+        registry
+            .register_and_enable(ToolDefinition {
+                id: "leaky_probe",
+                description: "Sonda para testar redação no pipeline completo.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "secret": { "type": "string" },
+                        "path": { "type": "string" },
+                        "fail": { "type": "boolean" }
+                    },
+                    "required": ["secret", "path"],
+                    "additionalProperties": false
+                }),
+                risk: RiskLevel::Medium,
+                timeout: Duration::from_secs(2),
+                check_availability: |_| Availability::Available,
+                dry_run: |_| Ok("Sonda com argumentos sensíveis.".to_string()),
+                execute: |args, _| {
+                    Box::pin(async move {
+                        if args.get("fail").and_then(Value::as_bool) == Some(true) {
+                            let s = args.get("secret").and_then(Value::as_str).unwrap_or("");
+                            let p = args.get("path").and_then(Value::as_str).unwrap_or("");
+                            return Err(ToolError::ExecutionFailed(format!(
+                                "falha usando {s} em {p}"
+                            )));
+                        }
+                        Ok(json!({ "ok": true }))
+                    })
+                },
+                verify: |_, _| Ok(()),
+                audit_summary: |args, _| {
+                    let s = args.get("secret").and_then(Value::as_str).unwrap_or("");
+                    let p = args.get("path").and_then(Value::as_str).unwrap_or("");
+                    format!("processou {s} em {p}")
+                },
+            })
+            .unwrap();
+
+        let (temp, runtime) = runtime_with_valid_perms("audit_all", registry);
+        let ctx = ToolContext::new();
+        let allow_once = FixedRequester::new(UserApprovalReply::AllowOnce);
+        let allow_always = FixedRequester::new(UserApprovalReply::AllowAlways);
+
+        // 1) Sucesso Low (ping)
+        let (_tx, rx) = watch::channel(false);
+        runtime
+            .invoke_tool("ping", json!({}), &ctx, &DefaultDenyRequester, rx)
+            .await
+            .unwrap();
+
+        // 2) Sucesso Medium tentando vazar segredos/caminhos pelo audit_summary
+        let secret_sk = "sk-secret-token-998877665544332211";
+        let secret_bearer = "Bearer eyJhbGciOi...";
+        let secret_ghp = "ghp_1234567890abcdef1234567890";
+        let win_path = r"C:\Users\alice\Desktop\segredo.txt";
+        let posix_path = "/home/alice/.ssh/id_rsa";
+
+        let (_tx, rx) = watch::channel(false);
+        runtime
+            .invoke_tool(
+                "leaky_probe",
+                json!({ "secret": secret_sk, "path": win_path }),
+                &ctx,
+                &allow_once,
+                rx,
+            )
+            .await
+            .unwrap();
+
+        // 3) Falha de execução tentando vazar Bearer, ghp_ e caminho POSIX
+        let (_tx, rx) = watch::channel(false);
+        assert!(matches!(
+            runtime
+                .invoke_tool(
+                    "leaky_probe",
+                    json!({
+                        "secret": format!("{secret_bearer} {secret_ghp}"),
+                        "path": posix_path,
+                        "fail": true
+                    }),
+                    &ctx,
+                    &allow_always,
+                    rx,
+                )
+                .await
+                .unwrap_err(),
+            ToolError::ExecutionFailed(_)
+        ));
+
+        // 4) AlreadyAlwaysAllowed + ExecutionFailed + VerificationFailed
+        let (_tx, rx) = watch::channel(false);
+        runtime
+            .invoke_tool(
+                "leaky_probe",
+                json!({ "secret": secret_ghp, "path": posix_path }),
+                &ctx,
+                &DefaultDenyRequester,
+                rx,
+            )
+            .await
+            .unwrap();
+
+        let (_tx, rx) = watch::channel(false);
+        assert!(runtime
+            .invoke_tool("bad_verify_probe", json!({}), &ctx, &DefaultDenyRequester, rx)
+            .await
+            .is_err());
+
+        // 5) Pausa, desconhecida com segredo no ID, schema inválido, negada, timeout
+        let (_tx, rx) = watch::channel(false);
+        assert_eq!(
+            runtime
+                .invoke_tool("ping", json!({}), &ToolContext::new().with_paused(true), &DefaultDenyRequester, rx)
+                .await
+                .unwrap_err(),
+            ToolError::Paused
+        );
+
+        let (_tx, rx) = watch::channel(false);
+        assert!(runtime
+            .invoke_tool(secret_sk, json!({}), &ctx, &DefaultDenyRequester, rx)
+            .await
+            .is_err());
+
+        let (_tx, rx) = watch::channel(false);
+        assert!(runtime
+            .invoke_tool("ping", json!({ "extra": secret_ghp }), &ctx, &DefaultDenyRequester, rx)
+            .await
+            .is_err());
+
+        // Revoga para testar Denied e TimedOut
+        assert!(runtime.permissions().revoke_always_allow("leaky_probe").unwrap());
+        let (_tx, rx) = watch::channel(false);
+        assert!(runtime
+            .invoke_tool(
+                "leaky_probe",
+                json!({ "secret": secret_sk, "path": win_path }),
+                &ctx,
+                &FixedRequester::new(UserApprovalReply::Deny),
+                rx,
+            )
+            .await
+            .is_err());
+
+        let (_tx, rx) = watch::channel(false);
+        assert!(runtime
+            .invoke_tool(
+                "leaky_probe",
+                json!({ "secret": secret_sk, "path": win_path }),
+                &ctx,
+                &FixedRequester::new(UserApprovalReply::Timeout),
+                rx,
+            )
+            .await
+            .is_err());
+
+        // 6) FailClosed bloqueia e registra BlockedFailClosed
+        temp.write_raw("{\"version\":1,\"alwaysAllow\":[],\"mode\":\"AUTO\"}\n");
+        let (_tx, rx) = watch::channel(false);
+        assert!(runtime
+            .invoke_tool("ping", json!({}), &ctx, &DefaultDenyRequester, rx)
+            .await
+            .is_err());
+
+        // 7) Cancelamento prévio registra Cancelled
+        let (_tx, rx) = watch::channel(true);
+        assert_eq!(
+            runtime
+                .invoke_tool("ping", json!({}), &ctx, &DefaultDenyRequester, rx)
+                .await
+                .unwrap_err(),
+            ToolError::Cancelled
+        );
+
+        let entries = runtime.audit().list(None);
+        assert_eq!(entries.len(), 12);
+        // Mais recentes primeiro:
+        assert_eq!(entries[0].decision, AuditDecision::Cancelled);
+        assert_eq!(entries[0].result, AuditResult::Cancelled);
+        assert_eq!(entries[1].decision, AuditDecision::BlockedFailClosed);
+        assert_eq!(entries[1].result, AuditResult::Blocked);
+        assert_eq!(entries[2].decision, AuditDecision::TimedOut);
+        assert_eq!(entries[3].decision, AuditDecision::Denied);
+        assert_eq!(entries[4].decision, AuditDecision::Rejected);
+        assert_eq!(entries[5].decision, AuditDecision::Rejected);
+        assert_eq!(entries[6].decision, AuditDecision::BlockedPaused);
+        assert_eq!(entries[7].result, AuditResult::Failed);
+        assert_eq!(entries[8].decision, AuditDecision::AlreadyAlwaysAllowed);
+        assert_eq!(entries[8].result, AuditResult::Success);
+        assert_eq!(entries[9].decision, AuditDecision::AllowedAlways);
+        assert_eq!(entries[9].result, AuditResult::Failed);
+        assert_eq!(entries[10].decision, AuditDecision::AllowedOnce);
+        assert_eq!(entries[10].result, AuditResult::Success);
+        assert_eq!(entries[11].tool_id, "ping");
+        assert_eq!(entries[11].decision, AuditDecision::AutoLow);
+        assert_eq!(entries[11].result, AuditResult::Success);
+
+        // Garante que nenhum segredo nem caminho pessoal foi gravado em mochi-audit.json.
+        let disk = std::fs::read_to_string(temp.audit_path()).unwrap();
+        for forbidden in [
+            secret_sk,
+            "998877665544332211",
+            "eyJhbGciOi",
+            secret_ghp,
+            "alice",
+            "segredo.txt",
+            "id_rsa",
+            r"C:\Users",
+            "/home/",
+        ] {
+            assert!(
+                !disk.contains(forbidden),
+                "conteúdo sensível '{forbidden}' não deve aparecer em mochi-audit.json: {disk}"
+            );
+        }
+
+        // clear() limpa memória e disco.
+        runtime.audit().clear().unwrap();
+        assert!(runtime.audit().list(None).is_empty());
+        assert_eq!(std::fs::read_to_string(temp.audit_path()).unwrap().trim(), "[]");
     }
 }

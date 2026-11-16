@@ -7959,6 +7959,45 @@
     },
     "Risk: High": {
       "zh-Hans": "风险：高", "hi": "जोखिम: उच्च", "es": "Riesgo: Alto", "ar": "المخاطرة: عالية", "fr": "Risque : élevé", "bn": "ঝুঁকি: উচ্চ", "pt-BR": "Risco: Alto", "ru": "Риск: высокий", "id": "Risiko: Tinggi", "de": "Risiko: Hoch", "tr": "Risk: Yüksek", "ko": "위험: 높음", "ja": "リスク: 高"
+    },
+    "Tool log": {
+      "zh-Hans": "工具日志", "hi": "टूल लॉग", "es": "Registro de herramientas", "ar": "سجل الأدوات", "fr": "Journal des outils", "bn": "টুল লগ", "pt-BR": "Registro de ferramentas", "ru": "Журнал инструментов", "id": "Log alat", "de": "Werkzeugprotokoll", "tr": "Araç günlüğü", "ko": "도구 기록", "ja": "ツールログ"
+    },
+    "Clear tool log": {
+      "zh-Hans": "清除工具日志", "hi": "टूल लॉग साफ़ करें", "es": "Borrar registro de herramientas", "ar": "مسح سجل الأدوات", "fr": "Effacer le journal des outils", "bn": "টুল লগ মুছুন", "pt-BR": "Limpar registro", "ru": "Очистить журнал", "id": "Hapus log alat", "de": "Werkzeugprotokoll löschen", "tr": "Araç günlüğünü temizle", "ko": "도구 기록 지우기", "ja": "ツールログを消去"
+    },
+    "Tool log cleared.": {
+      "zh-Hans": "工具日志已清除。", "hi": "टूल लॉग साफ़ हो गया।", "es": "Registro de herramientas borrado.", "ar": "تم مسح سجل الأدوات.", "fr": "Journal des outils effacé.", "bn": "টুল লগ মুছে ফেলা হয়েছে।", "pt-BR": "Registro limpo.", "ru": "Журнал очищен.", "id": "Log alat dihapus.", "de": "Werkzeugprotokoll gelöscht.", "tr": "Araç günlüğü temizlendi.", "ko": "도구 기록을 지웠어요.", "ja": "ツールログを消去しました。"
+    },
+    "{count} local entries": {
+      "zh-Hans": { "other": "{count} 条本地记录" },
+      "hi": { "one": "{count} स्थानीय प्रविष्टि", "other": "{count} स्थानीय प्रविष्टियाँ" },
+      "es": { "one": "{count} entrada local", "other": "{count} entradas locales" },
+      "ar": { "zero": "{count} سجل محلي", "one": "سجل محلي واحد", "two": "سجلان محليان", "few": "{count} سجلات محلية", "many": "{count} سجلًا محليًا", "other": "{count} سجل محلي" },
+      "fr": { "one": "{count} entrée locale", "other": "{count} entrées locales" },
+      "bn": { "one": "{count}টি স্থানীয় এন্ট্রি", "other": "{count}টি স্থানীয় এন্ট্রি" },
+      "pt-BR": { "one": "{count} entrada local", "other": "{count} entradas locais" },
+      "ru": { "one": "{count} локальная запись", "few": "{count} локальные записи", "many": "{count} локальных записей", "other": "{count} локальной записи" },
+      "id": { "other": "{count} entri lokal" },
+      "de": { "one": "{count} lokaler Eintrag", "other": "{count} lokale Einträge" },
+      "tr": { "one": "{count} yerel kayıt", "other": "{count} yerel kayıt" },
+      "ko": { "other": "로컬 기록 {count}개" },
+      "ja": { "other": "ローカル記録 {count} 件" }
+    },
+    "Stored only on this computer and redacted — never raw arguments, secrets or personal paths.": {
+      "zh-Hans": "仅保存在本机且经过脱敏处理 — 绝不记录原始参数、密钥或个人路径。",
+      "hi": "केवल इस कंप्यूटर पर संग्रहीत और संपादित — कभी भी कच्चे तर्क, रहस्य या व्यक्तिगत पथ नहीं।",
+      "es": "Guardado solo en este equipo y redactado — nunca argumentos sin procesar, secretos ni rutas personales.",
+      "ar": "محفوظ على هذا الحاسوب فقط ومُنقّح — لا يتضمن أبدًا وسائط خام أو أسرارًا أو مسارات شخصية.",
+      "fr": "Enregistré uniquement sur cet ordinateur et expurgé — jamais d’arguments bruts, de secrets ni de chemins personnels.",
+      "bn": "শুধু এই কম্পিউটারেই সংরক্ষিত এবং সম্পাদিত — কখনোই কাঁচা আর্গুমেন্ট, গোপন তথ্য বা ব্যক্তিগত পাথ নয়।",
+      "pt-BR": "Fica só neste computador e redigido — nunca argumentos brutos, segredos nem caminhos pessoais.",
+      "ru": "Хранится только на этом компьютере в отредактированном виде — без исходных аргументов, секретов и личных путей.",
+      "id": "Hanya disimpan di komputer ini dan disunting — tidak pernah argumen mentah, rahasia, atau jalur pribadi.",
+      "de": "Nur lokal auf diesem Computer gespeichert und geschwärzt — niemals rohe Argumente, Geheimnisse oder persönliche Pfade.",
+      "tr": "Yalnızca bu bilgisayarda saklanır ve sansürlenir — asla ham argümanlar, gizli anahtarlar veya kişisel yollar içermez.",
+      "ko": "이 컴퓨터에만 저장되며 가려져 기록됩니다 — 원본 인수, 비밀 값, 개인 경로는 절대 남기지 않아요.",
+      "ja": "このパソコン内にのみ保存され、伏せ字処理されます — 生の引数、シークレット、個人パスは一切記録されません。"
     }
   }
 }
