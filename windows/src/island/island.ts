@@ -314,8 +314,12 @@ export class Island {
         const req = State.pendingApproval;
         void Bridge.log(`decide ${d} req=${req?.requestId ?? "none"}`);
         if (!req) return;
-        Sound.play(d === "deny" ? "blip" : "approve");
-        void Bridge.approvalDecision(req.requestId, d);
+        const effective =
+          d === "always" && !(req.coucouKind === "mochi_tool" && req.allowAlways === true && req.mochiRisk !== "high")
+            ? "allow"
+            : d;
+        Sound.play(effective === "deny" ? "blip" : "approve");
+        void Bridge.approvalDecision(req.requestId, effective);
         this.closeApproval();
       },
       answer: (answers) => {
@@ -329,7 +333,11 @@ export class Island {
         const req = State.pendingApproval;
         if (!req) return;
         Sound.play("blip");
-        void Bridge.approvalDecline(req.requestId);
+        if (req.coucouKind === "mochi_tool") {
+          void Bridge.approvalDecision(req.requestId, "deny");
+        } else {
+          void Bridge.approvalDecline(req.requestId);
+        }
         this.closeApproval();
       },
       toggleSound: () => {
@@ -1094,7 +1102,10 @@ export class Island {
     const mailUnread = effectiveMailUnread(rawMailUnread, State.mailUnreadDismissedAt);
     const pending = State.pendingApproval
       ? {
-          pillName: State.tasks.find((t) => t.id === State.pendingApproval?.pillId)?.name,
+          pillName:
+            State.pendingApproval.coucouKind === "mochi_tool"
+              ? "Lumen"
+              : State.tasks.find((t) => t.id === State.pendingApproval?.pillId)?.name,
           questions: State.pendingApproval.questions,
         }
       : null;
@@ -1129,7 +1140,7 @@ export class Island {
         const req = State.pendingApproval;
         this.fsm.forceHome();
         if (req) {
-          State.setFocus(req.pillId);
+          if (req.coucouKind !== "mochi_tool") State.setFocus(req.pillId);
           this.expand(req.questions ? "question" : "approval");
         } else {
           this.expand(State.defaultView());

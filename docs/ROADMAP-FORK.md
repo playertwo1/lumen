@@ -62,7 +62,7 @@ Pesquisas de projetos externos ficam em `docs/research/`; as ideias aproveitadas
 | — | 2B — Paridade entre agentes e ambientes | [fase-2b-paridade-agentes.md](roadmap/fase-2b-paridade-agentes.md) | Pausada (D-053) |
 | — | 2C — Pílulas configuráveis e posição livre | [fase-2c-pilulas-posicao.md](roadmap/fase-2c-pilulas-posicao.md) | Pausada (D-053) |
 | 6 | M0 — Mochi: descoberta e licenças | [m0-descoberta.md](roadmap/m0-descoberta.md) | Concluída em 2026-11-15 (sem código de produto; specs `docs/superpowers/specs/2026-11-15-mochi-m0-*.md`) |
-| 7 | M1 — Mochi: fundação | [m1-fundacao.md](roadmap/m1-fundacao.md) | Pendente |
+| 7 | M1 — Mochi: fundação | [m1-fundacao.md](roadmap/m1-fundacao.md) | Implementada e validada sinteticamente em 2026-11-16 (`M1.1–M1.6`; Checkpoint M1 real `NOT_RUN`) |
 | 8 | M2 — Mochi: controle nativo do Windows | [m2-windows-nativo.md](roadmap/m2-windows-nativo.md) | Pendente |
 | 9 | M3 — Mochi: Obsidian | [m3-obsidian.md](roadmap/m3-obsidian.md) | Pendente |
 | 10 | M4 — Mochi: voz ligada às ferramentas | [m4-voz.md](roadmap/m4-voz.md) | Pendente |

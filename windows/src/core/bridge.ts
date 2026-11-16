@@ -426,7 +426,7 @@ export const Bridge = {
     return call<AgentUsageSnapshot>("agent_usage_read");
   },
 
-  approvalDecision: (requestId: string, decision: "allow" | "deny") =>
+  approvalDecision: (requestId: string, decision: "allow" | "always" | "deny") =>
     call<void>("approval_decision", { requestId, decision }),
   /** A generic Windows toast is offered only for an accepted hidden-island permission. */
   permissionToast: (requestId: string, sessionId: string, agentId: string, wasHidden: boolean) =>
@@ -805,6 +805,15 @@ export interface AgentHookPlan {
   fingerprint: string;
 }
 
+export interface McpAgentStatus {
+  id: string;
+  name: string;
+  path: string;
+  cliFound: boolean;
+  registered: boolean;
+  commandMatches: boolean;
+}
+
 export interface HookPreview {
   diff: string;
   backup: string;
@@ -988,4 +997,52 @@ export const GoogleBridge = {
     }
     return callOrThrow<GoogleCalendarEvent>("google_calendar_create_from_task", { input });
   },
+};
+
+export type MochiRiskLevel = "low" | "medium" | "high";
+
+export type MochiAuditDecision =
+  | "autoLow"
+  | "allowedOnce"
+  | "allowedAlways"
+  | "alreadyAlwaysAllowed"
+  | "denied"
+  | "timedOut"
+  | "blockedPaused"
+  | "blockedFailClosed"
+  | "cancelled"
+  | "rejected";
+
+export type MochiAuditResult = "success" | "failed" | "blocked" | "cancelled";
+
+export interface MochiAuditEntry {
+  timestampMs: number;
+  isoTime: string;
+  toolId: string;
+  risk: MochiRiskLevel;
+  decision: MochiAuditDecision;
+  result: MochiAuditResult;
+  summary: string;
+}
+
+export interface MochiPermissionStatus {
+  healthy: boolean;
+  failClosedReason: string | null;
+  alwaysAllow: string[];
+}
+
+/** Núcleo local do assistente Mochi (src-tauri/src/mochi). */
+export const MochiBridge = {
+  auditList: (limit?: number) => call<MochiAuditEntry[]>("mochi_audit_list", { limit: limit ?? null }),
+  auditClear: () => callOrThrow<void>("mochi_audit_clear"),
+  permissionsStatus: () => call<MochiPermissionStatus>("mochi_permissions_status"),
+  permissionsRevoke: (toolId: string) =>
+    callOrThrow<boolean>("mochi_permissions_revoke", { toolId }),
+  permissionsResetDefault: () => callOrThrow<void>("mochi_permissions_reset_default"),
+  cancelExecution: () => call<boolean>("mochi_cancel_execution"),
+  mcpStatus: () => call<McpAgentStatus[]>("mochi_mcp_status"),
+  mcpPreview: (agent: string, install: boolean) =>
+    callOrThrow<AgentHookPlan>("mochi_mcp_preview", { agent, install }),
+  mcpApply: (agent: string, install: boolean, fingerprint: string) =>
+    callOrThrow<string>("mochi_mcp_apply", { agent, install, fingerprint }),
 };

@@ -188,8 +188,13 @@ interface HookPayload {
   coucou_diff_truncated?: boolean;
   /** Optional agent tag: lowercase, digits and hyphens, ≤ 24 chars. */
   coucou_agent?: string;
-  /** "agy_pre_tool": an Antigravity command Coucou may show on the card (agents.ts). */
+  /** "agy_pre_tool": an Antigravity command Coucou may show on the card (agents.ts).
+   *  "mochi_tool": an internal Lumen tool confirmation (approval_bridge.rs). */
   coucou_kind?: string;
+  /** Internal Mochi tool approval fields. */
+  mochi_summary?: string;
+  mochi_risk?: "low" | "medium" | "high";
+  mochi_allow_always?: boolean;
   /** Hermes: where the session runs (telegram, discord…; "cli" in a terminal). */
   platform?: string;
   /** "cursor" when Claude Code runs in Cursor's terminal (set by the relay). */
@@ -393,14 +398,76 @@ export function registerHookHandlers(island: Island) {
     const current = State.pendingApproval;
     if (current) {
       State.approvalQueue.unshift(current);
-      State.setPillBadge(current.pillId, "approval");
+      if (current.coucouKind !== "mochi_tool") State.setPillBadge(current.pillId, "approval");
     }
     State.beginApproval(target);
     const view = target.questions ? "question" : "approval";
-    State.updateTask(target.pillId, view);
+    if (target.coucouKind !== "mochi_tool") State.updateTask(target.pillId, view);
     island.alert(view);
     State.notify();
   });
+}
+
+function handleMochiPermissionRequest(island: Island, payload: HookPayload) {
+  const requestId = payload.request_id ?? "";
+  if (State.pendingApproval?.requestId === requestId || State.approvalQueue.some((x) => x.requestId === requestId)) {
+    if (requestId) void Bridge.approvalAck(requestId);
+    return;
+  }
+
+  const totalPending = (State.pendingApproval ? 1 : 0) + State.approvalQueue.length;
+  if (totalPending >= MAX_PENDING) {
+    if (requestId) void Bridge.approvalDecline(requestId);
+    return;
+  }
+
+  const tool = payload.tool_name ?? "Tool";
+  const summary =
+    typeof payload.mochi_summary === "string" && payload.mochi_summary.trim()
+      ? payload.mochi_summary.trim()
+      : typeof payload.tool_input?.command === "string" && payload.tool_input.command.trim()
+        ? payload.tool_input.command.trim()
+        : tool;
+  const risk: "low" | "medium" | "high" =
+    payload.mochi_risk === "low" || payload.mochi_risk === "medium" || payload.mochi_risk === "high"
+      ? payload.mochi_risk
+      : "high";
+  const allowAlways = payload.mochi_allow_always === true && risk === "medium";
+
+  const info: ApprovalInfo = {
+    requestId,
+    sessionId: payload.session_id ?? "mochi",
+    pillId: "mochi",
+    tool,
+    command: summary,
+    coucouKind: "mochi_tool",
+    mochiSummary: summary,
+    mochiRisk: risk,
+    allowAlways,
+  };
+
+  const wasHidden = State.mode === "hidden";
+  const offerToast = () => {
+    if (wasHidden && requestId) {
+      void Bridge.permissionToast(requestId, info.sessionId, info.pillId, wasHidden);
+    }
+  };
+
+  armRequestTimeout(island, requestId);
+  Sound.play("approval");
+  if (State.pendingApproval) {
+    State.approvalQueue.push(info);
+    if (requestId) void Bridge.approvalAck(requestId);
+    offerToast();
+    State.notify();
+    return;
+  }
+
+  State.beginApproval(info);
+  if (requestId) void Bridge.approvalAck(requestId);
+  offerToast();
+  island.alert("approval");
+  State.notify();
 }
 
 function handleHook(island: Island, payload: HookPayload) {
@@ -421,6 +488,13 @@ function handleHook(island: Island, payload: HookPayload) {
     // for a decision from an island that had already decided not to look. Say so,
     // and the terminal takes the question immediately.
     if (payload.request_id) void Bridge.approvalDecline(payload.request_id);
+    return;
+  }
+
+  if (payload.coucou_kind === "mochi_tool") {
+    if (payload.hook_event_name === "PermissionRequest") {
+      handleMochiPermissionRequest(island, payload);
+    }
     return;
   }
 

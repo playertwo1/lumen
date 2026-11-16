@@ -83,12 +83,7 @@ fn models_endpoint(messages: &Url) -> Url {
 fn user_content(first: bool, context: Option<&ChatContext>, query: &str) -> Vec<Value> {
     let mut content: Vec<Value> = Vec::new();
     match chat::for_turn(first, context) {
-        Some(ChatContext::File { name, path }) => {
-            if let Some(block) = file_block(path) {
-                content.push(block);
-            }
-            content.push(json!({ "type": "text", "text": format!("File: {name}") }));
-        }
+        Some(ChatContext::File { name, path }) => push_file_blocks(&mut content, name, path),
         Some(ChatContext::Window { app_name, title, url }) => {
             let line = chat::window_line(app_name, title, url.as_deref());
             content.push(json!({ "type": "text", "text": line }));
@@ -97,6 +92,10 @@ fn user_content(first: bool, context: Option<&ChatContext>, query: &str) -> Vec<
     }
     content.push(json!({ "type": "text", "text": query }));
     content
+}
+
+pub(crate) fn user_message(first: bool, context: Option<&ChatContext>, query: &str) -> Value {
+    json!({ "role": "user", "content": user_content(first, context, query) })
 }
 
 fn request_body(model: &str, system: &str, history: &[Value], user: &Value) -> Value {
@@ -146,6 +145,22 @@ fn interpret(response: &Value) -> Result<(Vec<Value>, String), String> {
     Ok((blocks, text))
 }
 
+/// Executa uma única chamada na API Messages da Anthropic sem gravar no `Chat`.
+pub(crate) async fn step(
+    model: &str,
+    system: &str,
+    history: &[Value],
+    user: &Value,
+) -> Result<(Vec<Value>, String), String> {
+    let Some(key) = secrets::get(KEY) else {
+        return Err(t("API key missing. Open settings."));
+    };
+    let endpoint = endpoint()?;
+    let body = request_body(model, system, history, user);
+    let response = call(&endpoint, &key, &body).await?;
+    interpret(&response)
+}
+
 /// One chat turn. Returns the assistant's text, or a message the island shows
 /// in the note view.
 pub async fn send(
@@ -156,17 +171,9 @@ pub async fn send(
 ) -> Result<ChatReply, String> {
     // No key: Settings → Chat → Your AI subscriptions lets Claude Code answer
     // instead (cli_relay.rs); chat.rs sends the turn there before it gets here.
-    let Some(key) = secrets::get(KEY) else {
-        return Err(t("API key missing. Open settings."));
-    };
-    let endpoint = endpoint()?;
-
     let turn = chat.begin(chat::ANTHROPIC);
-    let user = json!({ "role": "user", "content": user_content(turn.first, context.as_ref(), &query) });
-    let body = request_body(model, &chat::system_prompt(true), &turn.history, &user);
-
-    let response = call(&endpoint, &key, &body).await?;
-    let (blocks, text) = interpret(&response)?;
+    let user = user_message(turn.first, context.as_ref(), &query);
+    let (blocks, text) = step(model, &chat::system_prompt(true), &turn.history, &user).await?;
 
     // Store the whole content — tool_use / tool_result blocks included — so the
     // next turn has the right context.
@@ -282,9 +289,9 @@ fn parse_models(json: &Value) -> Vec<ModelInfo> {
         .collect()
 }
 
-/// PDF → document block, image → image block, text/code → inline text.
+/// PDF → document block, image → image block, text/code → bloco sanitizado.
 /// Mirrors readFileAsBlock() in ClaudeService.swift.
-fn file_block(path: &str) -> Option<Value> {
+fn push_file_blocks(content: &mut Vec<Value>, name: &str, path: &str) {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -301,19 +308,27 @@ fn file_block(path: &str) -> Option<Value> {
     };
 
     if let Some((block_type, media)) = media_type {
-        let bytes = std::fs::read(path).ok()?;
-        return Some(json!({
-            "type": block_type,
-            "source": { "type": "base64", "media_type": media, "data": base64(&bytes) },
-        }));
+        if let Ok(bytes) = std::fs::read(path) {
+            content.push(json!({
+                "type": block_type,
+                "source": { "type": "base64", "media_type": media, "data": base64(&bytes) },
+            }));
+            content.push(json!({ "type": "text", "text": chat::file_context_block(name, None) }));
+            return;
+        }
+        content.push(json!({ "type": "text", "text": chat::file_context_block(name, None) }));
+        return;
     }
 
-    let len = std::fs::metadata(path).ok()?.len();
-    if len > MAX_INLINE_TEXT {
-        return None;
+    if let Ok(meta) = std::fs::metadata(path) {
+        if meta.len() <= MAX_INLINE_TEXT {
+            if let Ok(text) = std::fs::read_to_string(path) {
+                content.push(json!({ "type": "text", "text": chat::file_context_block(name, Some(&text)) }));
+                return;
+            }
+        }
     }
-    let text = std::fs::read_to_string(path).ok()?;
-    Some(json!({ "type": "text", "text": format!("File contents:\n{text}") }))
+    content.push(json!({ "type": "text", "text": chat::file_context_block(name, None) }));
 }
 
 /// Small standalone base64 encoder — not worth another dependency.
@@ -430,11 +445,11 @@ mod tests {
         let ctx = ChatContext::Window { app_name: "Edge".into(), title: "Docs".into(), url: Some("https://x.dev".into()) };
         let first = user_content(true, Some(&ctx), "q");
         assert_eq!(first.len(), 2);
-        assert_eq!(first[0]["text"], "Context — App: Edge, Window: Docs, URL: https://x.dev");
+        assert_eq!(first[0]["text"], chat::window_line("Edge", "Docs", Some("https://x.dev")));
         assert_eq!(user_content(false, Some(&ctx), "q"), first);
-        // A file that cannot be read still names itself.
+        // A file that cannot be read still names itself inside <external_context>.
         let ctx = ChatContext::File { name: "gone.pdf".into(), path: "/no/such/gone.pdf".into() };
-        assert_eq!(user_content(true, Some(&ctx), "q")[0]["text"], "File: gone.pdf");
+        assert_eq!(user_content(true, Some(&ctx), "q")[0]["text"], chat::file_context_block("gone.pdf", None));
     }
 
     #[test]

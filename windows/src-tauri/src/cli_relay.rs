@@ -701,14 +701,16 @@ pub async fn complete(provider: &str, model: &str, system: &str, prompt: &str) -
     complete_cli(cli, model, system, prompt).await
 }
 
-/// One chat turn with `provider` answered through the user's subscription.
-pub async fn send(
-    chat: &Chat,
+/// Executa uma chamada única pelo assinante CLI sem gravar no `Chat`.
+pub(crate) async fn step(
     provider: &str,
     model: &str,
-    query: String,
-    context: Option<ChatContext>,
-) -> Result<ChatReply, String> {
+    system_appendix: Option<&str>,
+    history: &[Value],
+    first: bool,
+    context: Option<&ChatContext>,
+    query: &str,
+) -> Result<String, String> {
     let Some((cli, exe)) = installed(provider) else {
         let tool = clis_for(provider).first().map(|c| c.name()).unwrap_or(provider);
         return Err(tf(
@@ -716,14 +718,13 @@ pub async fn send(
             &[("tool", tool)],
         ));
     };
-    let turn = chat.begin(&format!("subscription:{provider}"));
-    let reads_file = turn.first && matches!(context, Some(ChatContext::File { .. }));
-    let system = chat::system_prompt(!reads_file);
-    let text = if cli == Cli::Claude {
+    let reads_file = first && matches!(context, Some(ChatContext::File { .. }));
+    let system = chat::system_prompt_with_appendix(!reads_file, system_appendix);
+    if cli == Cli::Claude {
         // Reading a dropped file, Claude Code reads it itself and gets no web at all.
         let inbox = crate::files::inbox_dir();
         let tools: &[&str] = if reads_file { &["Read"] } else { &["WebSearch", "WebFetch"] };
-        let prompt = claude_code::chat_prompt(&turn.history, turn.first, context.as_ref(), &query);
+        let prompt = claude_code::chat_prompt(history, first, context, query);
         claude_code::ask(&claude_code::Request {
             model,
             system: &system,
@@ -732,13 +733,25 @@ pub async fn send(
             read_dir: reads_file.then_some(inbox.as_path()),
             timeout: CHAT_TIMEOUT,
         })
-        .await?
+        .await
     } else {
-        let prompt = chat_prompt(&turn.history, turn.first, context.as_ref(), &query);
+        let prompt = chat_prompt(history, first, context, query);
         let policy = (cli == Cli::Gemini && reads_file).then(gemini_no_web_policy);
         let request = Request { model: None, system: &system, prompt: &prompt, web: !reads_file, no_web_policy: policy.as_deref() };
-        ask(cli, &exe, &request).await?
-    };
+        ask(cli, &exe, &request).await
+    }
+}
+
+/// One chat turn with `provider` answered through the user's subscription.
+pub async fn send(
+    chat: &Chat,
+    provider: &str,
+    model: &str,
+    query: String,
+    context: Option<ChatContext>,
+) -> Result<ChatReply, String> {
+    let turn = chat.begin(&format!("subscription:{provider}"));
+    let text = step(provider, model, None, &turn.history, turn.first, context.as_ref(), &query).await?;
     // The record keeps the file's name, never its contents: later turns search the web.
     let plain = chat::plain_question(turn.first, context.as_ref(), &query);
     chat.commit(&turn, json!({ "role": "user", "content": plain }), json!({ "role": "assistant", "content": text }), &plain, &text);
@@ -760,8 +773,18 @@ fn chat_prompt(history: &[Value], first: bool, context: Option<&ChatContext>, qu
     }
     match chat::for_turn(first, context) {
         Some(ChatContext::File { name, path }) => match inline_text(Path::new(path)) {
-            Some(body) => out.push_str(&format!("File: {name}\nFile contents:\n{body}\n\n")),
-            None => out.push_str(&format!("File: {name} (its contents can't be read here)\n\n")),
+            Some(body) => {
+                out.push_str(&chat::file_context_block(name, Some(&body)));
+                out.push_str("\n\n");
+            }
+            None => {
+                let clean_name = crate::mochi::sanitize::sanitize_external_text(name, 200);
+                out.push_str(&crate::mochi::sanitize::format_untrusted_context(
+                    "file",
+                    &[("name", clean_name.as_str()), ("note", "contents can't be read here")],
+                ));
+                out.push_str("\n\n");
+            }
         },
         Some(ChatContext::Window { app_name, title, url }) => {
             out.push_str(&chat::window_line(app_name, title, url.as_deref()));
@@ -801,7 +824,7 @@ mod tests {
     #[test]
     fn a_window_dropped_mid_conversation_rides_with_that_turn() {
         let win = ChatContext::Window { app_name: "Code".into(), title: "x".into(), url: None };
-        assert_eq!(chat_prompt(&[], false, Some(&win), "q"), "Context — App: Code, Window: x\n\nq");
+        assert_eq!(chat_prompt(&[], false, Some(&win), "q"), format!("{}\n\nq", chat::window_line("Code", "x", None)));
     }
 
     #[test]
@@ -945,7 +968,7 @@ mod tests {
         std::fs::write(&path, "secret plan").unwrap();
         let file = ChatContext::File { name: "notes.txt".into(), path: path.to_string_lossy().into_owned() };
         let p = chat_prompt(&[], true, Some(&file), "Sum it up");
-        assert!(p.starts_with("File: notes.txt\nFile contents:\nsecret plan\n\n") && p.ends_with("Sum it up"));
+        assert!(p.starts_with(&format!("{}\n\n", chat::file_context_block("notes.txt", Some("secret plan")))) && p.ends_with("Sum it up"));
         assert!(!chat::plain_question(true, Some(&file), "Sum it up").contains("secret plan"));
         std::fs::remove_dir_all(&dir).unwrap();
     }

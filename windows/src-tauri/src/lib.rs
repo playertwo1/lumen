@@ -31,6 +31,7 @@ mod launch;
 mod local_chat;
 mod log;
 mod mail;
+mod mochi;
 mod net;
 mod notes;
 mod openai_compat;
@@ -535,13 +536,7 @@ fn quit_app(app: AppHandle) {
 /// not just the island stopping showing things.
 #[tauri::command]
 fn set_paused(app: AppHandle, paused: bool) {
-    integrations::set_paused(paused);
-    #[cfg(windows)]
-    if paused {
-        if let Some(toasts) = app.try_state::<permission_notifications::PermissionToasts>() {
-            permission_notifications::clear_all(&toasts);
-        }
-    }
+    mochi::set_paused(&app, paused);
 }
 
 // ── Claude Code hooks ─────────────────────────────────────────────────────────
@@ -609,6 +604,24 @@ fn agent_hooks_apply(agent: String, install: bool, fingerprint: String) -> Resul
     Ok(backups)
 }
 
+#[tauri::command]
+fn mochi_mcp_status() -> Vec<mochi::mcp_config::McpAgentStatus> {
+    mochi::mcp_config::status()
+}
+
+#[tauri::command]
+fn mochi_mcp_preview(agent: String, install: bool) -> Result<config_file::Plan, String> {
+    mochi::mcp_config::preview(&agent, install)
+}
+
+#[tauri::command]
+fn mochi_mcp_apply(agent: String, install: bool, fingerprint: String) -> Result<String, String> {
+    let backups = mochi::mcp_config::apply(&agent, install, &fingerprint)?;
+    let done = if install { "installed" } else { "removed" };
+    log::line(format!("mochi mcp {done} for {agent}"));
+    Ok(backups)
+}
+
 // ── Plan usage ────────────────────────────────────────────────────────────────
 
 /// The diff of putting the plan usage relay into (or taking it out of) the
@@ -662,11 +675,25 @@ fn approval_decision(app: AppHandle, request_id: String, decision: String) {
     resolve_approval(&app, &request_id, &decision);
 }
 
+fn accepts_approval_decision(decision: &str, mochi_allow_always: bool) -> bool {
+    match decision {
+        "allow" | "deny" => true,
+        "always" => mochi_allow_always,
+        _ => false,
+    }
+}
+
 pub(crate) fn resolve_approval(app: &AppHandle, request_id: &str, decision: &str) -> bool {
-    if !matches!(decision, "allow" | "deny") || !pipe::answer(app, request_id, decision) {
+    let allow_always = pipe::is_mochi_allow_always(app, request_id);
+    if !accepts_approval_decision(decision, allow_always) {
         return false;
     }
-    recap::record_decision(app, request_id, decision);
+    let Some(outcome) = pipe::answer_with_outcome(app, request_id, decision) else {
+        return false;
+    };
+    if !outcome.is_mochi {
+        recap::record_decision(app, request_id, decision);
+    }
     true
 }
 
@@ -744,21 +771,13 @@ async fn chat_send(
     app: AppHandle,
     shared: State<'_, Shared>,
     chat: State<'_, Chat>,
+    runtime: State<'_, mochi::MochiRuntime>,
     query: String,
     context: Option<ChatContext>,
     mail: Option<bool>,
 ) -> Result<ChatReply, String> {
     let settings = shared.settings.lock().unwrap().clone();
-    // The chat's Mail switch: the latest Outlook messages ride under the request, and the
-    // system prompt says how to write a plan (mail/plan.rs) that runs only after a click.
-    if mail == Some(true) {
-        let query = mail::decorate(&query).await;
-        mail::MAIL_TURN.store(true, std::sync::atomic::Ordering::Relaxed);
-        let reply = chat::send(&app, &chat, &settings, query, context).await;
-        mail::MAIL_TURN.store(false, std::sync::atomic::Ordering::Relaxed);
-        return reply;
-    }
-    chat::send(&app, &chat, &settings, query, context).await
+    mochi::chat_bridge::chat_send_with_mochi(&app, &chat, &settings, &runtime, query, context, mail).await
 }
 
 /// The models a provider offers, for the picker in the chat view. Only asked
@@ -1133,6 +1152,7 @@ pub fn run() {
         .manage(Chat::default())
         .manage(shortcuts::Registry::default())
         .manage(recap::load())
+        .manage(mochi::MochiRuntime::new_default())
         .invoke_handler(tauri::generate_handler![
             boot,
             vitals::vitals_read,
@@ -1393,6 +1413,15 @@ pub fn run() {
             update::update_dismiss,
             update::update_install,
             update::update_open_page,
+            mochi::mochi_permissions_status,
+            mochi::mochi_permissions_revoke,
+            mochi::mochi_permissions_reset_default,
+            mochi::mochi_audit_list,
+            mochi::mochi_audit_clear,
+            mochi::mochi_cancel_execution,
+            mochi_mcp_status,
+            mochi_mcp_preview,
+            mochi_mcp_apply,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1411,6 +1440,7 @@ pub fn run() {
             notes::setup(&handle);
             tasks::setup(&handle);
             google::setup(&handle);
+            mochi::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
                 // Where Tauri takes the drop itself (Linux), its paths are the
@@ -1470,6 +1500,7 @@ pub fn run() {
                     permission_notifications::shutdown(&toasts);
                 }
                 phone_link::stop_on_exit(app);
+                mochi::shutdown(app);
                 google::shutdown(app);
                 notes::shutdown(app);
                 tasks::shutdown(app);
@@ -1526,5 +1557,14 @@ mod tests {
         assert_eq!(super::resolve_focus_target_kind("agent_claude-desktop"), super::FocusTargetKind::ClaudeDesktop);
         assert_eq!(super::resolve_focus_target_kind("agent_antigravity"), super::FocusTargetKind::Antigravity);
         assert_eq!(super::resolve_focus_target_kind("agent_cursor"), super::FocusTargetKind::SessionOrFallback);
+    }
+
+    #[test]
+    fn accepts_approval_decision_permits_always_only_when_mochi_allows_it() {
+        assert!(super::accepts_approval_decision("allow", false));
+        assert!(super::accepts_approval_decision("deny", false));
+        assert!(!super::accepts_approval_decision("always", false));
+        assert!(super::accepts_approval_decision("always", true));
+        assert!(!super::accepts_approval_decision("other", true));
     }
 }

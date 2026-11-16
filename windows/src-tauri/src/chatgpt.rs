@@ -209,6 +209,36 @@ pub async fn models() -> Result<Vec<ModelInfo>, String> {
     models_with(&SystemCredentialStore, &client, TOKEN_URL, MODELS_URL).await
 }
 
+pub(crate) async fn step(
+    app: &AppHandle,
+    model: &str,
+    system_appendix: Option<&str>,
+    history: &[Value],
+    user: &Value,
+) -> Result<String, String> {
+    let endpoint = reqwest::Url::parse(RESPONSES_URL).map_err(|_| "Endereço do ChatGPT inválido.")?;
+    let stream_client = net::client(&endpoint, STREAM_TIMEOUT)
+        .map_err(|_| "Não foi possível preparar a conexão segura.".to_string())?;
+    let meta_client = http_client()?;
+    request_responses_text(
+        &SystemCredentialStore,
+        &meta_client,
+        &stream_client,
+        TOKEN_URL,
+        MODELS_URL,
+        RESPONSES_URL,
+        model,
+        history,
+        user,
+        true,
+        |web| chat::system_prompt_with_appendix(web, system_appendix),
+        |visible| {
+            let _ = app.emit_to(WINDOW_LABEL, "chat-delta", visible);
+        },
+    )
+    .await
+}
+
 pub async fn send(
     app: &AppHandle,
     chat: &Chat,
@@ -1530,17 +1560,17 @@ async fn models_with(
     Err("Sua sessão ChatGPT expirou. Reconecte a conta em Configurações.".into())
 }
 
-fn user_message(first: bool, context: Option<&ChatContext>, query: &str) -> Value {
+pub(crate) fn user_message(first: bool, context: Option<&ChatContext>, query: &str) -> Value {
     let mut prefix = String::new();
     let mut image_url = None;
     match chat::for_turn(first, context) {
         Some(ChatContext::File { name, path }) => match openai_compat::read_attachment(path) {
             Some(Attachment::ImageDataUrl(url)) => {
                 image_url = Some(url);
-                prefix = format!("File: {name}\n\n");
+                prefix = format!("{}\n\n", chat::file_context_block(name, None));
             }
-            Some(Attachment::Text(body)) => prefix = format!("File: {name}\nFile contents:\n{body}\n\n"),
-            None => prefix = format!("File: {name}\n\n"),
+            Some(Attachment::Text(body)) => prefix = format!("{}\n\n", chat::file_context_block(name, Some(&body))),
+            None => prefix = format!("{}\n\n", chat::file_context_block(name, None)),
         },
         Some(ChatContext::Window { app_name, title, url }) => {
             prefix = format!("{}\n\n", chat::window_line(app_name, title, url.as_deref()));

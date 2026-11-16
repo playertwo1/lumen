@@ -10,14 +10,22 @@ import { h, svg, clear } from "./dom";
 import { dictateButton } from "./dictate";
 import { ICONS } from "./icons";
 import { renderMarkdown } from "./markdown";
-import { Bridge, onEvent, type ChatContext, type ModelInfo } from "../core/bridge";
+import { Bridge, MochiBridge, onEvent, type ChatContext, type ModelInfo } from "../core/bridge";
 import { questionContext } from "../chat/question";
 import {
   activeModel, pickModel, providerDef, visibleProviders, withModel, type ProviderDef,
 } from "../core/providers";
 import { Sound } from "../core/sound";
 import { chipLabel, loadSubscriptions, subscribedProviders, subscription } from "../core/subscriptions";
-import { State, type ChatMessage } from "../core/state";
+import {
+  MOCHI_RUN_DONE_PHASE,
+  MOCHI_RUN_FAILED_PHASE,
+  MOCHI_RUN_LABEL_KEY,
+  MOCHI_RUN_THINKING_PHASE,
+  State,
+  type ChatMessage,
+  type MochiRunStatePayload,
+} from "../core/state";
 import type { ViewHost } from "./views";
 import { N_, t, tl } from "../i18n/i18n";
 import { HOST_OS } from "../core/pills";
@@ -25,6 +33,16 @@ import { MailChat, splitPlan } from "../core/mail";
 import { mailPlanCard } from "./mailplan";
 import { splitTodoProposal } from "../core/tasks";
 import { chatTodoProposalCard } from "./tasks";
+
+/** Remove blocos intermediários `<mochi_tool_call>` e `<mochi_tool_result>` da interface. */
+export function stripMochiToolMarkup(raw: string): string {
+  return raw
+    .replace(/<mochi_tool_call>[\s\S]*?<\/mochi_tool_call>/g, "")
+    .replace(/<mochi_tool_call>[\s\S]*$/g, "")
+    .replace(/<mochi_tool_result\b[^>]*>[\s\S]*?<\/mochi_tool_result>/g, "")
+    .replace(/<mochi_tool_result\b[\s\S]*$/g, "")
+    .trim();
+}
 
 const STRINGS = {
   placeholderFirst: N_("Ask me anything…"),
@@ -36,6 +54,11 @@ const STRINGS = {
   noKey: N_("No API key — add it in Settings."),
   noChatGpt: "Conecte uma conta ChatGPT com acesso ao plano em Configurações.",
   openSettings: N_("Open Settings"),
+  cancel: N_("Cancel"),
+  cancelTitle: N_("Cancel execution"),
+  pause: N_("Pause"),
+  paused: N_("Paused"),
+  pauseTitle: N_("Pause or resume assistant actions"),
 };
 
 let nextId = 1;
@@ -50,10 +73,11 @@ function bubble(message: ChatMessage): HTMLElement {
   }
   const reply = h("div", { class: "reply" });
   // A mail plan (```coucou-mail) or task proposal (```lumen-todo) renders as a card under the answer.
-  const { prose, plan } = splitPlan(message.content);
+  const cleanRaw = stripMochiToolMarkup(message.content);
+  const { prose, plan } = splitPlan(cleanRaw);
   const { text: cleanProse, proposal } = splitTodoProposal(prose);
   renderMarkdown(reply, cleanProse);
-  if (plan) reply.append(mailPlanCard(`chat-${message.id}-${message.content.length}`, "", message.content));
+  if (plan) reply.append(mailPlanCard(`chat-${message.id}-${message.content.length}`, "", cleanRaw));
   if (proposal) reply.append(chatTodoProposalCard(proposal));
   return h("div", { class: "chat-row" }, reply);
 }
@@ -274,12 +298,27 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   const modelRow = h("div", { class: "model-row" }, modelBtn);
   if (HOST_OS === "windows") modelRow.prepend(mailBtn);
 
+  const runStatus = h("span", { class: "mochi-run-status" });
+  const cancelBtn = h("button", {
+    class: "mochi-cancel-btn",
+    title: tl(STRINGS.cancelTitle),
+    text: tl(STRINGS.cancel),
+  });
+  const pauseBtn = h("button", {
+    class: "mochi-pause-btn",
+    title: tl(STRINGS.pauseTitle),
+    text: t(STRINGS.pause),
+  });
+  const statusActions = h("div", { class: "mochi-status-actions" }, cancelBtn, pauseBtn);
+  const statusRow = h("div", { class: "mochi-status-row" }, runStatus, statusActions);
+  const errorBanner = h("div", { class: "mochi-run-error" });
+
   const body = h("div", { class: "chat-body" });
   const picker = buildPicker(() => {
     body.classList.toggle("picking", picker.isOpen);
     drawModelButton();
   });
-  body.append(chipRow, log, picker.el, modelRow, bar);
+  body.append(chipRow, log, picker.el, statusRow, errorBanner, modelRow, bar);
   void loadSubscriptions().then(() => drawModelButton());
 
   const el = h("div", { class: "view" }, h("div", { class: "card wash chat-card" }, body));
@@ -289,6 +328,46 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   let renderedCount = -1;
   // A local model answers token by token: where its text so far is shown.
   let live: HTMLElement | null = null;
+
+  function syncControls() {
+    const run = State.mochiRunState;
+    if (run) {
+      const label = t(MOCHI_RUN_LABEL_KEY[run.state]);
+      runStatus.textContent = run.tool ? `${label} (${run.tool})` : label;
+      runStatus.dataset.phase = run.state;
+      runStatus.className = `mochi-run-status phase-${run.state}`;
+      runStatus.style.display = "inline-flex";
+    } else {
+      runStatus.textContent = "";
+      delete runStatus.dataset.phase;
+      runStatus.className = "mochi-run-status";
+      runStatus.style.display = "none";
+    }
+
+    const showErr = run?.state === MOCHI_RUN_FAILED_PHASE && Boolean(run.detail);
+    errorBanner.textContent = showErr ? (run?.detail ?? "") : "";
+    errorBanner.style.display = showErr ? "block" : "none";
+
+    cancelBtn.style.display = sending ? "inline-flex" : "none";
+    cancelBtn.disabled = !sending;
+
+    pauseBtn.textContent = t(State.paused ? STRINGS.paused : STRINGS.pause);
+    pauseBtn.classList.toggle("on", State.paused);
+    pauseBtn.setAttribute("aria-pressed", String(State.paused));
+  }
+
+  pauseBtn.addEventListener("click", () => {
+    const next = !State.paused;
+    State.applyPaused(next);
+    syncControls();
+    void Bridge.setPaused(next);
+  });
+
+  cancelBtn.addEventListener("click", () => {
+    if (!sending) return;
+    cancelBtn.disabled = true;
+    void MochiBridge.cancelExecution();
+  });
 
   function drawModelButton() {
     const p = providerDef(State.settings.chatProvider);
@@ -307,14 +386,34 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     else picker.open();
   });
 
+  void onEvent<MochiRunStatePayload>("mochi-run-state", (payload) => {
+    State.applyMochiRunState(payload);
+    syncControls();
+  });
+
+  void onEvent<boolean>("mochi-paused", (on) => {
+    State.applyPaused(Boolean(on));
+    syncControls();
+  });
+
   void onEvent<string>("chat-delta", (text) => {
-    if (!sending || !text) return; // nothing visible yet: the dots stay
+    if (!sending) return;
+    const visible = stripMochiToolMarkup(text);
+    const display = splitTodoProposal(splitPlan(visible).prose).text;
+    if (!display.trim()) {
+      if (live) {
+        live.parentElement?.remove();
+        live = null;
+        renderedCount = -1;
+      }
+      return; // nothing visible yet: the dots stay
+    }
     if (!live) {
       live = h("div", { class: "reply" });
       log.querySelector(".typing")?.parentElement?.remove();
       log.append(h("div", { class: "chat-row" }, live));
     }
-    renderMarkdown(live, splitTodoProposal(splitPlan(text).prose).text);
+    renderMarkdown(live, display);
     log.scrollTop = log.scrollHeight;
   });
 
@@ -327,9 +426,10 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     drawModelButton();
     Sound.play("send");
 
-    State.chatHistory.push({ id: nextId++, role: "user", content: query });
-    State.stateOverride = "thinking";
-    State.notify();
+    const userMsg: ChatMessage = { id: nextId++, role: "user", content: query };
+    State.chatHistory.push(userMsg);
+    State.applyMochiRunState({ state: MOCHI_RUN_THINKING_PHASE, tool: null, detail: null });
+    syncControls();
     onHeightChange();
 
     const win = State.windowContext;
@@ -343,12 +443,21 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       const reply = await Bridge.chatSend(query, context, MailChat.on && HOST_OS === "windows");
       // Sent: the window rode along once. A newer drop during the answer stays.
       if (State.windowContext === win) State.windowContext = null;
-      State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });
-      State.stateOverride = null;
+      State.chatHistory.push({ id: nextId++, role: "assistant", content: stripMochiToolMarkup(reply.text) });
+      if (State.mochiRunState?.state !== MOCHI_RUN_FAILED_PHASE) {
+        State.applyMochiRunState({
+          state: MOCHI_RUN_DONE_PHASE,
+          tool: State.mochiRunState?.tool ?? null,
+          detail: null,
+        });
+      }
       Sound.play("finish");
     } catch (err) {
-      State.stateOverride = null;
-      State.noteMessage = String(err).replace(/^Error:\s*/, "");
+      const last = State.chatHistory.at(-1);
+      if (last && last.id === userMsg.id) State.chatHistory.pop();
+      const msg = String(err).replace(/^Error:\s*/, "");
+      State.applyMochiRunState({ state: MOCHI_RUN_FAILED_PHASE, tool: null, detail: msg });
+      State.noteMessage = msg;
       State.view = "note";
       Sound.play("error");
     } finally {
@@ -356,6 +465,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       live = null;
       renderedCount = -1; // the finished answer replaces the streamed one
       drawModelButton();
+      syncControls();
       State.notify();
       onHeightChange();
       // Back to typing without a click. The field was disabled while the
@@ -391,7 +501,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         if (wantChip) chipRow.append(contextChip(wantChip));
       }
 
-      const thinking = State.stateOverride === "thinking";
+      const thinking = sending || State.stateOverride === "thinking";
       const count = State.chatHistory.length + (thinking ? 0.5 : 0);
       if (count !== renderedCount && !live) {
         renderedCount = count;
@@ -404,6 +514,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       // Leaving the chat folds the picker away.
       if (State.view !== "prompt" && picker.isOpen) picker.close();
       drawModelButton();
+      syncControls();
 
       input.placeholder = t(State.chatHistory.length === 0 ? STRINGS.placeholderFirst : STRINGS.placeholderNext);
       input.disabled = sending;

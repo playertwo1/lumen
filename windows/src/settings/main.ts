@@ -7,11 +7,13 @@ import "./settings.css";
 import {
   Bridge,
   GoogleBridge,
+  MochiBridge,
   onEvent,
   type ChatGptAccountStatus,
   type GoogleStatus,
   type HookPreview,
   type HookStatus,
+  type MochiAuditEntry,
   type ShortcutsReport,
   type SubscriptionStatus,
 } from "../core/bridge";
@@ -33,6 +35,7 @@ import { startHub, type PageId } from "../hub/shell";
 import { FLOW_PAGE_RENDERERS } from "../hub/pages";
 import { claudeModelControl } from "./claude-models";
 import { agentsSection } from "./agents";
+import { mcpSection } from "./mcp";
 import { chatGptAccountSection } from "./chatgpt";
 import { phoneSection } from "./phone";
 import { whatsappSection } from "./whatsapp";
@@ -52,9 +55,9 @@ const KEY_STORE = navigator.userAgent.includes("Windows")
 let settings: Settings = { ...DEFAULT_SETTINGS };
 let version = "";
 
-const windowRoot = document.getElementById("hub")!;
+const windowRoot = document.getElementById("hub");
 /** Where the Notch page being shown draws its sections. */
-let root: HTMLElement = windowRoot;
+let root: HTMLElement = windowRoot ?? document.body;
 let hub: { redraw(): void; current(): PageId } | null = null;
 
 async function save() {
@@ -1363,7 +1366,7 @@ function whatsappSections(): HTMLElement[] {
  */
 let generalSync: (() => void) | null = null;
 
-function generalSection(): HTMLElement {
+export function generalSection(): HTMLElement {
   const volume = h("input", {
     type: "range", min: "0", max: "0.2", step: "0.005",
     value: String(settings.soundVolume),
@@ -1534,6 +1537,8 @@ function generalSection(): HTMLElement {
       autostart,
     ),
     ...recapRows(),
+    ...mochiAuditRows(),
+    ...mochiPermissionsRows(),
     ...updateRows(toggle, version),
     languageRow(),
   );
@@ -1817,6 +1822,181 @@ function recapRows(): HTMLElement[] {
   ];
 }
 
+/** Settings → General → Assistant tool log (local, redacted). */
+export function mochiAuditRows(): HTMLElement[] {
+  const T = {
+    label: t("Tool log"),
+    clear: t("Clear tool log"),
+    cleared: t("Tool log cleared."),
+    about: t("Stored only on this computer and redacted — never raw arguments, secrets or personal paths."),
+  };
+  const countHint = h("span", { class: "hint" });
+  const feedback = h("span", { class: "hint" });
+  let clearTimer: number | null = null;
+  let clearedActive = false;
+
+  const setCount = (entries: MochiAuditEntry[] | null | undefined) => {
+    const count = Array.isArray(entries) ? entries.length : 0;
+    countHint.textContent = tn("{count} local entry", "{count} local entries", count);
+  };
+  setCount([]);
+  void MochiBridge.auditList().then((entries) => {
+    setCount(clearedActive ? [] : entries);
+  }).catch(() => {});
+
+  const clearBtn = h("button", {
+    class: "danger",
+    text: T.clear,
+    onclick: async () => {
+      clearBtn.disabled = true;
+      if (clearTimer !== null) {
+        window.clearTimeout(clearTimer);
+        clearTimer = null;
+      }
+      try {
+        await MochiBridge.auditClear();
+        clearedActive = true;
+        setCount([]);
+        feedback.className = "hint";
+        feedback.textContent = T.cleared;
+        clearTimer = window.setTimeout(() => {
+          clearTimer = null;
+          clearedActive = false;
+          clearBtn.disabled = false;
+          feedback.textContent = "";
+        }, 2400);
+      } catch (err) {
+        clearBtn.disabled = false;
+        feedback.className = "notice err";
+        feedback.textContent = t("Could not clear tool log: {error}", {
+          error: String(err).replace(/^Error:\s*/, ""),
+        });
+      }
+    },
+  }) as HTMLButtonElement;
+
+  return [
+    h("div", { class: "row" },
+      h("label", { text: T.label }),
+      countHint,
+    ),
+    h("div", { class: "row" },
+      h("label", {}),
+      clearBtn,
+      feedback,
+    ),
+    h("div", { class: "row" },
+      h("label", {}),
+      h("span", { class: "hint", style: "flex:1 1 0;min-width:0", text: T.about }),
+    ),
+  ];
+}
+
+/** Settings → General → Assistant permanent tool permissions & fail-closed recovery. */
+export function mochiPermissionsRows(): HTMLElement[] {
+  const T = {
+    label: t("Tool permissions"),
+    none: t("No permanent tool permissions."),
+    invalidReason: t("Invalid or missing permissions file."),
+    reset: t("Restore default permissions"),
+    revoke: t("Revoke"),
+  };
+  const box = h("div", { class: "mochi-permissions" });
+  const errorBox = h("div", { class: "notice err", style: "display:none" });
+
+  const showError = (err: unknown) => {
+    errorBox.textContent = t("Could not update tool permissions: {error}", {
+      error: String(err).replace(/^Error:\s*/, ""),
+    });
+    errorBox.style.display = "block";
+  };
+
+  const render = (status: Awaited<ReturnType<typeof MochiBridge.permissionsStatus>>) => {
+    clear(box);
+    errorBox.style.display = "none";
+
+    if (!status || (status.healthy && status.alwaysAllow.length === 0)) {
+      box.append(
+        h("div", { class: "row" },
+          h("label", { text: T.label }),
+          h("span", { class: "hint", text: T.none }),
+        ),
+      );
+      return;
+    }
+
+    if (!status.healthy) {
+      const reason = status.failClosedReason || T.invalidReason;
+      const resetBtn = h("button", {
+        class: "danger",
+        text: T.reset,
+        onclick: async () => {
+          resetBtn.disabled = true;
+          try {
+            await MochiBridge.permissionsResetDefault();
+            await refresh();
+          } catch (err) {
+            resetBtn.disabled = false;
+            showError(err);
+          }
+        },
+      }) as HTMLButtonElement;
+
+      box.append(
+        h("div", { class: "row" },
+          h("label", { text: T.label }),
+          h("div", {
+            class: "notice err",
+            style: "flex:1 1 0;min-width:0",
+            text: t("Permissions locked (fail-closed): {reason}", { reason }),
+          }),
+        ),
+        h("div", { class: "row" },
+          h("label", {}),
+          resetBtn,
+        ),
+        errorBox,
+      );
+      return;
+    }
+
+    status.alwaysAllow.forEach((toolId, index) => {
+      const revokeBtn = h("button", {
+        text: T.revoke,
+        onclick: async () => {
+          revokeBtn.disabled = true;
+          try {
+            await MochiBridge.permissionsRevoke(toolId);
+            await refresh();
+          } catch (err) {
+            revokeBtn.disabled = false;
+            showError(err);
+          }
+        },
+      }) as HTMLButtonElement;
+
+      box.append(
+        h("div", { class: "row" },
+          h("label", { text: index === 0 ? T.label : "" }),
+          h("code", { text: toolId }),
+          revokeBtn,
+        ),
+      );
+    });
+    box.append(errorBox);
+  };
+
+  const refresh = async () => {
+    const status = await MochiBridge.permissionsStatus().catch(() => null);
+    render(status);
+  };
+
+  render(null);
+  void refresh();
+
+  return [box];
+}
+
 // ── Language ──────────────────────────────────────────────────────────────────
 
 /** The shortcuts section on screen, told about the events listened to once in main. */
@@ -1838,6 +2018,7 @@ function applyDirection() {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  if (!windowRoot) return;
   const boot = await Bridge.boot();
   if (boot) {
     settings = { ...settings, ...boot.settings };
@@ -1881,7 +2062,10 @@ async function render() {
   const status = (await Bridge.hooksStatus()) ?? {
     installed: false, planRelayInstalled: false, settingsPath: "", hookPath: "", hookReady: false,
   };
-  const agents = await Bridge.agentHooksList();
+  const [agents, mcpAgents] = await Promise.all([
+    Bridge.agentHooksList(),
+    MochiBridge.mcpStatus().catch(() => []),
+  ]);
 
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
   const claudeRelay = !hasKey && ((await Bridge.claudeReady()) ?? false);
@@ -1942,7 +2126,7 @@ async function render() {
   const sections: Partial<Record<PageId, () => HTMLElement[]>> = {
     general: () => [generalSection()],
     pills: () => [activePillsSection(connected)],
-    agents: () => [claudeSection(status), agentsSection(agents), planSection(status)],
+    agents: () => [claudeSection(status), agentsSection(agents), mcpSection(mcpAgents, status.hookReady), planSection(status)],
     chat: () => [
       subscriptionsSection(),
       apiSection(hasKey, claudeRelay),
@@ -1977,4 +2161,4 @@ async function render() {
   }
 }
 
-void main();
+if (windowRoot) void main();

@@ -212,9 +212,9 @@ fn file_note(name: &str, path: &str) -> String {
             if body.len() < text.len() {
                 body.push_str("\n[truncated]");
             }
-            format!("File: {name}\nFile contents:\n{body}")
+            chat::file_context_block(name, Some(&body))
         }
-        _ => format!("File: {name}"),
+        _ => chat::file_context_block(name, None),
     }
 }
 
@@ -246,11 +246,49 @@ fn user_text(first: bool, context: Option<&ChatContext>, query: &str) -> String 
     }
 }
 
+pub(crate) fn user_message(first: bool, context: Option<&ChatContext>, query: &str) -> Value {
+    json!({ "role": "user", "content": user_text(first, context, query) })
+}
+
 fn request_body(model: &str, system: &str, history: &[Value], user: &Value, max_tokens: u32) -> Value {
     let mut messages = vec![json!({ "role": "system", "content": system })];
     messages.extend(history.iter().cloned());
     messages.push(user.clone());
     json!({ "model": model, "messages": messages, "stream": true, "max_tokens": max_tokens })
+}
+
+pub(crate) async fn step(
+    app: &AppHandle,
+    server: &Server,
+    model: &str,
+    system: &str,
+    history: &[Value],
+    user: &Value,
+) -> Result<String, String> {
+    step_with(server, model, system, history, user, |visible| {
+        let _ = app.emit_to(WINDOW_LABEL, "chat-delta", visible);
+    })
+    .await
+}
+
+async fn step_with(
+    server: &Server,
+    model: &str,
+    system: &str,
+    history: &[Value],
+    user: &Value,
+    on_delta: impl FnMut(String),
+) -> Result<String, String> {
+    let base = base_url(server)?;
+    if model.is_empty() {
+        return Err(t("Pick a model above the chat box first."));
+    }
+    let body = request_body(model, system, history, user, MAX_TOKENS);
+    let answer = stream(&base, server.key.as_deref(), model, &body, on_delta).await?;
+    if answer.is_empty() {
+        return Err(t("No response text."));
+    }
+    Ok(answer)
 }
 
 /// One chat turn with a model server; the island gets the streamed text as `chat-delta` events.
@@ -299,18 +337,9 @@ pub async fn send_with(
     context: Option<ChatContext>,
     on_delta: impl FnMut(String),
 ) -> Result<ChatReply, String> {
-    let base = base_url(server)?;
-    if model.is_empty() {
-        return Err(t("Pick a model above the chat box first."));
-    }
     let turn = chat.begin(server.id);
-    let user = json!({ "role": "user", "content": user_text(turn.first, context.as_ref(), &query) });
-    let body = request_body(model, &chat::system_prompt(false), &turn.history, &user, MAX_TOKENS);
-
-    let answer = stream(&base, server.key.as_deref(), model, &body, on_delta).await?;
-    if answer.is_empty() {
-        return Err(t("No response text."));
-    }
+    let user = user_message(turn.first, context.as_ref(), &query);
+    let answer = step_with(server, model, &chat::system_prompt(false), &turn.history, &user, on_delta).await?;
     let plain = chat::plain_question(turn.first, context.as_ref(), &query);
     chat.commit(&turn, user, json!({ "role": "assistant", "content": answer }), &plain, &answer);
     Ok(ChatReply { text: answer })
@@ -424,7 +453,7 @@ mod tests {
     #[test]
     fn a_window_dropped_mid_conversation_rides_with_that_turn() {
         let win = ChatContext::Window { app_name: "Code".into(), title: "x".into(), url: None };
-        assert_eq!(user_text(false, Some(&win), "q"), "Context — App: Code, Window: x\n\nq");
+        assert_eq!(user_text(false, Some(&win), "q"), format!("{}\n\nq", chat::window_line("Code", "x", None)));
         let file = ChatContext::File { name: "a.txt".into(), path: "/x/a.txt".into() };
         assert_eq!(user_text(false, Some(&file), "q"), "q");
     }
@@ -568,21 +597,22 @@ mod tests {
         let txt = dir.join("notes.txt");
         std::fs::write(&txt, "é".repeat(MAX_INLINE_CHARS + 500)).unwrap();
         let note = file_note("notes.txt", txt.to_str().unwrap());
-        let body = note.strip_prefix("File: notes.txt\nFile contents:\n").expect("inline text");
-        let body = body.strip_suffix("\n[truncated]").expect("marked as cut");
+        let prefix = "<external_context untrusted=\"true\" data_only=\"true\">\nkind: file\nname: notes.txt\ncontent: ";
+        let suffix = " [truncated]\n</external_context>";
+        let body = note.strip_prefix(prefix).expect("inline text").strip_suffix(suffix).expect("marked as cut");
         assert_eq!(body.chars().count(), MAX_INLINE_CHARS);
 
         let small = dir.join("small.md");
         std::fs::write(&small, "# hi").unwrap();
-        assert_eq!(file_note("small.md", small.to_str().unwrap()), "File: small.md\nFile contents:\n# hi");
+        assert_eq!(file_note("small.md", small.to_str().unwrap()), chat::file_context_block("small.md", Some("# hi")));
 
         let png = dir.join("pic.png");
         std::fs::write(&png, "not really a picture").unwrap();
-        assert_eq!(file_note("pic.png", png.to_str().unwrap()), "File: pic.png");
-        assert_eq!(file_note("gone.txt", "/no/such/file"), "File: gone.txt");
+        assert_eq!(file_note("pic.png", png.to_str().unwrap()), chat::file_context_block("pic.png", None));
+        assert_eq!(file_note("gone.txt", "/no/such/file"), chat::file_context_block("gone.txt", None));
         let bin = dir.join("blob.bin");
         std::fs::write(&bin, [0xff, 0xfe, 0x00, 0x80]).unwrap();
-        assert_eq!(file_note("blob.bin", bin.to_str().unwrap()), "File: blob.bin");
+        assert_eq!(file_note("blob.bin", bin.to_str().unwrap()), chat::file_context_block("blob.bin", None));
         let _ = std::fs::remove_dir_all(dir);
     }
 

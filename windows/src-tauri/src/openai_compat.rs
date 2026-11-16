@@ -84,17 +84,17 @@ fn url(p: &Provider, tail: &str) -> Result<Url, String> {
 
 /// The user's message for one turn: plain text, or text and an image part
 /// when the first turn carries a dropped picture.
-fn user_message(first: bool, context: Option<&ChatContext>, query: &str) -> Value {
+pub(crate) fn user_message(first: bool, context: Option<&ChatContext>, query: &str) -> Value {
     let mut prefix = String::new();
     let mut image = None;
     match chat::for_turn(first, context) {
         Some(ChatContext::File { name, path }) => match read_attachment(path) {
             Some(Attachment::ImageDataUrl(url)) => {
                 image = Some(json!({ "type": "image_url", "image_url": { "url": url } }));
-                prefix = format!("File: {name}\n\n");
+                prefix = format!("{}\n\n", chat::file_context_block(name, None));
             }
-            Some(Attachment::Text(body)) => prefix = format!("File: {name}\nFile contents:\n{body}\n\n"),
-            None => prefix = format!("File: {name}\n\n"),
+            Some(Attachment::Text(body)) => prefix = format!("{}\n\n", chat::file_context_block(name, Some(&body))),
+            None => prefix = format!("{}\n\n", chat::file_context_block(name, None)),
         },
         Some(ChatContext::Window { app_name, title, url }) => {
             prefix = format!("{}\n\n", chat::window_line(app_name, title, url.as_deref()));
@@ -185,6 +185,22 @@ pub async fn complete(
     post_completion(p, &key, &body, timeout).await
 }
 
+/// Executa uma chamada única de chat em provedor compatível com OpenAI sem gravar no `Chat`.
+pub(crate) async fn step(
+    p: &'static Provider,
+    model: &str,
+    system: &str,
+    history: &[Value],
+    user: &Value,
+) -> Result<String, String> {
+    let key = secrets::get(p.key).ok_or_else(|| tf("{name} API key missing. Add it in Settings.", &[("name", p.name)]))?;
+    if model.is_empty() {
+        return Err(tf("Pick a {name} model above the chat box.", &[("name", p.name)]));
+    }
+    let body = request_body(p, model, system, history, user, MAX_TOKENS);
+    post_completion(p, &key, &body, Duration::from_secs(90)).await
+}
+
 /// One chat turn with a cloud provider.
 pub async fn send(
     chat: &Chat,
@@ -193,14 +209,9 @@ pub async fn send(
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
-    let key = secrets::get(p.key).ok_or_else(|| tf("{name} API key missing. Add it in Settings.", &[("name", p.name)]))?;
-    if model.is_empty() {
-        return Err(tf("Pick a {name} model above the chat box.", &[("name", p.name)]));
-    }
     let turn = chat.begin(p.id);
     let user = user_message(turn.first, context.as_ref(), &query);
-    let body = request_body(p, model, &chat::system_prompt(false), &turn.history, &user, MAX_TOKENS);
-    let text = post_completion(p, &key, &body, Duration::from_secs(90)).await?;
+    let text = step(p, model, &chat::system_prompt(false), &turn.history, &user).await?;
 
     let plain = chat::plain_question(turn.first, context.as_ref(), &query);
     chat.commit(&turn, user, json!({ "role": "assistant", "content": text }), &plain, &text);
@@ -400,7 +411,7 @@ mod tests {
         let ctx = ChatContext::File { name: "notes.txt".into(), path: txt.to_string_lossy().into() };
         assert_eq!(
             user_message(true, Some(&ctx), "sum up")["content"],
-            "File: notes.txt\nFile contents:\nhello\n\nsum up"
+            format!("{}\n\nsum up", chat::file_context_block("notes.txt", Some("hello")))
         );
         assert_eq!(user_message(false, Some(&ctx), "more")["content"], "more");
 
@@ -411,17 +422,24 @@ mod tests {
         let parts = msg["content"].as_array().unwrap();
         assert_eq!(parts[0]["type"], "image_url");
         assert!(parts[0]["image_url"]["url"].as_str().unwrap().starts_with("data:image/png;base64,"));
-        assert_eq!(parts[1], json!({"type":"text","text":"File: pic.png\n\nwhat is it?"}));
+        assert_eq!(
+            parts[1],
+            json!({"type":"text","text": format!("{}\n\nwhat is it?", chat::file_context_block("pic.png", None))})
+        );
 
         let pdf = dir.join("doc.pdf");
         std::fs::write(&pdf, "%PDF").unwrap();
         let ctx = ChatContext::File { name: "doc.pdf".into(), path: pdf.to_string_lossy().into() };
-        assert_eq!(user_message(true, Some(&ctx), "q")["content"], "File: doc.pdf\n\nq");
+        assert_eq!(
+            user_message(true, Some(&ctx), "q")["content"],
+            format!("{}\n\nq", chat::file_context_block("doc.pdf", None))
+        );
         let _ = std::fs::remove_dir_all(dir);
 
         let ctx = ChatContext::Window { app_name: "Code".into(), title: "x".into(), url: None };
-        assert_eq!(user_message(true, Some(&ctx), "q")["content"], "Context — App: Code, Window: x\n\nq");
-        assert_eq!(user_message(false, Some(&ctx), "q")["content"], "Context — App: Code, Window: x\n\nq");
+        let expected_win = format!("{}\n\nq", chat::window_line("Code", "x", None));
+        assert_eq!(user_message(true, Some(&ctx), "q")["content"], expected_win);
+        assert_eq!(user_message(false, Some(&ctx), "q")["content"], expected_win);
     }
 
     #[test]
@@ -520,7 +538,8 @@ mod tests {
         };
         let msg = user_message(true, Some(&ctx), "Please answer");
         let content = msg["content"].as_str().unwrap();
-        assert!(content.contains("File: exercises.pdf\nFile contents:\n"));
+        assert!(content.starts_with("<external_context untrusted=\"true\" data_only=\"true\">\n"));
+        assert!(content.contains("kind: file\nname: exercises.pdf\ncontent:"));
         assert!(content.contains("Solve: 2 + 2 = ?"));
         assert!(content.ends_with("\n\nPlease answer"));
 
