@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows 0.7.7 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Arraste o notch até qualquer borda** — segure a ilha (fora do Mochi e dos botões) e arraste: ao soltar, ela gruda na borda mais próxima da tela (em cima, embaixo, esquerda ou direita), no ponto em que foi solta, e o lugar fica salvo. Nunca fica solta no meio da tela. Os lugares fixos (topo central e os quatro cantos) continuam em Ajustes → Posição. Só no Windows.
+- **Pílula do ditado arrastável, em cima ou escondida** — a pílula também gruda na borda mais próxima ao soltar, e a Posição da pílula ganhou **Em cima** e **Escondida** (o ditado continua funcionando sem pílula na tela).
+- **Engrenagem abre direto os Ajustes** — a engrenagem da ilha abre **Ajustes → Geral** no Hub, sem passar pelo painel rápido intermediário.
+
 ## Windows 0.7.6 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Triagem do MailCraft no lugar do cartão do Outlook** — a Visão geral do E-mail troca o cartão "Outlook clássico (triagem)" por **Triagem do MailCraft**: o botão **Fazer triagem** lê as 20 mensagens mais recentes e separa **Contas a pagar** (conta de luz, boleto, fatura), **Renovações de assinatura**, **Importantes**, **Promoções**, **Spam** e **Outros**, com o motivo de cada uma.
