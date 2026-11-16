@@ -1108,6 +1108,7 @@ pub fn run() {
         .manage(Chat::default())
         .manage(shortcuts::Registry::default())
         .manage(recap::load())
+        .manage(mochi::MochiRuntime::new_default())
         .invoke_handler(tauri::generate_handler![
             boot,
             vitals::vitals_read,
@@ -1364,6 +1365,9 @@ pub fn run() {
             update::update_dismiss,
             update::update_install,
             update::update_open_page,
+            mochi::mochi_permissions_status,
+            mochi::mochi_permissions_revoke,
+            mochi::mochi_permissions_reset_default,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1382,6 +1386,7 @@ pub fn run() {
             notes::setup(&handle);
             tasks::setup(&handle);
             google::setup(&handle);
+            mochi::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
                 // Where Tauri takes the drop itself (Linux), its paths are the

@@ -16,6 +16,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
+use super::permissions::{PermissionDecision, PermitToken};
+
 /// Nível de risco da ferramenta, usado para decidir a exigência de clique na camada de permissões.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -111,21 +113,51 @@ impl ToolContext {
 
 /// Contexto entregue à função `execute` de uma ferramenta.
 ///
-/// Na M1.2 será exigido também o `PermitToken` não forjável emitido por `PermissionEngine`.
+/// Só pode ser construído a partir de um `&PermitToken` válido emitido por `PermissionEngine`
+/// para a mesma ferramenta em execução.
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     pub cancel_rx: tokio::sync::watch::Receiver<bool>,
+    permit_tool_id: String,
+    permit_decision: PermissionDecision,
+    _private: (),
 }
 
 impl ExecutionContext {
-    /// Cria um contexto de execução associado a um canal de cancelamento.
-    pub fn new(cancel_rx: tokio::sync::watch::Receiver<bool>) -> Self {
-        Self { cancel_rx }
+    /// Cria um contexto de execução validando que o `PermitToken` pertence à ferramenta esperada.
+    pub fn for_tool(
+        cancel_rx: tokio::sync::watch::Receiver<bool>,
+        permit: &PermitToken,
+        expected_tool_id: &str,
+    ) -> Result<Self, ToolError> {
+        if permit.tool_id() != expected_tool_id {
+            return Err(ToolError::PermissionDenied(format!(
+                "token emitido para '{}' não autoriza '{}'",
+                permit.tool_id(),
+                expected_tool_id
+            )));
+        }
+        Ok(Self {
+            cancel_rx,
+            permit_tool_id: permit.tool_id().to_string(),
+            permit_decision: permit.decision(),
+            _private: (),
+        })
     }
 
     /// Indica se o cancelamento já foi sinalizado.
     pub fn is_cancelled(&self) -> bool {
         *self.cancel_rx.borrow()
+    }
+
+    /// Identificador da ferramenta autorizada pelo `PermitToken`.
+    pub fn permit_tool_id(&self) -> &str {
+        &self.permit_tool_id
+    }
+
+    /// Decisão registrada que originou o `PermitToken`.
+    pub fn permit_decision(&self) -> PermissionDecision {
+        self.permit_decision
     }
 }
 
