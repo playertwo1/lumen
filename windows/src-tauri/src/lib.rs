@@ -31,6 +31,7 @@ mod launch;
 mod local_chat;
 mod log;
 mod mail;
+mod mochi;
 mod net;
 mod notes;
 mod openai_compat;
