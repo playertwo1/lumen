@@ -1,6 +1,6 @@
-> Parte do roadmap do fork. Índice, regras gerais e ordem das fases: [ROADMAP-FORK.md](../ROADMAP-FORK.md).
+> Parte do roadmap do fork. Índice e ordem: [ROADMAP-FORK.md](../ROADMAP-FORK.md). Regras gerais e das fases M: [AGENTS.md](../../AGENTS.md).
 
-**Estado após a L0 (2026-11-13): Pausada (D-053).** Os PASS sintéticos permanecem separados do aceite real do proprietário. A última release publicada é `windows-v0.6.11`; a tag `windows-v0.6.12` existe sem GitHub Release. O preflight `43402455643` foi cancelado, e os assets finais de 0.6.12 não foram gerados nem examinados. Ver o [inventário L0](fase-l-lumen.md). Checklists e evidências anteriores foram preservados.
+**Estado após a L0 (2026-11-13): Pausada (D-053).** Os PASS sintéticos permanecem separados do aceite real do proprietário. A última release publicada é `windows-v0.6.11`; a tag `windows-v0.6.12` existe sem GitHub Release. O preflight `43402455643` foi cancelado, e os assets finais de 0.6.12 não foram gerados nem examinados. Ver o [inventário L0](../arquivadas/etapas/l0-fechar-quase-pronto.md). Checklists e evidências anteriores foram preservados.
 
 ## Fase 2 — Melhorias próprias do Windows
 

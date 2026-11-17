@@ -1,7 +1,7 @@
 # Spec — L8.3: Anotador, botão "Virar tarefa" nas ações
 
 **Data:** 2026-11-17  
-**Fase:** [L8 — Ajustes do uso real](../../roadmap/fase-l-lumen.md) (`L8.3`)  
+**Fase:** [L8 — Ajustes do uso real](../../roadmap/l8-ajustes-uso-real.md) (`L8.3`)  
 **Branch/Worktree:** `feat/l8-notes` (`coucou-l8-notes`)
 
 ## 1. Problema
@@ -26,7 +26,7 @@ Os itens de **Ações / To-do** de uma nota do Anotador ficam só ali. Para acom
 - `windows/src/core/flow.ts`: `Todo.taskId`, `FlowBridge.convertTodoToTask`.
 - `windows/src/hub/pages/notes.ts`: botão na lista de ações.
 - `windows/src/hub/hub.css`: só uma regra para empurrar o botão para a direita da linha.
-- `docs/roadmap/fase-l-lumen.md`: caixas da L8.3.
+- `docs/roadmap/l8-ajustes-uso-real.md`: caixas da L8.3.
 
 ## 4. Interfaces
 

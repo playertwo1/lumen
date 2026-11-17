@@ -1,4 +1,4 @@
-> Parte do roadmap do fork. Índice, regras gerais e ordem das fases: [ROADMAP-FORK.md](../ROADMAP-FORK.md).
+> Parte do roadmap do fork. Índice e ordem: [ROADMAP-FORK.md](../ROADMAP-FORK.md). Regras gerais e das fases M: [AGENTS.md](../../AGENTS.md).
 
 **Estado: Pausada (D-053, 2026-11-13).** Etapas, dependências, checklists e evidências permanecem preservados; não iniciar trabalho até nova decisão do proprietário.
 
