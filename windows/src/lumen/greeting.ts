@@ -1,37 +1,15 @@
 import { Sound } from "../core/sound";
-import { drawCompass } from "./compass";
 
 export const GREETING_END = 3.8;
 export const GREETING_W = 640;
 export const GREETING_H = 150;
 
-export interface CompassPose { x: number; y: number; scale: number; rotation: number; opacity: number }
-
-const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-const easeOut = (t: number) => 1 - (1 - t) ** 3;
-
-export function greetingPose(seconds: number, collapseAt = Number.POSITIVE_INFINITY): CompassPose {
-  const t = Math.max(0, seconds);
-  const land = easeOut(clamp(t / 0.95, 0, 1));
-  const bounce = t < 1.2 ? Math.sin(t * Math.PI * 3.2) * (1 - t / 1.2) * 8 : 0;
-  const waving = clamp((t - 1.3) / 0.5, 0, 1) * (1 - clamp((t - 2.5) / 0.5, 0, 1));
-  const elapsedAfterCollapse = t - collapseAt;
-  const shrink = Number.isFinite(collapseAt) && elapsedAfterCollapse > 0 ? 1 - easeOut(clamp(elapsedAfterCollapse / 0.34, 0, 1)) : 1;
-  return {
-    x: 320 - 88 * waving,
-    y: 130 - 42 * land - bounce,
-    scale: (0.6 + land * 0.4) * shrink,
-    rotation: Math.sin(t * 2.2) * 0.06 * waving,
-    opacity: shrink,
-  };
-}
-
-export function compassBounds(pose: CompassPose) {
-  const radius = Math.min(GREETING_W, GREETING_H) * 0.82 * pose.scale * 0.36;
-  return { left: pose.x - radius, right: pose.x + radius, top: pose.y - radius, bottom: pose.y + radius };
-}
+// The GIF loops forever and lasts 41 x 20 ms: after one pass the still PNG takes over.
+const CRYSTAL_GIF_MS = 850;
 
 export class Greeting {
+  private still = new Image();
+  private gif: HTMLImageElement | null = null;
   private startMs = 0;
   private tc = Number.POSITIVE_INFINITY;
   private fired = false;
@@ -43,6 +21,10 @@ export class Greeting {
     this.tc = Number.POSITIVE_INFINITY;
     this.fired = false;
     this.cancelTimers();
+    this.still.src = "/lumen-crystal.png";
+    // A new Image restarts the GIF from its first frame; reduced motion never loads it.
+    this.gif = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? null : new Image();
+    if (this.gif) this.gif.src = "/lumen-crystal.gif";
     Sound.play("greeting");
     this.timers.push(window.setTimeout(() => this.fire(), GREETING_END * 1000));
   }
@@ -61,15 +43,8 @@ export class Greeting {
   draw(ctx: CanvasRenderingContext2D) {
     const t = this.elapsed;
     if (!this.fired && t >= GREETING_END && this.tc >= 4.1) this.fire();
-    const pose = greetingPose(t, this.tc);
     ctx.clearRect(0, 0, GREETING_W, GREETING_H);
-    drawCompass(ctx, GREETING_W, GREETING_H, {
-      x: pose.x - GREETING_W / 2,
-      y: pose.y - GREETING_H / 2,
-      rotation: pose.rotation,
-      scale: pose.scale,
-      opacity: pose.opacity,
-      mood: "active",
-    });
+    const gif = this.gif && t * 1000 < CRYSTAL_GIF_MS && this.gif.complete && this.gif.naturalWidth > 0 ? this.gif : this.still;
+    if (gif.complete && gif.naturalWidth > 0) ctx.drawImage(gif, (GREETING_W - GREETING_H) / 2, 0, GREETING_H, GREETING_H);
   }
 }

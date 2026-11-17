@@ -2,6 +2,15 @@
 
 ## Checklist de release (executar apenas com pedido explícito)
 
+## Windows 0.7.13 — cristal na janela de abertura (a bússola vinha de `src/lumen/greeting.ts`)
+
+- [x] Pedido explícito do proprietário em 2026-11-17 para corrigir de vez o ícone antigo ao iniciar e publicar (`playertwo1/lumen`).
+- [x] Causa: `vite.config.ts` troca `src/mochi/greeting` por `src/lumen/greeting.ts` no Windows; esse arquivo ainda desenhava a bússola e a 0.7.11 corrigiu o arquivo do Coucou (não empacotado).
+- [x] Validação visual no exe de release local (`lumen.exe` 0.7.13) comparada à instalação 0.7.11, com capturas da tela a cada 250 ms: instalada = 277–627 pixels da cor da bússola por frame; nova = 0, cristal animando e terminando estático.
+- [x] Teste novo `tests/lumen-startup-crystal.test.mjs`; `npx tsc --noEmit` e `npm test` (`757/757`).
+- [ ] Publicação (workflow, Defender, SHA-256): ver abaixo, preenchido após a release.
+- [ ] Proprietário validar na instalação atualizada; **NOT_RUN**.
+
 ## Windows 0.7.12 — L8 (ajustes do uso real) e Apagar/Spam da triagem
 
 - [x] Pedido explícito do proprietário em 2026-11-17 ("Merge, push e release") depois da L8 implementada.

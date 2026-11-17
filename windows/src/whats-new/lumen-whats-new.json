@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.13",
+      "items": [
+        {
+          "icon": "sparkles",
+          "title": { "pt-BR": "Abertura com o cristal" },
+          "detail": { "pt-BR": "A janela preta que aparece ao iniciar agora mostra o cristal do Lumen, não mais a bússola antiga." }
+        }
+      ]
+    },
+    {
       "version": "0.7.12",
       "items": [
         {

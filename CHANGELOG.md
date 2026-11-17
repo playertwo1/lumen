@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.13 — 17 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Bússola antiga fora da abertura** — no Windows o app empacotado trocava a saudação da ilha por `src/lumen/greeting.ts`, que ainda desenhava a bússola; a correção da 0.7.11 tinha ido para o arquivo do Coucou, que nunca entra nesse build. Agora a janela preta de abertura mostra o cristal (animação uma vez, depois a imagem estática; só a imagem com movimento reduzido) e um teste impede a volta da bússola.
+
 ## Windows 0.7.12 — 17 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Ditado mais confiável** — se o Windows perder o "soltou a tecla", o próximo toque recomeça em vez de ficar preso; áudio curto, fala baixa ou modelo não carregado agora aparecem na pílula, e o `coucou.log` registra teclas e resultados (sem o texto ditado).

@@ -7,7 +7,7 @@
 **Ilha flutuante inteligente para Windows que acompanha seus agentes de IA, permissões, ditado offline, anotações e integrações sem tirar você do foco.**
 
 <p>
-  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.12"><img src="https://img.shields.io/badge/release-windows--v0.7.12-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.11"></a>
+  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.13"><img src="https://img.shields.io/badge/release-windows--v0.7.13-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.13"></a>
   <a href="https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 e 11"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=black" alt="Tauri 2">
   <img src="https://img.shields.io/badge/Rust-TypeScript-F74C00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust e TypeScript">
@@ -67,10 +67,11 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 > Os instaladores ainda não possuem certificado Authenticode, então o SmartScreen pode exibir aviso de editor desconhecido; clique em **Mais informações → Executar mesmo assim**. Após instalar, novas versões podem ser verificadas em **Ajustes → Geral → Atualizações** com conferência de SHA-256.
 
 <details>
-<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.12</code></summary>
+<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.13</code></summary>
 
 | Versão | Data | Destaques |
 |---|---|---|
+| [`windows-v0.7.13`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.13) | 17 nov. 2026 | Cristal de verdade na janela preta de abertura: a bússola antiga não aparece mais ao iniciar |
 | [`windows-v0.7.12`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.12) | 17 nov. 2026 | L8: ditado e mãos livres mais confiáveis, Anotador → Tarefas, escolha do motor da limpeza, Orca, WhatsApp pela ponte do Orbit e Apagar/Spam na triagem do MailCraft |
 | [`windows-v0.7.11`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.11) | 16 nov. 2026 | Animação do cristal na saudação de abertura da ilha, com imagem final estática e respeito a movimento reduzido |
 | [`windows-v0.7.10`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.10) | 16 nov. 2026 | Animação do cristal ao abrir o app e atualização do ícone da Busca do Windows |
