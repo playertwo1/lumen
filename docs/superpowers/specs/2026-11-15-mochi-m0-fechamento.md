@@ -1,7 +1,7 @@
 # M0.7 — Fechamento da Fase M0 (Descoberta e Licenças)
 
 **Data:** 2026-11-15  
-**Fase:** [M0 — Descoberta e licenças](../../roadmap/m0-descoberta.md)  
+**Fase:** [M0 — Descoberta e licenças](../../roadmap/arquivo/m0-descoberta.md)  
 **Estado final:** **Concluída** (zero código de produto alterado, zero credencial no repositório, zero arquivo de configuração de agente modificado).
 
 ## 1. Síntese executiva dos resultados (M0.1–M0.6)

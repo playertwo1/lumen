@@ -1,7 +1,7 @@
 # M0.1 — Licenças, manutenção e estratégia de distribuição
 
 **Data:** 2026-11-15  
-**Fase:** [M0 — Descoberta e licenças](../../roadmap/m0-descoberta.md)  
+**Fase:** [M0 — Descoberta e licenças](../../roadmap/arquivo/m0-descoberta.md)  
 **Escopo:** Verificação factual de licenças, atividade upstream, suporte Windows e decisão de empacotamento para automação desktop e web do Lumen (sem alterações de código de produto).
 
 ## 1. Tabela consolidada de licenças e classificação

@@ -1,7 +1,7 @@
 # M0.2 — Cérebro por provedor e registro de MCP local
 
 **Data:** 2026-11-15  
-**Fase:** [M0 — Descoberta e licenças](../../roadmap/m0-descoberta.md)  
+**Fase:** [M0 — Descoberta e licenças](../../roadmap/arquivo/m0-descoberta.md)  
 **Restrição observada:** Nenhuma configuração de agente (`<HOME>\.claude.json`, `<HOME>\.codex\config.toml`, `<HOME>\.gemini\...`) foi criada ou modificada nesta subfase.
 
 ## 1. Matriz de decisão por provedor (OAuth de assinatura vs. CLI vs. API paga)

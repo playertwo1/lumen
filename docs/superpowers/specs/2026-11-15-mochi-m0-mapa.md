@@ -1,7 +1,7 @@
 # M0.6 — Mapa do código Windows existente para a Fase M1
 
 **Data:** 2026-11-15  
-**Fase:** [M0 — Descoberta e licenças](../../roadmap/m0-descoberta.md)  
+**Fase:** [M0 — Descoberta e licenças](../../roadmap/arquivo/m0-descoberta.md)  
 **Objetivo:** Mapear os pontos de entrada reais em `windows/` para evitar reescrever infraestrutura já pronta e deixar explícito onde a M1 vai se conectar.
 
 ## Tabela função → arquivo → reutilização

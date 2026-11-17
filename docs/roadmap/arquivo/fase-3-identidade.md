@@ -1,4 +1,4 @@
-> Parte do roadmap do fork. Índice, regras gerais e ordem das fases: [ROADMAP-FORK.md](../ROADMAP-FORK.md).
+> Parte do roadmap do fork. Índice, regras gerais e ordem das fases: [ROADMAP-FORK.md](../../ROADMAP-FORK.md).
 
 ## Fase 3 — Identidade própria, somente se o proprietário decidir
 

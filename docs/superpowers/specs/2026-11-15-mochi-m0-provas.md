@@ -1,7 +1,7 @@
 # M0.3, M0.4 e M0.5 — Provas de conceito técnicas (Volume, Desktop e Web)
 
 **Data:** 2026-11-15  
-**Fase:** [M0 — Descoberta e licenças](../../roadmap/m0-descoberta.md)  
+**Fase:** [M0 — Descoberta e licenças](../../roadmap/arquivo/m0-descoberta.md)  
 **Isolamento:** Todos os projetos e perfis de teste rodaram em diretório temporário fora do repositório (`scratch`), sem alterações em `windows/src` ou `windows/src-tauri/src`, e foram removidos ao final das execuções. Nenhum clique ou digitação foi efetuado em aplicativos reais do usuário.
 
 ---

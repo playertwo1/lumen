@@ -1,8 +1,8 @@
 # Roadmap do fork Windows Coucou — playertwo1/coucou
 
-Atualizado em 2026-11-13. Fonte canônica de estado: este índice e os arquivos de fase em `docs/roadmap/`.
+Atualizado em 2026-11-17. Fonte canônica de estado: este índice e os arquivos de fase em `docs/roadmap/`. Fases concluídas ficam em `docs/roadmap/arquivo/` (só um comentário no índice aponta para elas).
 
-**Entrada para agentes:** [AGENTS.md](../AGENTS.md) · **Estado e próxima ação:** [STATE-FORK.md](STATE-FORK.md) · **Fase da vez:** [Fase L](roadmap/fase-l-lumen.md)
+**Entrada para agentes:** [AGENTS.md](../AGENTS.md) · **Estado e próxima ação:** [STATE-FORK.md](STATE-FORK.md) · **Fase da vez:** [L8 — Ajustes do uso real](roadmap/fase-l-lumen.md#l8--ajustes-do-uso-real-2026-11-17--a-fazer-agora-antes-das-fases-m) (antes das fases M)
 
 ## Estado e regras de leitura
 
@@ -58,10 +58,10 @@ Pesquisas de projetos externos ficam em `docs/research/`; as ideias aproveitadas
 | 1 | 0 — Validar o que já existe | [fase-0-validacao.md](roadmap/fase-0-validacao.md) | Pausada (D-053; L0 concluída; 0.4 fechado) |
 | 2 | 1 — Recursos do Mac ainda não escolhidos | [fase-1-recursos-mac.md](roadmap/fase-1-recursos-mac.md) | Pausada (D-053; 1.2 concluída; 1.3 e 1.4 descartadas) |
 | 3 | 2 — Melhorias próprias do Windows | [fase-2-melhorias-windows.md](roadmap/fase-2-melhorias-windows.md) | Pausada (D-053; 2.8a sintética; 0.6.12 sem release) |
-| 4 | L — Lumen + Segunda Mente | [fase-l-lumen.md](roadmap/fase-l-lumen.md) | Em andamento (0.6.15 publicada; avaliação real da migração, L1.4 e L2 pendentes; L1.4a e L1.4d-1/d-2/d-3/d-4 com aceite visual; L1.4b entregue; Canvas escolhido na L1.4c em 2026-11-13; L2.1 e L2.2 aprovadas sinteticamente; próxima: L3) |
+| 4 | L — Lumen + Segunda Mente | [fase-l-lumen.md](roadmap/fase-l-lumen.md) | L0–L7 concluídas e arquivadas ([arquivo/fase-l-l0-l7-concluida.md](roadmap/arquivo/fase-l-l0-l7-concluida.md)). **L8 em andamento, a primeira da fila:** L8.1 ditado inconsistente, L8.2 mãos livres, L8.3 anotador → tarefa, L8.4 motor da limpeza, L8.5 Orca, L8.6 WhatsApp pela ponte do Orbit. Uma por vez, com validação real. |
 | — | 2B — Paridade entre agentes e ambientes | [fase-2b-paridade-agentes.md](roadmap/fase-2b-paridade-agentes.md) | Pausada (D-053) |
 | — | 2C — Pílulas configuráveis e posição livre | [fase-2c-pilulas-posicao.md](roadmap/fase-2c-pilulas-posicao.md) | Pausada (D-053) |
-| 6 | M0 — Mochi: descoberta e licenças | [m0-descoberta.md](roadmap/m0-descoberta.md) | Concluída em 2026-11-15 (sem código de produto; specs `docs/superpowers/specs/2026-11-15-mochi-m0-*.md`) |
+| 6 | M0 — Mochi: descoberta e licenças | [arquivo/m0-descoberta.md](roadmap/arquivo/m0-descoberta.md) | Concluída em 2026-11-15 (sem código de produto; specs `docs/superpowers/specs/2026-11-15-mochi-m0-*.md`) |
 | 7 | M1 — Mochi: fundação | [m1-fundacao.md](roadmap/m1-fundacao.md) | Implementada e validada sinteticamente em 2026-11-16 (`M1.1–M1.6`; Checkpoint M1 real `NOT_RUN`) |
 | 8 | M2 — Mochi: controle nativo do Windows | [m2-windows-nativo.md](roadmap/m2-windows-nativo.md) | Pendente |
 | 9 | M3 — Mochi: Obsidian | [m3-obsidian.md](roadmap/m3-obsidian.md) | Pendente |
@@ -72,7 +72,7 @@ Pesquisas de projetos externos ficam em `docs/research/`; as ideias aproveitadas
 | 14 | M8 — Mochi: rotinas | [m8-rotinas.md](roadmap/m8-rotinas.md) | Pendente |
 | 15 | M9 — Mochi: memória avançada, gateway e observabilidade | [m9-memoria-gateway.md](roadmap/m9-memoria-gateway.md) | Pendente |
 | 16 | M10 — Mochi: release | [m10-release.md](roadmap/m10-release.md) | Pendente |
-| — | 3 — Identidade própria (só com decisão do proprietário) | [fase-3-identidade.md](roadmap/fase-3-identidade.md) | Decidida em 2026-11-13: entra na Fase L, etapa L1 (Lumen) |
+| — | 3 — Identidade própria (só com decisão do proprietário) | [arquivo/fase-3-identidade.md](roadmap/arquivo/fase-3-identidade.md) | Decidida em 2026-11-13: entra na Fase L, etapa L1 (Lumen) |
 | — | Parqueado | [parqueado.md](roadmap/parqueado.md) | Estudo de personagens assumido pela L1.4; L1.4a aprovada; L1.4b em andamento |
 | — | Checklist de release (só com pedido explícito) | [release-checklist.md](roadmap/release-checklist.md) | — |
 
