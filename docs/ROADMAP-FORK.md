@@ -1,97 +1,51 @@
-# Roadmap do fork Windows Coucou — playertwo1/coucou
+# Roadmap do Lumen (fork Windows do Coucou)
 
-Atualizado em 2026-11-17. Fonte canônica de estado: este índice e os arquivos de fase em `docs/roadmap/`. Fases concluídas ficam em `docs/roadmap/arquivo/` (só um comentário no índice aponta para elas).
+Atualizado em 2026-11-17. Este arquivo é só o índice: diz onde cada etapa está e o que ela faz ou fez. O detalhe (caixas, checkpoints e evidências) fica no arquivo de cada etapa. Regras: [AGENTS.md](../AGENTS.md). Estado e pendências: [STATE-FORK.md](STATE-FORK.md).
 
-**Entrada para agentes:** [AGENTS.md](../AGENTS.md) · **Estado e próxima ação:** [STATE-FORK.md](STATE-FORK.md) · **Fase da vez:** [L8 — Ajustes do uso real](roadmap/fase-l-lumen.md#l8--ajustes-do-uso-real-2026-11-17--a-fazer-agora-antes-das-fases-m) (antes das fases M)
+## Abertas e a fazer — `docs/roadmap/`
 
-## Estado e regras de leitura
+Em ordem de execução. Uma etapa por vez; etapas pausadas só voltam com decisão do dono.
 
-- Decisão do proprietário (2026-11-13; D-050 a D-055 da Segunda Mente): este fork vira o **Lumen**, o lado desktop da Segunda Mente. A [Fase L](roadmap/fase-l-lumen.md) vai na frente. Das fases 0, 1 e 2, fecha-se só o que está quase pronto. As fases 2B e 2C ficam pausadas. As fases M passam a se chamar "Lumen assistente" e vêm depois da L. O Lumen é só em pt-BR: a regra das 13 línguas abaixo não vale para a Fase L.
-- Decisão do proprietário (2026-11-12): executar testes sintéticos em todas as fases e etapas. Ao concluir cada etapa, gerar uma nova versão e publicá-la no GitHub para o proprietário atualizar e testar no uso real. Registrar separadamente os resultados sintéticos e reais; publicação para teste não fecha checkpoint que exige validação real, e nenhum resultado sintético substitui essa validação. Esta é uma autorização recorrente para publicar cada etapa concluída.
-- O fork está na `main`, com a versão `windows-v0.6.15` publicada localmente (2026-11-14); o atualizador consulta as releases de `playertwo1/coucou`.
-- A L0 foi concluída: as fases 0, 1 e 2 e as fases 2B/2C estão **Pausadas (D-053)**, com inventário e evidências em [Fase L](roadmap/fase-l-lumen.md). A 2.8a tem PASS sintético, mas `windows-v0.6.12` não tem release publicada; o preflight `43402455643` foi cancelado e não há varredura válida dos assets finais. O aceite real de 2.1–2.8a segue pendente nos limites indicados na Fase L.
-- O aplicativo e várias features já têm código e testes, mas ainda falta validação manual em runtime. Não marque uma feature como concluída só porque compila.
-- Esforço: P = pequeno, M = médio, G = grande. Estimativa serve para comparar itens; uma feature M/G deve ser subdividida antes da implementação.
-- [ ] Pendente.
-- [x] Feito, com a evidência exigida pelo checkpoint.
-- Item implementado, mas com validação manual pendente: marcar o código/teste como feito e manter a caixa de runtime vazia.
-- Uma etapa condicional só pode ser marcada como N/A depois de registrar a evidência que a tornou desnecessária ou impossível.
-
-### Como executar uma etapa
-
-1. Trabalhar em uma subfase por vez. Não começar a etapa dependente enquanto o checkpoint anterior não estiver fechado.
-2. Antes de uma etapa de código: `git status` limpo; `git fetch upstream && git merge upstream/main`. Se houver conflito ou alteração local, parar e resolver isso antes de prosseguir.
-3. Antes de código com UX ou comportamento novo, escrever uma spec curta em `docs/superpowers/specs/` e um plano em `docs/superpowers/plans/`. Incluir arquivos, interfaces, testes, aceite e rollback de migração quando houver.
-4. Implementar a menor mudança que cumpre o aceite. Para Fase 2B, seguir TDD. Nas demais, acrescentar os testes proporcionais à lógica alterada.
-5. Ao concluir uma etapa, rodar os testes sintéticos aplicáveis, criar a nova versão e publicar no GitHub para teste real do proprietário; registrar versão, ambiente, resultados sintéticos e falhas sem segredos, prompts ou caminhos pessoais. Fazer um commit por subfase concluída. Manter checkpoints reais abertos até o proprietário fornecer o resultado exigido.
-6. A autorização recorrente do proprietário cobre a publicação no GitHub após cada etapa concluída; não publicar antes de passar os testes sintéticos nem apresentar a publicação como validação real.
-
-### Restrições do projeto para todas as etapas
-
-- Não redesenhar nem alterar o visual de telas e pílulas existentes sem pedido explícito.
-- Não renomear IDs de pílula publicados.
-- Frases novas da interface vão em `windows/src/i18n/extra.json`, nas 13 línguas; executar a verificação de i18n existente.
-- Nunca aprovar permissão sem clique explícito. Se não houver clique ou a resposta falhar, o agente continua perguntando no próprio terminal.
-- Nunca sobrescrever configuração de agente sem backup datado, diff visível e confirmação explícita. Preservar hooks de outras ferramentas.
-- Nunca enviar e-mail automaticamente, fazer transação, armazenar chave em texto puro ou adicionar telemetria.
-- Usar dados locais quando o item disser local/offline. Não fazer fetch, push, gravação ou alteração de arquivos como efeito colateral de uma pílula somente de leitura.
-
-### Comandos de validação por tipo de mudança
-
-- TypeScript e testes Windows: em `windows`, `npx tsc --noEmit` e `npm test`.
-- UI/recursos de build: em `windows`, também `npm run build`.
-- Rust do app Windows: em `windows/src-tauri`, `cargo test --lib`.
-- Relay/hook: em `windows/hook`, `cargo test`.
-- What's New de release: na raiz, `python3 scripts/test-whats-new.py`.
-- Teste manual: usar a lista de cenários do checkpoint; não substituir por typecheck ou teste unitário.
-
-## Fases e ordem de execução
-
-Este arquivo é o índice. Abra somente o arquivo da fase em que você está trabalhando; o estado detalhado (caixas e checkpoints) fica nele. Ao fechar uma fase, atualize a coluna Estado aqui.
-
-Decisões que deram origem às fases M: `docs/questionario/2026-11-09-mochi-assistant-roadmap.md`.
-
-Pesquisas de projetos externos ficam em `docs/research/`; as ideias aproveitadas aparecem nas fases com a origem entre parênteses, como "(Understudy)" e "(QwenPaw)" ([research/qwenpaw.md](research/qwenpaw.md), 2026-11-13).
-
-| Ordem | Fase | Arquivo | Estado |
+| Ordem | Etapa | Estado | Resumo |
 |---:|---|---|---|
-| 1 | 0 — Validar o que já existe | [fase-0-validacao.md](roadmap/fase-0-validacao.md) | Pausada (D-053; L0 concluída; 0.4 fechado) |
-| 2 | 1 — Recursos do Mac ainda não escolhidos | [fase-1-recursos-mac.md](roadmap/fase-1-recursos-mac.md) | Pausada (D-053; 1.2 concluída; 1.3 e 1.4 descartadas) |
-| 3 | 2 — Melhorias próprias do Windows | [fase-2-melhorias-windows.md](roadmap/fase-2-melhorias-windows.md) | Pausada (D-053; 2.8a sintética; 0.6.12 sem release) |
-| 4 | L — Lumen + Segunda Mente | [fase-l-lumen.md](roadmap/fase-l-lumen.md) | L0–L7 concluídas e arquivadas ([arquivo/fase-l-l0-l7-concluida.md](roadmap/arquivo/fase-l-l0-l7-concluida.md)). **L8 em andamento, a primeira da fila:** L8.1 ditado inconsistente, L8.2 mãos livres, L8.3 anotador → tarefa, L8.4 motor da limpeza, L8.5 Orca, L8.6 WhatsApp pela ponte do Orbit. Uma por vez, com validação real. |
-| — | 2B — Paridade entre agentes e ambientes | [fase-2b-paridade-agentes.md](roadmap/fase-2b-paridade-agentes.md) | Pausada (D-053) |
-| — | 2C — Pílulas configuráveis e posição livre | [fase-2c-pilulas-posicao.md](roadmap/fase-2c-pilulas-posicao.md) | Pausada (D-053) |
-| 6 | M0 — Mochi: descoberta e licenças | [arquivo/m0-descoberta.md](roadmap/arquivo/m0-descoberta.md) | Concluída em 2026-11-15 (sem código de produto; specs `docs/superpowers/specs/2026-11-15-mochi-m0-*.md`) |
-| 7 | M1 — Mochi: fundação | [m1-fundacao.md](roadmap/m1-fundacao.md) | Implementada e validada sinteticamente em 2026-11-16 (`M1.1–M1.6`; Checkpoint M1 real `NOT_RUN`) |
-| 8 | M2 — Mochi: controle nativo do Windows | [m2-windows-nativo.md](roadmap/m2-windows-nativo.md) | Pendente |
-| 9 | M3 — Mochi: Obsidian | [m3-obsidian.md](roadmap/m3-obsidian.md) | Pendente |
-| 10 | M4 — Mochi: voz ligada às ferramentas | [m4-voz.md](roadmap/m4-voz.md) | Pendente |
-| 11 | M5 — Mochi: computer use | [m5-computer-use.md](roadmap/m5-computer-use.md) | Pendente |
-| 12 | M6 — Mochi: automação web | [m6-web.md](roadmap/m6-web.md) | Pendente |
-| 13 | M7 — Mochi: Android | [m7-android.md](roadmap/m7-android.md) | Pendente |
-| 14 | M8 — Mochi: rotinas | [m8-rotinas.md](roadmap/m8-rotinas.md) | Pendente |
-| 15 | M9 — Mochi: memória avançada, gateway e observabilidade | [m9-memoria-gateway.md](roadmap/m9-memoria-gateway.md) | Pendente |
-| 16 | M10 — Mochi: release | [m10-release.md](roadmap/m10-release.md) | Pendente |
-| — | 3 — Identidade própria (só com decisão do proprietário) | [arquivo/fase-3-identidade.md](roadmap/arquivo/fase-3-identidade.md) | Decidida em 2026-11-13: entra na Fase L, etapa L1 (Lumen) |
-| — | Parqueado | [parqueado.md](roadmap/parqueado.md) | Estudo de personagens assumido pela L1.4; L1.4a aprovada; L1.4b em andamento |
-| — | Checklist de release (só com pedido explícito) | [release-checklist.md](roadmap/release-checklist.md) | — |
+| 1 | [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) | **Da vez.** Implementada na `0.7.12`; validação real pendente | Corrige o que incomodou no uso das 0.7.8–0.7.10: ditado "segure uma tecla", mãos livres, Anotador → Tarefa, escolha do motor da limpeza, Orca em Agentes e Abas ativas, WhatsApp pela ponte do Orbit (só leitura). |
+| 2 | [M1 — Fundação do assistente](roadmap/m1-fundacao.md) | Implementada e validada sinteticamente (2026-11-16); checkpoint real pendente | Caminho pedido → cérebro → ferramenta → resultado com a ferramenta de teste `ping`: registro de ferramentas, permissões por risco, cartão de confirmação, registro local, servidor MCP local e pausa rápida. |
+| 3 | [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) | Pendente | Volume, brilho, apps, janelas, mídia e energia por APIs nativas, sem PowerShell montado por texto. |
+| 4 | [M3 — Obsidian](roadmap/m3-obsidian.md) | Pendente | Buscar, citar e capturar notas no cofre lendo os `.md` direto, sem plugin. |
+| 5 | [M4 — Voz ligada às ferramentas](roadmap/m4-voz.md) | Pendente | Pedido falado chega às ferramentas de M2/M3, reaproveitando a voz que já existe; confirmação continua sendo clique. |
+| 6 | [M5 — Computer use](roadmap/m5-computer-use.md) | Pendente | Operar a interface de apps pelo Agent Desktop (acessibilidade) quando não houver API nativa. |
+| 7 | [M6 — Automação web](roadmap/m6-web.md) | Pendente | Navegar e ler páginas pelo Agent Browser, em perfil isolado e só em sites permitidos. |
+| 8 | [M7 — Android](roadmap/m7-android.md) | Pendente | Pedir e aprovar ações do assistente pelo celular, pela ligação que já existe. |
+| 9 | [M8 — Rotinas](roadmap/m8-rotinas.md) | Pendente | Sequências salvas de ferramentas ("modo programar"), aprovadas pelo dono. |
+| 10 | [M9 — Memória, gateway e observabilidade](roadmap/m9-memoria-gateway.md) | Pendente | Avaliar e, se valer, adicionar memória por significado, LiteLLM e Langfuse. |
+| 11 | [M10 — Release do assistente](roadmap/m10-release.md) | Pendente | Conferência final de segurança, recursos, documentação e instalação limpa antes de publicar. |
+| — | [L6.5 — Fotos nas tarefas](roadmap/l6-5-fotos-tarefas.md) | A fazer depois; depende do contrato v1.1 da Segunda Mente | Levar ao Lumen as fotos que as tarefas ganharam no celular, sem perder anexos desconhecidos. |
+| — | [Fase 0 — Validar o que já existe](roadmap/fase-0-validacao.md) | Pausada (D-053) | Validação real dos recursos do upstream 0.6 no Windows; faltam os registros por cenário. |
+| — | [Fase 1 — Recursos do Mac](roadmap/fase-1-recursos-mac.md) | Pausada (D-053) | Trazer recursos do Mac: arrastar sobre janela, anexar janela da frente, captura de tela, "sente o PC". |
+| — | [Fase 2 — Melhorias do Windows](roadmap/fase-2-melhorias-windows.md) | Pausada (D-053) | Notificações nativas, modo jogo, custo por sessão, pílula do Git, aba do terminal, histórico, lançador, vigia de builds e outras. |
+| — | [Fase 2B — Paridade entre agentes](roadmap/fase-2b-paridade-agentes.md) | Pausada (D-053) | Claude, Codex, Antigravity e Hermes com as mesmas funções; herdr e Orca como ambientes. |
+| — | [Fase 2C — Pílulas e posição livre](roadmap/fase-2c-pilulas-posicao.md) | Pausada (D-053) | Escolher pílulas visíveis, Grok Bot como agente e arrastar a ilha no topo. |
+| — | [Parqueado](roadmap/parqueado.md) | Sem escopo | Ideias que só voltam com escopo e decisão do dono (Segunda Mente no Windows, ponte Notetaker → Drive, conectores, rotina por demonstração) e o que foi rejeitado. |
+| — | [Checklist de release](roadmap/release-checklist.md) | Procedimento | Passos para publicar uma versão Windows, só com pedido explícito. |
 
-As fases M de execução em produto (`M1–M10`) só começam depois do Checkpoint L7. A dependência antiga dos Checkpoints `2B.8` e `2C.3` para a M0 foi **reavaliada em 2026-11-15** (base entregue na Fase L até `windows-v0.7.4`) e a **M0 foi concluída sem código de produto** em `2026-11-15`. Dentro das fases M, a ordem é M0 → M10; uma fase não começa antes do fechamento da anterior, salvo onde o arquivo da fase disser o contrário.
+As fases M vêm depois da L8 e seguem a ordem M1 → M10; uma não começa antes do fechamento da anterior, salvo onde o arquivo dela disser. Origem das fases M: [questionário de 2026-11-09](questionario/2026-11-09-mochi-assistant-roadmap.md).
 
-## Regras das fases M (assistente Mochi)
+## Concluídas e arquivadas — `docs/arquivadas/etapas/`
 
-Valem para M0–M10, além das restrições do projeto acima.
+| Etapa | Fechada em | Resumo do que fez |
+|---|---|---|
+| [L0 — Fechar o que estava quase pronto](arquivadas/etapas/l0-fechar-quase-pronto.md) | 2026-11-13 | Inventário das fases 0, 1 e 2: fechou o que tinha evidência e pausou o resto (D-053). |
+| [L1 — Renomear para Lumen](arquivadas/etapas/l1-renomear-lumen.md) | 2026-11-15 | Nome, identifier e migração do Coucou para o Lumen; personagens originais por agente em Canvas; ícone cristal (até a `0.7.13`). |
+| [L2 — Login do ChatGPT](arquivadas/etapas/l2-login-chatgpt.md) | 2026-11-14 | Sign in with ChatGPT (PKCE) e chat pelo plano ChatGPT, sem chave paga. |
+| [L3 — Anotador](arquivadas/etapas/l3-anotador.md) | 2026-11-15 | Notas por voz ou texto, resumo e comentários das personas sem duplicar. |
+| [L4 — Tarefas](arquivadas/etapas/l4-tarefas.md) | 2026-11-15 | Lista de tarefas no Hub, captura por voz e atalho com confirmação, avisos Toast com Adiar/Concluir. |
+| [L5 — E-mail pessoal](arquivadas/etapas/l5-email-pessoal.md) | 2026-11-15 | MailCraft resume a caixa e prepara rascunho, nunca envia; Outlook clássico como opção. |
+| [L6 — Sync com a Segunda Mente](arquivadas/etapas/l6-sync-segunda-mente.md) | 2026-11-15 | Caixa de correio no Worker, pareamento QR, cifra ponta a ponta e sync de tarefas com o celular. |
+| [L7 — Google](arquivadas/etapas/l7-google.md) | 2026-11-15 | Login Google, backup semanal no Drive com restauração verificada e eventos no Calendar com confirmação. |
+| [M0 — Descoberta e licenças](arquivadas/etapas/m0-descoberta.md) | 2026-11-15 | Licenças, cérebro por provedor e provas de conceito do assistente, sem código de produto. |
+| [Fase 3 — Identidade própria](arquivadas/etapas/fase-3-identidade.md) | 2026-11-13 | Decidida e absorvida pela L1. |
+| [0.4 — Hook do Claude Code e Terminal](arquivadas/etapas/fase-0-4-hook-claude-terminal.md) | 2026-11-09 | Permitir, Negar e sem clique validados na ilha, com o foco da aba certa. |
+| [1.2 — Arquivo → rascunho no Outlook](arquivadas/etapas/fase-1-2-rascunho-outlook.md) | 2026-11-11 | Soltar arquivo abre rascunho no Outlook clássico com anexo, sem enviar. |
+| [1.3 e 1.4 — Cripto e Cal.com](arquivadas/etapas/fase-1-3-e-1-4-descartadas.md) | 2026-11-11 | Descartadas pelo dono. |
 
-- **Ferramenta, não shell.** O modelo só chama ferramentas declaradas, cada uma com: id, descrição, schema de entrada, nível de risco, simulação (dry-run), execução, verificação do resultado, timeout, cancelamento e resumo para o registro. Nenhuma ferramenta executa comando de shell ou PowerShell montado a partir do texto do pedido.
-- **Negado por padrão.** Ferramenta fora da lista habilitada não executa.
-- **Risco e clique.** Baixo (reversível e local) executa direto. Médio (mudança persistente) pede clique na primeira vez, com "sempre permitir esta ferramenta". Alto (apagar, enviar dados, baixar arquivo, credenciais, energia, elevação) pede clique toda vez e nunca é lembrado. Sem clique ou em timeout, a ação não acontece.
-- **Conteúdo externo é dado.** Texto de página, arquivo, nota ou mensagem nunca muda permissões nem vira instrução.
-- **Ordem de preferência.** API nativa primeiro, acessibilidade (Agent Desktop) depois, visão só como último recurso.
-- **Cérebro.** Assinaturas já conectadas por OAuth; onde o provedor não permitir, pela CLI oficial dele. Sem chave de API paga obrigatória e sem modelo local.
-- **Registro.** Só local e redigido: ferramenta, hora, risco, resultado. Sem conteúdo de tela, texto privado, token ou caminho pessoal. Nada é enviado; não há telemetria.
-- **Pausa rápida.** Um controle corta ferramentas, voz e pedidos do celular sem fechar o aplicativo.
-- **Verificar depois de agir.** Toda ferramenta lê o estado depois da ação e relata falha como falha.
-
-## Manter o fork atualizado
-
-Antes de cada subfase de código, partir de árvore limpa, atualizar `upstream` e integrar `upstream/main`. Resolver e registrar conflitos antes da subfase; não misturar a resolução de upstream com a feature do checkpoint.
+Também em `docs/arquivadas/`: o [STATE antigo](arquivadas/state/state-ate-2026-11-17.md), o [registro de releases](arquivadas/releases/releases-windows.md), a [decisão do ícone cristal](arquivadas/decisoes/2026-11-16-icone-cristal-lumen.md), as [pesquisas](arquivadas/pesquisas/) já aproveitadas e as [specs e planos](arquivadas/superpowers/) das etapas concluídas.

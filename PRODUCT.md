@@ -48,7 +48,7 @@ Lumen é o cliente desktop (Tauri 2 + WebView2 + Rust/TypeScript) da **Segunda M
 
 - Código-fonte real em `windows/src/` (`hub/`, `views/`, `island/`, `lumen/`, `settings/`) e backend Rust em `windows/src-tauri/src/`.
 - Captura real do usuário da tela **Tarefas** em janela maximizada (mostrando o cartão "Confirmar proposta antes de salvar", barra de status "Sincronizado", chips/selects compactados, grande área vazia à direita e recorte/aperto no rodapé da barra lateral).
-- Documentação de arquitetura e decisões do fork em `AGENTS.md`, `docs/ROADMAP-FORK.md`, `docs/STATE-FORK.md`, `docs/roadmap/fase-l-lumen.md` e `LICENSE-ASSETS.md`.
+- Documentação de arquitetura e decisões do fork em `AGENTS.md`, `docs/ROADMAP-FORK.md`, `docs/STATE-FORK.md`, as etapas em `docs/roadmap/` e `docs/arquivadas/etapas/` e `LICENSE-ASSETS.md`.
 
 ## Product Principles
 

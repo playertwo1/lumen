@@ -1,4 +1,4 @@
-> Parte do roadmap do fork. Índice, regras gerais e ordem das fases: [ROADMAP-FORK.md](../ROADMAP-FORK.md).
+> Parte do roadmap do fork. Índice e ordem: [ROADMAP-FORK.md](../ROADMAP-FORK.md). Regras gerais e das fases M: [AGENTS.md](../../AGENTS.md).
 
 ## Parqueado — não iniciar sem escolher escopo
 
@@ -20,7 +20,7 @@
 
 **Decisões do proprietário (2026-11-13):** a decisão anterior de cancelar a L1.4 foi substituída. Sem autorização escrita para usar o Mochi, os personagens do Lumen serão originais; a Bússola continua somente como ícone do aplicativo. O proprietário aprovou visualmente a lineup e as pranchas estáticas dos estados dos sete agentes. Com base na revisão técnica da L1.4b, escolheu Canvas na L1.4c. Essa decisão autoriza a implementação por etapas, sem aprovar código, animações ou uso real.
 
-Fontes: [pesquisa clawd-on-desk](../research/clawd-on-desk.md) (ideias gerais de estados, proporção e pacotes; sem copiar arte ou código) e [pesquisa QwenPaw](../research/qwenpaw.md) (mapa de eventos para estados). As imagens finais e o código dos personagens permanecem originais, sem copiar arte nem incluir logos, símbolos ou mascotes oficiais.
+Fontes: [pesquisa clawd-on-desk](../arquivadas/pesquisas/clawd-on-desk.md) (ideias gerais de estados, proporção e pacotes; sem copiar arte ou código) e [pesquisa QwenPaw](../arquivadas/pesquisas/qwenpaw.md) (mapa de eventos para estados). As imagens finais e o código dos personagens permanecem originais, sem copiar arte nem incluir logos, símbolos ou mascotes oficiais.
 
 **L1.4a — imagens de referência, sem código do app:**
 

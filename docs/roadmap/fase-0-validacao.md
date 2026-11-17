@@ -1,6 +1,6 @@
-> Parte do roadmap do fork. Índice, regras gerais e ordem das fases: [ROADMAP-FORK.md](../ROADMAP-FORK.md).
+> Parte do roadmap do fork. Índice e ordem: [ROADMAP-FORK.md](../ROADMAP-FORK.md). Regras gerais e das fases M: [AGENTS.md](../../AGENTS.md).
 
-**Estado após a L0 (2026-11-13): Pausada (D-053).** O checkpoint 0.4 permanece fechado pela evidência detalhada abaixo; 0.5a continua N/A por decisão do proprietário. Os relatos PASS sem versão/cenários e as validações manuais ainda não registradas permanecem abertos, conforme o [inventário L0](fase-l-lumen.md). Checklists e histórico foram preservados.
+**Estado após a L0 (2026-11-13): Pausada (D-053).** O checkpoint 0.4 permanece fechado pela evidência detalhada abaixo; 0.5a continua N/A por decisão do proprietário. Os relatos PASS sem versão/cenários e as validações manuais ainda não registradas permanecem abertos, conforme o [inventário L0](../arquivadas/etapas/l0-fechar-quase-pronto.md). Checklists e histórico foram preservados.
 
 ## Snapshot de validação — 2026-11-09
 
@@ -48,13 +48,7 @@ Objetivo: confirmar os recursos do upstream 0.6 e as mudanças do fork no aplica
 
 ### 0.4 — Hook do Claude Code e Windows Terminal
 
-- [x] Conferir se o hook está instalado; antes de instalar/atualizar, criar backup datado, mostrar o diff e obter confirmação explícita.
-- [x] Executar uma ação que gere pedido de permissão; confirmar que a ilha mostra Permitir/Negar.
-- [x] Clicar Negar e confirmar que o agente recebe a recusa; repetir e clicar Permitir.
-- [x] Repetir sem clicar: o Coucou não pode aprovar sozinho; o pedido deve continuar no terminal.
-- [x] Usar “Abrir terminal” e confirmar que a janela da sessão correta vem à frente.
-- Checkpoint: confirmar cada uma das três decisões (permitir, negar, sem clique) e o terminal-alvo. Não marcar aprovado se só a tela do cartão foi vista.
-- Status (2026-11-09): APROVADO — hooks instalados após aprovação explícita (12 handlers, backup datado). Testes na pasta temporária confiada, com `claude --permission-mode default` no Windows Terminal (o `defaultMode: auto` do usuário e comandos só de leitura como `echo` não geram `PermissionRequest`). Cada rodada pediu a ferramenta Write para criar um arquivo de texto na pasta. Negar: pedido 34084-1, clique Negar, hook respondeu deny, arquivo não criado. Permitir: pedido 34084-2, clique Permitir, hook respondeu allow, `coucou-allow.txt` criado. Sem clique: pedido 34084-17 sem decisão na ilha; o log registrou `timed out — terminal takes over` após ~108 s e o arquivo não foi criado; a pergunta passou ao terminal. Abrir terminal: no cartão de sessão encerrada, trouxe à frente a aba da sessão correta (`coucou-noclick2`) entre três abas na mesma pasta. Observação: um clique destinado a um cartão do Antigravity aprovou o cartão seguinte do Claude Code ~1 s depois (fora da proteção de 600 ms); rodada descartada e repetida. Validado só com `--permission-mode default`, não no modo `auto`.
+Concluída em 2026-11-09 e arquivada em [arquivadas/etapas/fase-0-4-hook-claude-terminal.md](../arquivadas/etapas/fase-0-4-hook-claude-terminal.md).
 
 ### 0.5 — Spotify, uso do plano e resumo semanal
 
@@ -86,7 +80,7 @@ Objetivo: confirmar os recursos do upstream 0.6 e as mudanças do fork no aplica
 - [ ] Se a opção estiver desligada e o proprietário autorizar habilitá-la, repetir o reinício; caso contrário, registrar BLOQUEADO.
 - Checkpoint: estado anterior/posterior da opção, número de instâncias e resultado após login.
 - Status (2026-11-09): estado anterior DESLIGADO — `autostart: false` em `%APPDATA%\Coucou\settings.json`, nenhuma entrada do Coucou em `HKCU\...\CurrentVersion\Run`, uma instância em execução. O proprietário autorizou habilitar a opção e fazer o reinício de teste; resultado após login pendente.
-- Preparação (2026-11-09 23:15): build de release de `8c7226c` instalada por cima da 0.6.2 (Desinstalar programas mostra 0.6.3; Settings mostra "Você tem a 0.6.3"). A build dev não serve para este teste: o autostart grava o caminho do exe em execução, e o exe de debug depende do servidor de desenvolvimento. "Abrir ao iniciar" ligado (`autostart: true`); `HKCU\...\Run\Coucou` = `C:\Users\notefael\AppData\Local\Coucou\coucou.exe --autostart`, habilitado em `StartupApproved\Run`; uma instância do app instalado em execução. Falta: reiniciar, entrar no Windows e conferir instância única e ilha utilizável.
+- Preparação (2026-11-09 23:15): build de release de `8c7226c` instalada por cima da 0.6.2 (Desinstalar programas mostra 0.6.3; Settings mostra "Você tem a 0.6.3"). A build dev não serve para este teste: o autostart grava o caminho do exe em execução, e o exe de debug depende do servidor de desenvolvimento. "Abrir ao iniciar" ligado (`autostart: true`); `HKCU\...\Run\Coucou` = `%LOCALAPPDATA%\Coucou\coucou.exe --autostart`, habilitado em `StartupApproved\Run`; uma instância do app instalado em execução. Falta: reiniciar, entrar no Windows e conferir instância única e ilha utilizável.
 
 ### 0.7 — Coucoudoro: timer e foco
 
