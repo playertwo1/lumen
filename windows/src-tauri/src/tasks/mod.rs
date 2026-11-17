@@ -724,6 +724,37 @@ fn build_snapshot(app: &AppHandle, mgr: &TaskManager) -> TasksSnapshot {
     }
 }
 
+/// Tarefa só com o título: sem data, hora, prioridade, alarme nem subtarefas.
+fn plain_task_input(text: String) -> CreateTaskInput {
+    CreateTaskInput {
+        text,
+        due: None,
+        due_date: None,
+        due_time: None,
+        time_zone: None,
+        alert_minutes: None,
+        priority: None,
+        subtasks: Vec::new(),
+        recurrence: None,
+        source: None,
+    }
+}
+
+/// Cria uma tarefa só com o título (ex.: "Virar tarefa" no Anotador), pelo mesmo caminho de `tasks_create`.
+pub fn create_plain(app: &AppHandle, text: String) -> Result<TodoItem, String> {
+    let mgr = get(app).ok_or_else(|| "Gerenciador de tarefas indisponível.".to_string())?;
+    let item = mgr
+        .local
+        .lock()
+        .unwrap()
+        .create_and_enqueue(plain_task_input(text), now_utc_ms())?;
+    let _ = mgr.wake_tx.send(());
+    let _ = mgr.sync_wake_tx.send(());
+    emit_tasks_changed(app);
+    emit_task_sync_state(app, &mgr);
+    Ok(item)
+}
+
 // ── Comandos Tauri ───────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -1595,5 +1626,28 @@ mod tests {
         assert!(rt.sync_credentials(fp2));
         assert!(!rt.paused_fatal_or_revoked);
         assert_eq!(rt.backoff_secs, 0);
+    }
+
+    #[test]
+    fn plain_task_from_note_has_no_schedule_and_is_enqueued() {
+        let dir = temp_dir("plain");
+        let mut local = LocalState {
+            store: TaskStore::load_at(dir.clone()),
+            sync: SyncStore::load_at(dir.clone()),
+        };
+        let item = local
+            .create_and_enqueue(plain_task_input("Enviar proposta".into()), 1_763_120_000_000)
+            .unwrap();
+        assert_eq!(item.text, "Enviar proposta");
+        assert_eq!(item.due_date, None);
+        assert_eq!(item.due_time, None);
+        assert_eq!(item.priority, TodoPriority::Normal);
+        assert!(item.recurrence.is_none() && item.source.is_none() && item.subtasks.is_empty());
+        assert_eq!(local.store.active_items().len(), 1);
+        assert_eq!(local.sync.outbox().len(), 1);
+        assert_eq!(local.sync.outbox()[0].envelope.entity_id, item.id);
+        assert_eq!(local.sync.outbox()[0].envelope.base_version, 0);
+        assert_eq!(local.sync.outbox()[0].envelope.new_version, 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

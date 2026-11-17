@@ -166,6 +166,8 @@ export interface Todo {
   owner?: string | null;
   due?: string | null;
   done: boolean;
+  /** Tarefa criada com "Virar tarefa" a partir deste item. */
+  taskId?: string | null;
 }
 
 export interface NoteComment {
@@ -316,6 +318,7 @@ export const FlowBridge = {
   renameNote: (id: string, title: string) => call<void>("notes_rename", { id, title }),
   renameSpeaker: (id: string, speaker: string, name: string) => call<void>("notes_rename_speaker", { id, speaker, name }),
   toggleTodo: (id: string, todo: string) => call<void>("notes_toggle_todo", { id, todo }),
+  convertTodoToTask: (id: string, todo: string) => callOrThrow<Note>("notes_virar_tarefa", { id, todo }),
   deleteNote: (id: string) => call<void>("notes_delete", { id }),
   summarize: (id: string) => call<void>("notes_summarize", { id }),
   retryNote: (id: string) => call<void>("notes_retry", { id }),

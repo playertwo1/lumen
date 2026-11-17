@@ -1038,6 +1038,16 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
     detail.append(renderComments(note));
   }
 
+  let todoTaskError = "";
+
+  function convertTodo(noteId: string, todoId: string): void {
+    todoTaskError = "";
+    FlowBridge.convertTodoToTask(noteId, todoId).catch((err) => {
+      todoTaskError = String(err).replace(/^Error:\s*/, "");
+      drawDetail();
+    });
+  }
+
   function summary(note: Note): HTMLElement {
     const el = h("div", { class: "notes-summary" });
     const busy = state.working.includes(note.id);
@@ -1071,6 +1081,10 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
         box.checked = todo.done;
         box.addEventListener("change", () => void FlowBridge.toggleTodo(note.id, todo.id));
         const extra = [todo.owner, todo.due].filter(Boolean).join(" · ");
+        const linked = Boolean(todo.taskId);
+        const virar = button(linked ? "Virou tarefa" : "Virar tarefa", () => convertTodo(note.id, todo.id), "", true);
+        virar.classList.add("notes-todo-task");
+        virar.disabled = linked;
         todosWrap.append(
           h(
             "label",
@@ -1082,10 +1096,12 @@ export async function notesPage(page: HTMLElement, ctx: HubContext) {
               h("span", { class: todo.done ? "notes-todo-text done" : "notes-todo-text", text: todo.text }),
               extra ? h("div", { class: "who", text: extra }) : null,
             ),
+            virar,
           ),
         );
       }
       el.append(h("div", { class: "notes-section-block" }, h("div", { class: "hub-label", text: "Ações / To-do" }), todosWrap));
+      if (todoTaskError) el.append(h("div", { class: "hub-warn", role: "alert", text: todoTaskError }));
     }
     if (note.error) {
       el.append(h("div", { class: "hub-warn", role: "alert", text: note.error }));

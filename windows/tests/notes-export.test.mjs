@@ -29,12 +29,12 @@ const { notesPage, resolvePersonaAvatar, formatImportedPersonaFiles } = await im
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 const originalInvoke = internals.invoke;
 
-async function recordingPage(t) {
+async function recordingPage(t, todos = []) {
   t.mock.method(globalThis, "setInterval", () => 1);
   t.mock.method(globalThis, "clearInterval", () => {});
   const note = { id: "synthetic", title: "Synthetic call", start: Date.now() - 10000,
     status: "ready", speakers: [], lines: [{ start: 0, speaker: "me", text: "Test" }],
-    summary: "", keyPoints: [], todos: [] };
+    summary: "", keyPoints: [], todos };
   t.mock.method(internals, "invoke", async (cmd, args) => {
     if (cmd === "notes_state") return { notes: [note], recording: null, working: [] };
     return originalInvoke(cmd, args);
@@ -372,4 +372,38 @@ test("Anotador valida nota vazia, adapta contraste de avatar, marca persona desa
   // Volta às notas pelo cabeçalho do gerenciador.
   page.find("button").find((b) => b.textContent === "← Voltar à nota").fire("click");
   assert.match(page.textContent, /Comentários das personas \(1\)/);
+});
+
+test("Ações do Anotador: Virar tarefa chama o comando com a nota e o item, e o item já convertido fica marcado", async t => {
+  const fixture = await recordingPage(t, [
+    { id: "t1", text: "Enviar proposta", done: false },
+    { id: "t2", text: "Marcar reunião", done: false, taskId: "task-9" },
+  ]);
+  const converted = [];
+  t.mock.method(FlowBridge, "convertTodoToTask", async (id, todo) => {
+    converted.push([id, todo]);
+    return null;
+  });
+  const [open, done] = fixture.page.find("button").filter(b => b.classList.contains("notes-todo-task"));
+  assert.equal(open.textContent, "Virar tarefa");
+  assert.equal(open.disabled, false);
+  assert.equal(done.textContent, "Virou tarefa");
+  assert.equal(done.disabled, true);
+
+  open.fire("click");
+  await flush();
+  assert.deepEqual(converted, [["synthetic", "t1"]]);
+});
+
+test("Virar tarefa com falha mostra o motivo e deixa o item disponível", async t => {
+  const fixture = await recordingPage(t, [{ id: "t1", text: "Pagar boleto", done: false }]);
+  t.mock.method(FlowBridge, "convertTodoToTask", async () => {
+    throw new Error("Escreva o título da tarefa antes de salvar.");
+  });
+  const button = () => fixture.page.find("button").find(b => b.classList.contains("notes-todo-task"));
+  button().fire("click");
+  await flush();
+  assert.match(fixture.page.querySelector(".hub-note-detail").textContent, /Escreva o título da tarefa antes de salvar\./);
+  assert.equal(button().textContent, "Virar tarefa");
+  assert.equal(button().disabled, false);
 });

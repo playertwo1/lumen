@@ -45,6 +45,9 @@ pub struct Todo {
     pub due: Option<String>,
     #[serde(default)]
     pub done: bool,
+    /// Tarefa criada a partir deste item ("Virar tarefa").
+    #[serde(default, rename = "taskId", skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
 }
 
 /// A word with its place in the audio.
@@ -273,14 +276,14 @@ pub fn parse_summary(reply: &str) -> Option<Summary> {
             a.iter()
                 .filter_map(|item| {
                     if let Some(text) = item.as_str() {
-                        return (!text.is_empty()).then(|| Todo { id: new_id(), text: text.into(), owner: None, due: None, done: false });
+                        return (!text.is_empty()).then(|| Todo { id: new_id(), text: text.into(), owner: None, due: None, done: false, task_id: None });
                     }
                     let d = item.as_object()?;
                     let text = d.get("text")?.as_str()?;
                     if text.is_empty() {
                         return None;
                     }
-                    Some(Todo { id: new_id(), text: text.into(), owner: field(d, "owner"), due: field(d, "due"), done: false })
+                    Some(Todo { id: new_id(), text: text.into(), owner: field(d, "owner"), due: field(d, "due"), done: false, task_id: None })
                 })
                 .collect()
         })
@@ -378,5 +381,15 @@ mod tests {
         assert_eq!(s.todos[0].due.as_deref(), Some("vendredi"));
         assert!(parse_summary("no json here").is_none());
         assert!(parse_summary("{\"summary\":\"\"}").is_none());
+    }
+
+    #[test]
+    fn todo_without_task_id_still_reads_from_old_note_json() {
+        let old: Todo = serde_json::from_str(r#"{"id":"a","text":"Enviar","done":false}"#).unwrap();
+        assert_eq!(old.task_id, None);
+        let linked = Todo { task_id: Some("t1".into()), ..old.clone() };
+        let json = serde_json::to_string(&linked).unwrap();
+        assert!(json.contains(r#""taskId":"t1""#));
+        assert!(!serde_json::to_string(&old).unwrap().contains("taskId"));
     }
 }
