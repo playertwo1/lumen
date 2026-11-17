@@ -35,6 +35,7 @@ import { startHub, type PageId } from "../hub/shell";
 import { FLOW_PAGE_RENDERERS } from "../hub/pages";
 import { claudeModelControl } from "./claude-models";
 import { agentsSection } from "./agents";
+import { orcaAgentSection, orcaTabsSections } from "./orca";
 import { mcpSection } from "./mcp";
 import { chatGptAccountSection } from "./chatgpt";
 import { phoneSection } from "./phone";
@@ -2062,9 +2063,10 @@ async function render() {
   const status = (await Bridge.hooksStatus()) ?? {
     installed: false, planRelayInstalled: false, settingsPath: "", hookPath: "", hookReady: false,
   };
-  const [agents, mcpAgents] = await Promise.all([
+  const [agents, mcpAgents, orca] = await Promise.all([
     Bridge.agentHooksList(),
     MochiBridge.mcpStatus().catch(() => []),
+    Bridge.orcaState(),
   ]);
 
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
@@ -2125,8 +2127,14 @@ async function render() {
   clear(root);
   const sections: Partial<Record<PageId, () => HTMLElement[]>> = {
     general: () => [generalSection()],
-    pills: () => [activePillsSection(connected)],
-    agents: () => [claudeSection(status), agentsSection(agents), mcpSection(mcpAgents, status.hookReady), planSection(status)],
+    pills: () => [activePillsSection(connected), ...orcaTabsSections(orca)],
+    agents: () => [
+      claudeSection(status),
+      agentsSection(agents),
+      orcaAgentSection(orca),
+      mcpSection(mcpAgents, status.hookReady),
+      planSection(status),
+    ],
     chat: () => [
       subscriptionsSection(),
       apiSection(hasKey, claudeRelay),

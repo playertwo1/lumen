@@ -408,6 +408,11 @@ export const Bridge = {
   /** Off by default; only from the switch in Settings. */
   agyApprovalsSetEnabled: (enabled: boolean) =>
     callOrThrow<AgyApprovalsStatus>("agy_approvals_set_enabled", { enabled }),
+  // ── Orca: its install, whether it runs, and its terminals (orca.rs) ──────────
+  /** Never fails: a missing or closed Orca reports fewer things. */
+  orcaState: () => call<OrcaState>("orca_state"),
+  /** Moves focus to the terminal's tab in Orca. Nothing is sent to the terminal. */
+  orcaFocusTerminal: (handle: string) => callOrThrow<void>("orca_focus_terminal", { handle }),
   // ── Plan usage: the status line relay, installed apart from the hooks ──────
   /** Diff of the status line change. `install: false` previews taking the relay out. */
   statusLinePreview: (install: boolean) => callOrThrow<HookPreview>("status_line_preview", { install }),
@@ -781,6 +786,19 @@ export interface AgyApprovalsStatus {
   enabled: boolean;
   /** Coucou's PreToolUse hook can wait for a click (120 s); older hooks (10 s) must be installed again. */
   hooksReady: boolean;
+}
+
+/** A live Orca terminal, as orca.rs reads it from `orca terminal list`. */
+export interface OrcaTerminal {
+  handle: string;
+  title: string;
+  connected: boolean;
+}
+
+export interface OrcaState {
+  installed: boolean;
+  running: boolean;
+  terminals: OrcaTerminal[];
 }
 
 export interface AgentHookStatus {
