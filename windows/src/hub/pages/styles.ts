@@ -39,7 +39,7 @@ export function cleanupDestination(engine: SummaryEngine): string {
 export async function stylesPage(page: HTMLElement, ctx: HubContext) {
   const status = await ctx.refresh();
   let styles: AppStyle[] = (await FlowBridge.styles()) ?? [];
-  page.append(ctx.hero("styles", t("Styles"), t("Claude cleans up what you say, in the style of the app you write in.")));
+  page.append(ctx.hero("styles", t("Styles"), "A IA escolhida limpa o que você fala, no estilo do app em que você escreve."));
   const write = pageSave(page);
   const save = async (next: AppStyle[]) => {
     const result = await write(() => FlowBridge.setStyles(next));
@@ -84,7 +84,7 @@ export async function stylesPage(page: HTMLElement, ctx: HubContext) {
   drawEngine(engine);
   const defaultRow = row(t("Other apps"), null, select(styleOptions(), status.prefs.defaultStyle, (style) => void ctx.setPrefs((p) => (p.defaultStyle = style))));
   const stylesCard = card(
-    row(t("Clean up with Claude"), t("Removes the “um”, the repeats and the corrections you made while speaking, and fixes the punctuation."),
+    row("Limpar o texto ditado", t("Removes the “um”, the repeats and the corrections you made while speaking, and fixes the punctuation."),
       toggle(status.prefs.cleanup, (on) => {
         void ctx.setPrefs((p) => (p.cleanup = on));
         perApp.classList.toggle("dimmed", !on);
