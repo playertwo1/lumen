@@ -1,5 +1,15 @@
 # Changelog
 
+## Windows 0.7.12 — 17 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Ditado mais confiável** — se o Windows perder o "soltou a tecla", o próximo toque recomeça em vez de ficar preso; áudio curto, fala baixa ou modelo não carregado agora aparecem na pílula, e o `coucou.log` registra teclas e resultados (sem o texto ditado).
+- **Mãos livres pelo toque duplo** — segurar a tecla no segundo toque não encerra mais o modo sozinho; a janela do toque duplo passou para 0,5 s.
+- **Anotador → Tarefas** — cada item de ação da nota tem "Virar tarefa": cria uma tarefa simples, só com o título, sem duplicar.
+- **Quem faz a limpeza** — em Estilos, escolha Claude, ChatGPT / Codex, Antigravity / Gemini ou o mesmo provedor do Chat; em falha, o texto é colado como foi ouvido.
+- **Orca** — aparece em Agentes e, com o app aberto, seus terminais aparecem em Abas ativas com "Abrir terminal".
+- **WhatsApp pela ponte do Orbit** — opção para ler as conversas pela ponte `whatsapp-pj-mcp` do Orbit, sem segundo aparelho vinculado; o Lumen não envia nada por ela.
+- **Triagem do MailCraft** — botões Apagar e Spam com confirmação (vão para Excluídos/Spam, nunca apagam de vez) e botão para reiniciar o MailCraft com o canal de controle.
+
 ## Windows 0.7.11 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Cristal na abertura da ilha** — a saudação de inicialização agora mostra a animação do cristal uma vez e termina na imagem estática; com movimento reduzido, começa direto na imagem final.

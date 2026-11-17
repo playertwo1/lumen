@@ -1,6 +1,31 @@
 {
   "releases": [
     {
+      "version": "0.7.12",
+      "items": [
+        {
+          "icon": "mic",
+          "title": { "pt-BR": "Ditado mais confiável" },
+          "detail": { "pt-BR": "Segurar a tecla e o toque duplo não ficam mais presos, e a pílula diz por que um ditado não saiu." }
+        },
+        {
+          "icon": "checklist",
+          "title": { "pt-BR": "Nota vira tarefa" },
+          "detail": { "pt-BR": "Cada ação do Anotador tem o botão Virar tarefa, que cria uma tarefa simples só com o título." }
+        },
+        {
+          "icon": "sparkles",
+          "title": { "pt-BR": "Escolha quem limpa o ditado" },
+          "detail": { "pt-BR": "Em Estilos, use Claude, ChatGPT / Codex, Antigravity / Gemini ou o provedor do Chat." }
+        },
+        {
+          "icon": "chat",
+          "title": { "pt-BR": "WhatsApp pela ponte do Orbit" },
+          "detail": { "pt-BR": "Leia as conversas pela ponte do Orbit, sem vincular outro aparelho; o Orca aparece em Agentes e Abas ativas." }
+        }
+      ]
+    },
+    {
       "version": "0.7.11",
       "items": [
         {
