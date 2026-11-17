@@ -226,7 +226,7 @@ fn audit_summary(_args: &Value, result: &Result<Value, ToolError>) -> String {
 }
 
 #[cfg(all(windows, not(test)))]
-mod win {
+pub(crate) mod win {
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
     use windows::Win32::Media::Audio::{eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows::Win32::System::Com::{

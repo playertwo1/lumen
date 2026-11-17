@@ -526,7 +526,7 @@ async fn dispatch_rpc_request(
         "ping" => rpc_ok(id, json!({})),
         "tools/list" => {
             let tools: Vec<Value> = runtime
-                .list_available(&super::host::context(crate::integrations::PAUSED.load(Ordering::Relaxed)))
+                .list_available(&super::host::context(crate::integrations::PAUSED.load(Ordering::Relaxed)).await)
                 .into_iter()
                 .map(|desc| {
                     json!({
@@ -601,7 +601,7 @@ async fn dispatch_rpc_request(
                     name,
                     arguments,
                     // A pausa rápida corta também os pedidos que chegam pelo MCP.
-                    &super::host::context(crate::integrations::PAUSED.load(Ordering::Relaxed)),
+                    &super::host::context(crate::integrations::PAUSED.load(Ordering::Relaxed)).await,
                     requester_arc.as_ref(),
                     combined_rx,
                 )

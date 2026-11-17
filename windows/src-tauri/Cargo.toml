@@ -84,6 +84,8 @@ windows = { version = "0.61", features = [
   "Win32_Media_Audio",
   # Mochi's "audio" tool: the default output's volume and mute (IAudioEndpointVolume).
   "Win32_Media_Audio_Endpoints",
+  # Mochi's "brilho" tool: DDC/CI brightness of external monitors (dxva2 functions in Devices_Display).
+  "Win32_Devices_Display",
   "Win32_System_Com",
   "Win32_System_Com_StructuredStorage",
   "Win32_System_WinRT",

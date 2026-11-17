@@ -17,10 +17,10 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 
 ### M2.2 — Brilho (risco baixo)
 
-- [ ] Brilho da tela interna do notebook pela interface nativa.
-- [ ] Monitor externo só quando o monitor responder por DDC/CI; caso contrário, responder "indisponível neste monitor".
-- [ ] Testar em desktop sem tela interna: erro honesto, nenhum valor inventado.
-- Checkpoint M2.2: brilho muda onde é suportado; hardware testado fica anotado.
+- [x] Brilho da tela interna do notebook pela interface nativa.
+- [x] Monitor externo só quando o monitor responder por DDC/CI; caso contrário, responder "indisponível neste monitor".
+- [x] Testar em desktop sem tela interna: erro honesto, nenhum valor inventado. *(Sintético, com backend falso.)*
+- Checkpoint M2.2: brilho muda onde é suportado; hardware testado fica anotado. *(Sintético em 2026-11-17: ferramenta `brilho` em `mochi/tools/brightness.rs` (WMI `root\wmi` e DDC/CI VCP 0x10), sondagem com cache de 30 s em `mochi/host.rs`; suíte Rust `877 passed; 0 failed`. **Real no notebook e em monitor externo: NOT_RUN**.)*
 
 ### M2.3 — Listar e abrir aplicativos (risco baixo)
 

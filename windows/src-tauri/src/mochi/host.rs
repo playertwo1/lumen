@@ -3,14 +3,43 @@
 //! As ferramentas só leem o contexto; quem sonda é este módulo. Fora do Windows, e nos testes, nenhuma
 //! capacidade é declarada, para que o sistema real não seja tocado.
 
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant};
+
 use super::registry::ToolContext;
-use super::tools::audio;
+use super::tools::{audio, brightness};
 
 /// Contexto de um pedido: a pausa rápida e as capacidades que este computador tem agora.
-pub fn context(paused: bool) -> ToolContext {
-    let mut ctx = ToolContext::new().with_paused(paused);
-    if audio::output_present() {
-        ctx = ctx.with_capability("audio_endpoint");
+/// A sondagem fala com COM e WMI, então roda na thread de bloqueio, nunca no runtime assíncrono.
+pub async fn context(paused: bool) -> ToolContext {
+    tokio::task::spawn_blocking(move || {
+        let mut ctx = ToolContext::new().with_paused(paused);
+        if audio::output_present() {
+            ctx = ctx.with_capability("audio_endpoint");
+        }
+        static INTERNA: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+        static DDC: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+        if cached(&INTERNA, brightness::internal_present) {
+            ctx = ctx.with_capability("internal_display");
+        }
+        if cached(&DDC, brightness::ddc_present) {
+            ctx = ctx.with_capability("ddc_display");
+        }
+        ctx
+    })
+    .await
+    .unwrap_or_else(|_| ToolContext::new().with_paused(paused))
+}
+
+/// WMI e DDC/CI são lentos e roda antes de cada mensagem do chat: o resultado vale por 30 s.
+fn cached(cache: &Mutex<Option<(Instant, bool)>>, sonda: fn() -> bool) -> bool {
+    let mut cache = cache.lock().unwrap_or_else(PoisonError::into_inner);
+    match *cache {
+        Some((quando, presente)) if quando.elapsed() < Duration::from_secs(30) => presente,
+        _ => {
+            let presente = sonda();
+            *cache = Some((Instant::now(), presente));
+            presente
+        }
     }
-    ctx
 }
