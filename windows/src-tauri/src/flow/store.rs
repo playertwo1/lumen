@@ -113,6 +113,8 @@ pub struct Prefs {
     pub keep_days: i64,
     /// Clean the words with Claude before pasting them (needs the Claude key).
     pub cleanup: bool,
+    /// Who cleans the words when `cleanup` is on (the notetaker's engines; Claude by default).
+    pub cleanup_engine: SummaryEngine,
     /// The style of the apps that have none of their own.
     pub default_style: Style,
     pub summary_engine: SummaryEngine,
@@ -144,6 +146,7 @@ impl Default for Prefs {
             mic: String::new(),
             keep_days: 30,
             cleanup: false,
+            cleanup_engine: SummaryEngine::Claude,
             default_style: Style::Natural,
             summary_engine: SummaryEngine::Claude,
             open_at_launch: true,
@@ -624,6 +627,15 @@ mod tests {
         assert_eq!(p.key, FlowKey::RightAlt);
         assert_eq!(p.keep_days, 30);
         assert!(p.open_at_launch);
+        assert_eq!(p.summary_engine, SummaryEngine::Claude);
+        assert_eq!(p.cleanup_engine, SummaryEngine::Claude);
+    }
+
+    #[test]
+    fn cleanup_engine_is_read_from_its_own_key() {
+        let p: Prefs = serde_json::from_str(r#"{"cleanup":true,"cleanupEngine":"codex"}"#).unwrap();
+        assert!(p.cleanup);
+        assert_eq!(p.cleanup_engine, SummaryEngine::ChatGpt);
         assert_eq!(p.summary_engine, SummaryEngine::Claude);
     }
 

@@ -35,8 +35,8 @@ Origem: o proprietário usou as versões `0.7.8`–`0.7.10` no notebook e listou
   - [x] Testes: cria uma tarefa por clique, não duplica, sobrevive a regerar o resumo (o item continua marcado) e a tarefa criada chega ao sync (L6) como qualquer outra.
   - Checkpoint L8.3: uma ação da nota vira tarefa em um clique e aparece em Tarefas sem data. **Real: NOT_RUN.**
 - [ ] **L8.4 — Estilos: escolher quem faz a limpeza (M).** Hoje o texto sempre vai para o Claude (`flow/cleanup.rs` → `claude::complete`). Passa a haver uma escolha de motor, no mesmo molde dos resumos do Anotador (`SummaryEngine`): **Claude** (chave ou CLI), **ChatGPT / Codex** (OAuth ou CLI), **Antigravity / Gemini** e **Mesmo provedor do Chat**.
-  - [ ] Nova preferência `cleanupEngine` (padrão: o comportamento atual) e seletor na aba **Estilos**; o aviso de privacidade da aba passa a dizer para onde o texto vai conforme o motor (nunca a voz).
-  - [ ] Reaproveitar `chat::complete_oneshot` e `cli_relay.rs`/`codex_plan.rs`; manter o tempo máximo curto (4 s na API, 10 s por CLI) e, em qualquer falha, colar o texto como foi ouvido, com a causa no log.
+  - [x] Nova preferência `cleanupEngine` (padrão: o comportamento atual) e seletor na aba **Estilos**; o aviso de privacidade da aba passa a dizer para onde o texto vai conforme o motor (nunca a voz).
+  - [x] Reaproveitar `chat::complete_summary` (que usa `chat::complete_oneshot` e `cli_relay`); manter o tempo máximo curto (4 s na API, 10 s por CLI, com teto de 10 s no total para os outros motores) e, em qualquer falha, colar o texto como foi ouvido, com a causa no log.
   - [ ] Testes: cada motor com mock, motor sem login cai no texto cru com aviso claro, e o estilo `Do jeito que foi dito` nunca chama motor.
   - Checkpoint L8.4: com cada motor conectado, o mesmo ditado volta limpo; com o motor desconectado, o texto cru é colado. **Real: NOT_RUN.**
 - [ ] **L8.5 — Orca em Abas ativas e em Agentes (M).** Orca é ambiente de execução (CLI `orca.exe`, terminais, worktrees). Hoje aparece só na [2B.0.6/2B.7B](roadmap/fase-2b-paridade-agentes.md), que está pausada; esta subetapa puxa de lá só o necessário.
