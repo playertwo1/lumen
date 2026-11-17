@@ -19,7 +19,7 @@ export function orcaAgentSection(state: OrcaState | null): HTMLElement {
     h("h2", {}, h("span", { text: "Orca" })),
     h("div", {
       class: "hint",
-      text: "Ambiente de execução: o Coucou mostra os terminais do Orca em Abas ativas. O Coucou não altera a configuração do Orca.",
+      text: "Ambiente de execução: o Lumen mostra os terminais do Orca em Abas ativas. O Lumen não altera a configuração do Orca.",
     }),
     h(
       "div",
