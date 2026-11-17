@@ -1,6 +1,6 @@
 # STATE do fork — ponto de retomada
 
-**Atualizado:** 2026-11-17 · **Última release:** [`windows-v0.7.13`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.13) · **Etapa da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md)
+**Atualizado:** 2026-11-17 · **Última release:** [`windows-v0.7.13`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.13) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) (validação do dono) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (spec e plano)
 
 Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação. O que cada etapa faz está no [ROADMAP-FORK](ROADMAP-FORK.md); o histórico deste arquivo até a reorganização está em [arquivadas/state/](arquivadas/state/state-ate-2026-11-17.md).
 
@@ -8,22 +8,22 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 | Etapas | Estado |
 |---|---|
-| L0–L7, M0 | Concluídas e arquivadas (checkpoints reais de L1–L7 fechados até 2026-11-15) |
+| L0–L7, M0, M1 | Concluídas e arquivadas (M1 fechada em 2026-11-17 por decisão do dono, com parte do teste real dispensada) |
 | L8 | Todas as subetapas implementadas e publicadas na `0.7.12`; validação real pendente, uma por vez |
-| M1 | Implementada e validada sinteticamente em 2026-11-16; checkpoint real pendente. M2 só depois da L8 e do checkpoint M1 |
+| M2 | Em andamento em paralelo à validação da L8, por decisão do dono (2026-11-17): spec e plano antes do código |
 | L6.5 | A fazer depois do contrato v1.1 da Segunda Mente |
 | 0, 1, 2, 2B, 2C | Pausadas (D-053) |
 
 ## Próxima ação
 
 1. O dono testa a L8 no notebook, uma subetapa por vez (L8.1 → L8.6), e relata. Cada relato fecha ou reabre o checkpoint correspondente em [l8-ajustes-uso-real.md](roadmap/l8-ajustes-uso-real.md).
-2. Depois da L8: checkpoint real da M1 e, com ele fechado, a M2.
+2. M2: spec e plano em `docs/superpowers/`, depois M2.1.
 
 ## Pendências do dono (validação real)
 
 - **L8.1–L8.6** e o Apagar/Spam da triagem do MailCraft (`0.7.12`): roteiros nos checkpoints da L8.
 - **Cristal na abertura** (`0.7.10`, `0.7.11` e `0.7.13`): conferir, depois de atualizar, o ícone no Menu Iniciar, a janela de abertura e a saudação da ilha.
-- **Checkpoint M1:** no notebook, o chat conversa, mostra o estado e não executa nada fora da lista habilitada; uma CLI externa lista e chama o `ping` pelo MCP.
+- **`ping` pelo chat numa release:** a correção da instrução de ferramentas (`chat_bridge.rs`) só foi vista em modo dev; conferir na próxima versão se o ChatGPT chama o `ping` e se a resposta ainda está lenta.
 
 ## Pendências técnicas conhecidas
 

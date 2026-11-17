@@ -17,5 +17,5 @@
 
 ## Registro de entrada e saída para a especificação da M1
 
-- A Fase **M1** ([m1-fundacao.md](../../../roadmap/m1-fundacao.md)) cria o núcleo puro em `windows/src-tauri/src/mochi/` (ou submódulos descritos na spec própria da M1): registro único de ferramentas, políticas de risco (`leitura`, `reversivel`, `confirmacao`, `critico`), bridge com o cartão `pipe.rs` / Toast existente e servidor MCP local para CLIs (`M1.5`).
+- A Fase **M1** ([m1-fundacao.md](../../etapas/m1-fundacao.md)) cria o núcleo puro em `windows/src-tauri/src/mochi/` (ou submódulos descritos na spec própria da M1): registro único de ferramentas, políticas de risco (`leitura`, `reversivel`, `confirmacao`, `critico`), bridge com o cartão `pipe.rs` / Toast existente e servidor MCP local para CLIs (`M1.5`).
 - O registro em `windows/src-tauri/src/lib.rs` concentra `boot` e `tauri::generate_handler![...]` — todas as novas chamadas Tauri de inspeção/execução da M1 se integram ali mantendo os comandos legados intactos.

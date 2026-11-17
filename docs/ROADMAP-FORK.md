@@ -9,16 +9,15 @@ Em ordem de execução. Uma etapa por vez; etapas pausadas só voltam com decis�
 | Ordem | Etapa | Estado | Resumo |
 |---:|---|---|---|
 | 1 | [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) | **Da vez.** Implementada na `0.7.12`; validação real pendente | Corrige o que incomodou no uso das 0.7.8–0.7.10: ditado "segure uma tecla", mãos livres, Anotador → Tarefa, escolha do motor da limpeza, Orca em Agentes e Abas ativas, WhatsApp pela ponte do Orbit (só leitura). |
-| 2 | [M1 — Fundação do assistente](roadmap/m1-fundacao.md) | Implementada e validada sinteticamente (2026-11-16); checkpoint real pendente | Caminho pedido → cérebro → ferramenta → resultado com a ferramenta de teste `ping`: registro de ferramentas, permissões por risco, cartão de confirmação, registro local, servidor MCP local e pausa rápida. |
-| 3 | [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) | Pendente | Volume, brilho, apps, janelas, mídia e energia por APIs nativas, sem PowerShell montado por texto. |
-| 4 | [M3 — Obsidian](roadmap/m3-obsidian.md) | Pendente | Buscar, citar e capturar notas no cofre lendo os `.md` direto, sem plugin. |
-| 5 | [M4 — Voz ligada às ferramentas](roadmap/m4-voz.md) | Pendente | Pedido falado chega às ferramentas de M2/M3, reaproveitando a voz que já existe; confirmação continua sendo clique. |
-| 6 | [M5 — Computer use](roadmap/m5-computer-use.md) | Pendente | Operar a interface de apps pelo Agent Desktop (acessibilidade) quando não houver API nativa. |
-| 7 | [M6 — Automação web](roadmap/m6-web.md) | Pendente | Navegar e ler páginas pelo Agent Browser, em perfil isolado e só em sites permitidos. |
-| 8 | [M7 — Android](roadmap/m7-android.md) | Pendente | Pedir e aprovar ações do assistente pelo celular, pela ligação que já existe. |
-| 9 | [M8 — Rotinas](roadmap/m8-rotinas.md) | Pendente | Sequências salvas de ferramentas ("modo programar"), aprovadas pelo dono. |
-| 10 | [M9 — Memória, gateway e observabilidade](roadmap/m9-memoria-gateway.md) | Pendente | Avaliar e, se valer, adicionar memória por significado, LiteLLM e Langfuse. |
-| 11 | [M10 — Release do assistente](roadmap/m10-release.md) | Pendente | Conferência final de segurança, recursos, documentação e instalação limpa antes de publicar. |
+| 2 | [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) | **Em andamento** (spec e plano), em paralelo à validação da L8 por decisão do dono (2026-11-17) | Volume, brilho, apps, janelas, mídia e energia por APIs nativas, sem PowerShell montado por texto. |
+| 3 | [M3 — Obsidian](roadmap/m3-obsidian.md) | Pendente | Buscar, citar e capturar notas no cofre lendo os `.md` direto, sem plugin. |
+| 4 | [M4 — Voz ligada às ferramentas](roadmap/m4-voz.md) | Pendente | Pedido falado chega às ferramentas de M2/M3, reaproveitando a voz que já existe; confirmação continua sendo clique. |
+| 5 | [M5 — Computer use](roadmap/m5-computer-use.md) | Pendente | Operar a interface de apps pelo Agent Desktop (acessibilidade) quando não houver API nativa. |
+| 6 | [M6 — Automação web](roadmap/m6-web.md) | Pendente | Navegar e ler páginas pelo Agent Browser, em perfil isolado e só em sites permitidos. |
+| 7 | [M7 — Android](roadmap/m7-android.md) | Pendente | Pedir e aprovar ações do assistente pelo celular, pela ligação que já existe. |
+| 8 | [M8 — Rotinas](roadmap/m8-rotinas.md) | Pendente | Sequências salvas de ferramentas ("modo programar"), aprovadas pelo dono. |
+| 9 | [M9 — Memória, gateway e observabilidade](roadmap/m9-memoria-gateway.md) | Pendente | Avaliar e, se valer, adicionar memória por significado, LiteLLM e Langfuse. |
+| 10 | [M10 — Release do assistente](roadmap/m10-release.md) | Pendente | Conferência final de segurança, recursos, documentação e instalação limpa antes de publicar. |
 | — | [L6.5 — Fotos nas tarefas](roadmap/l6-5-fotos-tarefas.md) | A fazer depois; depende do contrato v1.1 da Segunda Mente | Levar ao Lumen as fotos que as tarefas ganharam no celular, sem perder anexos desconhecidos. |
 | — | [Fase 0 — Validar o que já existe](roadmap/fase-0-validacao.md) | Pausada (D-053) | Validação real dos recursos do upstream 0.6 no Windows; faltam os registros por cenário. |
 | — | [Fase 1 — Recursos do Mac](roadmap/fase-1-recursos-mac.md) | Pausada (D-053) | Trazer recursos do Mac: arrastar sobre janela, anexar janela da frente, captura de tela, "sente o PC". |
@@ -42,6 +41,7 @@ As fases M vêm depois da L8 e seguem a ordem M1 → M10; uma não começa antes
 | [L5 — E-mail pessoal](arquivadas/etapas/l5-email-pessoal.md) | 2026-11-15 | MailCraft resume a caixa e prepara rascunho, nunca envia; Outlook clássico como opção. |
 | [L6 — Sync com a Segunda Mente](arquivadas/etapas/l6-sync-segunda-mente.md) | 2026-11-15 | Caixa de correio no Worker, pareamento QR, cifra ponta a ponta e sync de tarefas com o celular. |
 | [L7 — Google](arquivadas/etapas/l7-google.md) | 2026-11-15 | Login Google, backup semanal no Drive com restauração verificada e eventos no Calendar com confirmação. |
+| [M1 — Fundação do assistente](arquivadas/etapas/m1-fundacao.md) | 2026-11-17 | Pedido → cérebro → ferramenta → resultado com o `ping`: registro de ferramentas, permissões por risco, cartão de confirmação, registro local, servidor MCP local e pausa rápida. Parte do teste real dispensada pelo dono. |
 | [M0 — Descoberta e licenças](arquivadas/etapas/m0-descoberta.md) | 2026-11-15 | Licenças, cérebro por provedor e provas de conceito do assistente, sem código de produto. |
 | [Fase 3 — Identidade própria](arquivadas/etapas/fase-3-identidade.md) | 2026-11-13 | Decidida e absorvida pela L1. |
 | [0.4 — Hook do Claude Code e Terminal](arquivadas/etapas/fase-0-4-hook-claude-terminal.md) | 2026-11-09 | Permitir, Negar e sem clique validados na ilha, com o foco da aba certa. |

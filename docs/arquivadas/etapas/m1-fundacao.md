@@ -1,4 +1,4 @@
-> Parte do roadmap do fork. Índice e ordem: [ROADMAP-FORK.md](../ROADMAP-FORK.md). Regras gerais e das fases M: [AGENTS.md](../../AGENTS.md).
+> Parte do roadmap do fork. Índice e ordem: [ROADMAP-FORK.md](../../ROADMAP-FORK.md). Regras gerais e das fases M: [AGENTS.md](../../../AGENTS.md).
 
 ## Fase M1 — Mochi: fundação (G)
 
@@ -47,7 +47,7 @@ Antes de M1.1: escrever spec e plano em `docs/superpowers/`, fixando nomes de m�
 - [x] Toda chamada recebida passa pelo motor de permissões da M1.2.
 - [x] Registrar o servidor na configuração de cada CLI aprovada na M0.2, com backup datado, diff visível e clique.
 - [x] Testar: chamada de fora do loopback recusada; remover o registro restaura o arquivo original.
-- Checkpoint M1.5: a CLI lista a ferramenta `ping` e a chama; a configuração de outras ferramentas fica intacta. *(Sintético em 2026-11-16: `mochi/mcp_server.rs`, `mcp_config.rs`, `windows/hook/src/mcp.rs`, `settings/mcp.ts`, `windows/tests/mochi-mcp.test.mjs`; **Real com CLI externa: NOT_RUN**.)*
+- Checkpoint M1.5: a CLI lista a ferramenta `ping` e a chama; a configuração de outras ferramentas fica intacta. *(Sintético em 2026-11-16: `mochi/mcp_server.rs`, `mcp_config.rs`, `windows/hook/src/mcp.rs`, `settings/mcp.ts`, `windows/tests/mochi-mcp.test.mjs`. **Real com CLI externa em 2026-11-17:** o Claude Code listou a ferramenta `lumen/ping` e a chamou, resposta `{"status":"ok","pong":"lumen-mochi-m1"}`.)*
 
 ### M1.6 — Ligação com o chat e pausa rápida
 
@@ -56,6 +56,6 @@ Antes de M1.1: escrever spec e plano em `docs/superpowers/`, fixando nomes de m�
 - [x] Mostrar na ilha o estado: pensando, aguardando clique, executando, feito, falhou.
 - [x] Implementar a pausa rápida do AGENTS.md e um botão de cancelar a execução em curso.
 - [x] Testar: cérebro indisponível vira erro visível; pausa bloqueia `ping`; cancelar interrompe.
-- Checkpoint M1.6: "faça um ping" no chat executa `ping` e mostra o resultado. *(Sintético com mock de cérebro em `mochi/chat_bridge.rs` e `windows/tests/mochi-chat.test.mjs`; **Real no chat com provedor ativo: NOT_RUN**.)*
+- Checkpoint M1.6: "faça um ping" no chat executa `ping` e mostra o resultado. *(Sintético com mock de cérebro em `mochi/chat_bridge.rs` e `windows/tests/mochi-chat.test.mjs`; **Real no chat em 2026-11-17:** na `0.7.13` com ChatGPT (`gpt-6-luna`) o modelo respondeu "ferramenta indisponível" sem chamar o `ping` (auditoria vazia); a instrução de ferramentas ficou explícita em `chat_bridge.rs` e, em modo dev, "faca um ping" respondeu "Pong! O núcleo local do Lumen está ativo." com estado "Feito (ping)". Falta confirmar numa release; o dono achou lento.)*
 
-- [ ] Checkpoint M1 (runtime manual no notebook): o app abre, conversa em texto, mostra o estado e não executa nada fora da lista habilitada. **Sintético fechado em 2026-11-16:** `cargo test --lib` (`821 passed; 0 failed; 9 ignored` com manifesto `resource.lib`), `windows/hook` `cargo test` (`42 passed; 0 failed`), `npx tsc --noEmit` (OK), `npm test` (`750 passed; 0 failed`) e `npm run build` (OK). **Real: `NOT_RUN`**.
+- [x] Checkpoint M1 (runtime manual no notebook) — **fechado por decisão do dono em 2026-11-17:** conversa, `ping` pelo chat (modo dev, com a correção do `chat_bridge.rs`) e `ping` por CLI externa via MCP validados no uso real; os cenários "pedido fora da lista", "pausa rápida" e "provedor fora do ar" ficaram sem teste real por escolha do dono (cobertos só pelos testes sintéticos).: o app abre, conversa em texto, mostra o estado e não executa nada fora da lista habilitada. **Sintético fechado em 2026-11-16:** `cargo test --lib` (`821 passed; 0 failed; 9 ignored` com manifesto `resource.lib`), `windows/hook` `cargo test` (`42 passed; 0 failed`), `npx tsc --noEmit` (OK), `npm test` (`750 passed; 0 failed`) e `npm run build` (OK). **Real: `NOT_RUN`**.
