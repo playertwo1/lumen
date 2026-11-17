@@ -61,7 +61,22 @@ jobs:
         run: npm test
 
       - name: Test the Rust library
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+        shell: pwsh
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $testExe = Get-ChildItem target/debug/deps/coucou_lib-*.exe |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+          $mt = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/mt.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $testExe -or -not $mt) { throw "Rust test executable or mt.exe not found" }
+          $manifestPath = Join-Path $env:RUNNER_TEMP "common-controls.manifest"
+          $manifest = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0"><dependency><dependentAssembly><assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/></dependentAssembly></dependency></assembly>'
+          [IO.File]::WriteAllText($manifestPath, $manifest, [Text.UTF8Encoding]::new($false))
+          & $mt -manifest $manifestPath "-outputresource:$testExe;#1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --lib
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Validate Lumen release notes
         run: python ../scripts/test-whats-new.py windows
@@ -147,7 +162,7 @@ jobs:
         run: |
           $v = "${{ steps.pack.outputs.version }}"
           $notes = @"
-          Lumen para Windows $v — a Bússola de papel orienta suas sessões e ideias.
+          Lumen para Windows $v — o cristal violeta ilumina suas sessões e ideias.
 
           Baixe ``Lumen-Windows-$v.msi`` (Windows Installer) ou ``Lumen-Windows-$v-setup.exe`` e execute.
           O instalador não tem assinatura digital; o Windows SmartScreen pode exibir um aviso. Nesse caso, clique em

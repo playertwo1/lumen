@@ -1,5 +1,10 @@
 # Changelog
 
+## Windows 0.7.10 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Abertura com o cristal** — a animação de formação do cristal violeta aparece ao abrir a janela do Lumen; com movimento reduzido, aparece a imagem final estática.
+- **Ícone atualizado na Busca do Windows** — o app avisa o Shell para recarregar o ícone do atalho Lumen; isso também atualiza a imagem da abertura transitória do Windows.
+
 ## Windows 0.7.9 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Limpeza do ditado pelo Claude corrigida** — com o Claude Code instalado pelo npm (`claude.cmd`) e sem chave da API, a revisão do texto ditado falhava com "batch file arguments are invalid", porque o Windows não aceita um argumento com quebra de linha num arquivo `.cmd`, e o texto saía sem revisão. As instruções agora vão num arquivo temporário (`--system-prompt-file`), apagado assim que a resposta chega.

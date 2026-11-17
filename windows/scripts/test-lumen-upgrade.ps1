@@ -6,8 +6,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$oldMsiUrl = "https://github.com/playertwo1/coucou/releases/download/windows-v0.6.11/Coucou-Windows-0.6.11.msi"
-$oldSetupUrl = "https://github.com/playertwo1/coucou/releases/download/windows-v0.6.11/Coucou-Windows-0.6.11-setup.exe"
+$oldMsiUrl = "https://github.com/playertwo1/lumen/releases/download/windows-v0.7.9/Lumen-Windows-0.7.9.msi"
+$oldSetupUrl = "https://github.com/playertwo1/lumen/releases/download/windows-v0.7.9/Lumen-Windows-0.7.9-setup.exe"
 $testRoot = [IO.Path]::GetFullPath((Join-Path $env:TEMP "lumen-upgrade-$PID"))
 $tempPrefix = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
 if (-not $testRoot.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase)) {
@@ -73,35 +73,36 @@ function Assert-LegacyData([string]$Scenario) {
 
 try {
   New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
-  $oldMsi = Join-Path $testRoot "Coucou-Windows-0.6.11.msi"
-  $oldSetup = Join-Path $testRoot "Coucou-Windows-0.6.11-setup.exe"
+  $oldMsi = Join-Path $testRoot "Lumen-Windows-0.7.9.msi"
+  $oldSetup = Join-Path $testRoot "Lumen-Windows-0.7.9-setup.exe"
   Invoke-WebRequest -Uri $oldMsiUrl -OutFile $oldMsi
   Invoke-WebRequest -Uri $oldSetupUrl -OutFile $oldSetup
-  Assert-Equal (Get-FileHash -LiteralPath $oldMsi -Algorithm SHA256).Hash.ToLowerInvariant() "3c6bc710dde8f195774c470cd0ed48238c30e60016797a0e83d056f217e45033" "published 0.6.11 MSI SHA-256"
-  Assert-Equal (Get-FileHash -LiteralPath $oldSetup -Algorithm SHA256).Hash.ToLowerInvariant() "e0c6d17f77d31b44c2ecd8b57f1a53793bcc81d141f12eed29758b8c6ccc727b" "published 0.6.11 NSIS SHA-256"
+  Assert-Equal (Get-FileHash -LiteralPath $oldMsi -Algorithm SHA256).Hash.ToLowerInvariant() "9274098dd9d1982524d3e3ee7ec58542faca14c44c799d3fcb3e1bb0748c9e5a" "published 0.7.9 MSI SHA-256"
+  Assert-Equal (Get-FileHash -LiteralPath $oldSetup -Algorithm SHA256).Hash.ToLowerInvariant() "74eca2d8e66a39fd1dd5fb76c7fae55196e915c45c2f830f0cf5b3a1e57c181c" "published 0.7.9 NSIS SHA-256"
 
   Invoke-Msi $oldMsi
-  if (-not (Installed-App "Coucou")) { throw "The 0.6.11 MSI did not register Coucou." }
+  if (-not (Installed-App "Lumen")) { throw "The 0.7.9 MSI did not register Lumen." }
   Seed-LegacyData "msi"
   Invoke-Msi ([IO.Path]::GetFullPath($MsiPath))
-  if (-not (Installed-App "Lumen")) { throw "The Lumen MSI did not register Lumen." }
-  if (Installed-App "Coucou") { throw "MSI upgrade left the old Coucou product installed." }
+  $msiApp = Installed-App "Lumen"
+  if (-not $msiApp) { throw "The 0.7.10 MSI did not register Lumen." }
+  if ($msiApp.DisplayVersion -ne "0.7.10") { throw "MSI upgrade left version $($msiApp.DisplayVersion) installed." }
   Assert-LegacyData "msi"
   Assert-Equal (Get-ItemProperty -LiteralPath $identityPath).DisplayName "Lumen" "notification display name after MSI upgrade"
-  Write-Output "PASS: MSI upgrade replaces Coucou and preserves synthetic user data."
+  Write-Output "PASS: MSI upgrade updates 0.7.9 to 0.7.10 and preserves synthetic user data."
 
-  $oldNsiDir = Join-Path $testRoot "old-coucou-nsis"
-  $lumenNsiDir = Join-Path $testRoot "new-lumen-nsis"
-  Invoke-Nsis $oldSetup $oldNsiDir
-  $oldNsiExe = Join-Path $oldNsiDir "Coucou.exe"
-  if (-not (Test-Path -LiteralPath $oldNsiExe)) { throw "The 0.6.11 NSIS install has no Coucou.exe in its test directory." }
+  $lumenNsiDir = Join-Path $testRoot "lumen-nsis"
+  Invoke-Nsis $oldSetup $lumenNsiDir
+  $lumenNsiExe = Join-Path $lumenNsiDir "lumen.exe"
+  if (-not (Test-Path -LiteralPath $lumenNsiExe)) { throw "The 0.7.9 NSIS install has no lumen.exe in its test directory." }
+  if ((Get-Item -LiteralPath $lumenNsiExe).VersionInfo.ProductVersion -ne "0.7.9") { throw "The NSIS baseline is not version 0.7.9." }
   Seed-LegacyData "nsis"
   Invoke-Nsis ([IO.Path]::GetFullPath($SetupPath)) $lumenNsiDir
-  if (-not (Test-Path -LiteralPath $oldNsiExe)) { throw "The Lumen NSIS install removed the old Coucou app." }
-  if (-not (Test-Path -LiteralPath (Join-Path $lumenNsiDir "lumen.exe"))) { throw "The Lumen NSIS install has no lumen.exe." }
+  if (-not (Test-Path -LiteralPath $lumenNsiExe)) { throw "The Lumen NSIS upgrade removed lumen.exe." }
+  if ((Get-Item -LiteralPath $lumenNsiExe).VersionInfo.ProductVersion -ne "0.7.10") { throw "The NSIS upgrade did not install version 0.7.10." }
   Assert-LegacyData "nsis"
   Assert-Equal (Get-ItemProperty -LiteralPath $identityPath).DisplayName "Lumen" "notification display name after NSIS install"
-  Write-Output "PASS: NSIS installs beside Coucou and preserves synthetic user data."
+  Write-Output "PASS: NSIS upgrade updates 0.7.9 to 0.7.10 and preserves synthetic user data."
 }
 finally {
   if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force }

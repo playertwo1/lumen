@@ -4,9 +4,11 @@
 
 use std::sync::Mutex;
 
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::image::Image;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
 use crate::i18n::{n_, t, tf};
@@ -37,7 +39,38 @@ fn update_label(version: &str) -> String {
     tf("Update Coucou to {version}…", &[("version", version)])
 }
 
+#[cfg(windows)]
+fn refresh_start_menu_icons() {
+    use std::{env, path::PathBuf};
+    use windows::Win32::UI::Shell::{SHChangeNotify, SHCNE_UPDATEITEM, SHCNF_PATHW};
+
+    for root in [env::var_os("APPDATA"), env::var_os("PROGRAMDATA")]
+        .into_iter()
+        .flatten()
+    {
+        let shortcut = PathBuf::from(root)
+            .join("Microsoft/Windows/Start Menu/Programs")
+            .join(format!("{}.lnk", crate::PRODUCT_NAME));
+        if !shortcut.is_file() {
+            continue;
+        }
+        let path: Vec<u16> = shortcut.as_os_str().encode_wide().chain(Some(0)).collect();
+        // The Windows shell can keep an old image cached for the Start entry and launch surface.
+        unsafe {
+            SHChangeNotify(
+                SHCNE_UPDATEITEM,
+                SHCNF_PATHW,
+                Some(path.as_ptr().cast()),
+                None,
+            );
+        }
+    }
+}
+
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
+    #[cfg(windows)]
+    refresh_start_menu_icons();
+
     let mut items = Vec::new();
     for (id, label) in ITEMS {
         items.push((label, MenuItem::with_id(app, id, t(label), true, None::<&str>)?));
@@ -132,7 +165,7 @@ pub fn tint_blue(rgba: &[u8]) -> Vec<u8> {
 }
 
 /// The island says whether a new version waits (consent, newer, not put off with
-/// Later): blue crystal in the tray, or the usual one.
+/// Later): blue Lumen crystal in the tray, or the usual one.
 #[tauri::command]
 pub fn tray_update_hint(app: AppHandle, on: bool) {
     let Some(tray) = app.tray_by_id("coucou") else { return };
