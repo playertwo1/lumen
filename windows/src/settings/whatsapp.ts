@@ -5,11 +5,13 @@
 
 import { Bridge, onEvent } from "../core/bridge";
 import {
-  DEFAULT_PORT, DEFAULT_URLS, WHATSAPP_GREEN, installError, installStepLabel, isInstalling, linkColor, linkLabel,
-  showsLinkState, testResultLabel, webhookLine, type WaSettingsView,
+  DEFAULT_PORT, DEFAULT_URLS, WHATSAPP_GREEN, installError, installStepLabel, isInstalling, linkColor,
+  linkLabel, showsLinkState, testResultLabel, webhookLine, type WaPrefs, type WaSettingsView,
 } from "../core/whatsapp";
 import { h } from "../views/dom";
 import { t } from "../i18n/i18n";
+
+type Gateway = WaPrefs["gateway"];
 
 type Toggle = (on: boolean, onChange: (v: boolean) => void) => HTMLElement;
 
@@ -53,10 +55,14 @@ export function whatsappSection(host: WhatsAppSettingsHost): HTMLElement {
   const gatewaySelect = h("select", {},
     h("option", { value: "gowa", text: "GOWA" }),
     h("option", { value: "openwa", text: "OpenWA" }),
+    h("option", { value: "orbit", text: "Usar a ponte do Orbit" }),
   ) as HTMLSelectElement;
   const urlInput = h("input", { type: "text", autocomplete: "off", spellcheck: "false", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
   const credentialInput = h("input", { type: "password", autocomplete: "off", spellcheck: "false", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
   const credentialRemove = h("button", { class: "danger", text: t("Remove") });
+  // The Orbit bridge takes no token: this row is for GOWA and OpenWA only.
+  const credentialRow = h("div", { class: "row" }, h("label", { text: "" }), credentialInput, credentialRemove);
+  const orbitHint = h("div", { class: "hint", text: "Lê as conversas da ponte do Orbit neste computador (127.0.0.1). Nada é enviado por aqui: responda pelo Orbit. Não precisa instalar nada." });
   let autoStart = false;
   const autoStartSwitch = host.toggle(false, (on) => {
     autoStart = on;
@@ -114,19 +120,24 @@ export function whatsappSection(host: WhatsAppSettingsHost): HTMLElement {
   });
 
   gatewaySelect.addEventListener("change", () => {
-    const kind = gatewaySelect.value as "gowa" | "openwa";
-    const other = kind === "gowa" ? DEFAULT_URLS.openwa : DEFAULT_URLS.gowa;
-    // Still on the other gateway's default address: follow the switch.
-    if (urlInput.value.trim() === other) urlInput.value = "";
+    const kind = selectedGateway();
+    const typed = urlInput.value.trim();
+    // Still on another gateway's default address: follow the switch.
+    if (Object.entries(DEFAULT_URLS).some(([name, url]) => name !== kind && url === typed)) urlInput.value = "";
     drawAdvanced();
   });
+
+  function selectedGateway(): Gateway {
+    const value = gatewaySelect.value;
+    return value === "openwa" || value === "orbit" ? value : "gowa";
+  }
 
   async function saveGateway(credential: string | null) {
     const port = Number(portInput.value);
     saveNote.replaceChildren();
     try {
       await Bridge.whatsappSaveGateway({
-        gateway: gatewaySelect.value === "openwa" ? "openwa" : "gowa",
+        gateway: selectedGateway(),
         url: urlInput.value.trim(),
         credential,
         port: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : (view?.prefs.port ?? DEFAULT_PORT),
@@ -154,7 +165,7 @@ export function whatsappSection(host: WhatsAppSettingsHost): HTMLElement {
     drawAdvanced();
     const result = await Bridge.whatsappTest();
     testing = false;
-    testResult = result ? testResultLabel(result) : "";
+    testResult = result ? testResultLabel(result, selectedGateway()) : "";
     drawAdvanced();
   });
 
@@ -164,12 +175,14 @@ export function whatsappSection(host: WhatsAppSettingsHost): HTMLElement {
     const v = view;
     advanced.style.display = showAdvanced ? "" : "none";
     if (!v) return;
-    const kind = gatewaySelect.value === "openwa" ? "openwa" : "gowa";
+    const kind = selectedGateway();
     urlInput.placeholder = DEFAULT_URLS[kind];
     credentialInput.placeholder = v.hasCredential
       ? `••••••••  ${t("(stored)")}`
       : kind === "gowa" ? t("Basic auth  (user:password, if set)") : t("API key  (owa_k1_…)");
     credentialRemove.style.display = v.hasCredential ? "" : "none";
+    credentialRow.style.display = kind === "orbit" ? "none" : "";
+    orbitHint.style.display = kind === "orbit" ? "" : "none";
     switchState(autoStartSwitch, autoStart);
     autoStartBlock.replaceChildren();
     if (kind === "gowa") {
@@ -224,13 +237,15 @@ export function whatsappSection(host: WhatsAppSettingsHost): HTMLElement {
 
   function linkState(v: WaSettingsView): HTMLElement[] {
     const out: HTMLElement[] = [];
-    const text = v.link.state === "connected" && v.me ? t("Connected as {number}", { number: v.me }) : linkLabel(v.link);
+    const orbit = v.prefs.gateway === "orbit";
+    const text = v.link.state === "connected" && v.me ? t("Connected as {number}", { number: v.me }) : linkLabel(v.link, v.prefs.gateway);
     out.push(h("div", { class: "row", style: "gap:8px" },
       h("i", { class: "dot", style: `background:${linkColor(v.link)}` }),
       h("span", { style: "font-size:12.5px", text }),
     ));
     if (v.link.state === "connected") out.push(h("div", { class: "hint", text: webhookLine(v.webhook) }));
-    if (v.link.state === "needsQr") {
+    // The bridge's QR is scanned in Orbit: nothing to show here.
+    if (v.link.state === "needsQr" && !orbit) {
       if (v.qr) {
         out.push(h("div", { class: "row", style: "align-items:flex-start" },
           h("img", { class: "qr", src: v.qr, width: "168", height: "168", alt: "", style: "width:168px;height:168px;image-rendering:pixelated" }),
@@ -274,8 +289,9 @@ export function whatsappSection(host: WhatsAppSettingsHost): HTMLElement {
 
   advanced.append(
     h("div", { class: "row" }, h("label", { text: t("Gateway") }), gatewaySelect),
+    orbitHint,
     h("div", { class: "row" }, h("label", { text: "" }), urlInput),
-    h("div", { class: "row" }, h("label", { text: "" }), credentialInput, credentialRemove),
+    credentialRow,
     autoStartBlock,
     h("div", { class: "row" }, h("label", { text: t("Coucou’s webhook port") }), portInput),
     h("div", { class: "row" }, saveBtn, testBtn),

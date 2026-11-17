@@ -434,7 +434,10 @@ fn begin() {
         sync_gowa(&c);
         (c.generation, c.prefs.port, kind)
     };
-    start_listener(gen, port, kind, secret);
+    // The Orbit bridge posts nothing: no port to open, Coucou polls it.
+    if kind != Kind::Orbit {
+        start_listener(gen, port, kind, secret);
+    }
     spawn_ticker(gen);
     changed();
     refresh();

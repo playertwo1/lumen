@@ -113,10 +113,12 @@ fn basic_auth(credential: &str) -> String {
     format!("Basic {}", gateway::base64(credential.as_bytes()))
 }
 
-/// Either gateway, behind one face.
+/// Either gateway, or the Orbit bridge, behind one face.
 pub enum Provider {
     Gowa { http: Http, device: tokio::sync::Mutex<Option<String>> },
     Openwa { http: Http, session: tokio::sync::Mutex<Option<String>> },
+    /// Read-only: no token (the bridge has none), no QR, no webhook, no send, no receipt.
+    Orbit { http: Http },
 }
 
 /// A QR to show: a `data:image/png;base64,…` URL and how long it stays valid.
@@ -137,7 +139,20 @@ impl Provider {
                 let headers = credential.map(|c| vec![("X-API-Key", c)]).unwrap_or_default();
                 Provider::Openwa { http: Http::new(base, headers)?, session: Default::default() }
             }
+            // The bridge takes no credential: a stored one is not sent anywhere.
+            Kind::Orbit => Provider::Orbit { http: Http::new(base, vec![])? },
         })
+    }
+
+    // ── Orbit's bridge ──
+
+    fn orbit_check(data: &[u8], code: u16) -> Result<(), WaError> {
+        if (200..300).contains(&code) {
+            return Ok(());
+        }
+        // Its `error` text only ("query failed"…), never a message's content.
+        let why = serde_json::from_slice::<Value>(data).ok().and_then(|v| v.get("error").and_then(Value::as_str).map(str::to_string));
+        Err(WaError::Refused(why.unwrap_or_else(|| format!("HTTP {code}"))))
     }
 
     // ── GOWA ──
@@ -253,6 +268,11 @@ impl Provider {
         match self {
             Provider::Gowa { http, device } => Ok(Self::gowa_device(http, device).await?.1),
             Provider::Openwa { http, session } => Ok(openwa::status(&Self::openwa_session(http, session).await?)),
+            Provider::Orbit { http } => {
+                let (data, code) = http.get("/api/status", &[]).await?;
+                Self::orbit_check(&data, code)?;
+                gateway::orbit::status(&data).ok_or(WaError::Refused("resposta da ponte".into()))
+            }
         }
     }
 
@@ -286,6 +306,8 @@ impl Provider {
                 Self::openwa_check(&data, code)?;
                 Ok(openwa::qr_data_url(&data).map(|data_url| Qr { data_url, seconds: 15 }))
             }
+            // Linked in Orbit, not here: nothing to show.
+            Provider::Orbit { .. } => Ok(None),
         }
     }
 
@@ -311,6 +333,8 @@ impl Provider {
                 };
                 Self::openwa_check(&data, code)
             }
+            // The bridge posts nothing: Coucou polls it (every 20 s, as the fallback does).
+            Provider::Orbit { .. } => Ok(()),
         }
     }
 
@@ -337,6 +361,24 @@ impl Provider {
                 let q = [("since", since_ms.to_string()), ("limit", "50".into()), ("inlineMedia", "false".into())];
                 openwa::messages(&Self::openwa_scoped(http, session, Method::GET, "/messages", &q, None).await?, me)
             }
+            Provider::Orbit { http } => {
+                // The bridge reads one chat at a time, and `since` is in seconds.
+                let (data, code) = http.get("/api/chats", &[("limit", "20".into())]).await?;
+                Self::orbit_check(&data, code)?;
+                let mut out = Vec::new();
+                for (jid, name, _) in gateway::orbit::chats(&data).into_iter().take(8).filter(|c| c.2 > since_ms) {
+                    let q = [("chat_jid", jid.clone()), ("limit", "10".into()), ("since", (since_ms / 1000).to_string())];
+                    let (data, code) = http.get("/api/messages", &q).await?;
+                    Self::orbit_check(&data, code)?;
+                    out.extend(gateway::orbit::messages(&data, me).into_iter().map(|mut m| {
+                        if m.chat_name.is_none() && !name.is_empty() && model::is_group(&jid) {
+                            m.chat_name = Some(name.clone());
+                        }
+                        m
+                    }));
+                }
+                out
+            }
         };
         out.sort_by_key(|m| m.date);
         Ok(out)
@@ -352,6 +394,11 @@ impl Provider {
             Provider::Openwa { http, session } => {
                 let q = [("chatId", openwa::chat_id(chat)), ("limit", limit.to_string()), ("inlineMedia", "false".into())];
                 openwa::messages(&Self::openwa_scoped(http, session, Method::GET, "/messages", &q, None).await?, me)
+            }
+            Provider::Orbit { http } => {
+                let (data, code) = http.get("/api/messages", &[("chat_jid", chat.to_string()), ("limit", limit.to_string())]).await?;
+                Self::orbit_check(&data, code)?;
+                gateway::orbit::messages(&data, me)
             }
         };
         out.sort_by_key(|m| m.date);
@@ -369,6 +416,8 @@ impl Provider {
                 let data = Self::openwa_scoped(http, session, Method::POST, "/messages/send-text", &[], Some(json!({"chatId": openwa::chat_id(chat), "text": text}))).await?;
                 Ok(serde_json::from_slice::<Value>(&data).ok().and_then(|v| v.get("messageId").and_then(Value::as_str).map(str::to_string)))
             }
+            // Never from here: the bridge only takes drafts a person approves in Orbit.
+            Provider::Orbit { .. } => Err(WaError::Refused("A ponte do Orbit só lê aqui. Responda pelo Orbit.".into())),
         }
     }
 
@@ -383,6 +432,8 @@ impl Provider {
             Provider::Openwa { http, session } => {
                 Self::openwa_scoped(http, session, Method::POST, "/chats/read", &[], Some(json!({"chatId": openwa::chat_id(chat)}))).await.map(|_| ())
             }
+            // The bridge has no receipt route, and Coucou never writes to WhatsApp from here.
+            Provider::Orbit { .. } => Ok(()),
         }
     }
 
@@ -401,6 +452,8 @@ impl Provider {
                 let v: Value = serde_json::from_slice(&data).ok()?;
                 v.get("name").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string)
             }
+            // The names come with the chat list in the polling and with each conversation's messages.
+            Provider::Orbit { .. } => None,
         }
     }
 }
@@ -447,5 +500,81 @@ mod tests {
         assert_eq!(Provider::gowa_check(b"", 200), Ok(()));
         assert_eq!(Provider::openwa_check(b"", 403), Err(WaError::Unauthorized));
         assert_eq!(Provider::openwa_check(br#"{"message":"Session not found"}"#, 404), Err(WaError::Refused("Session not found".into())));
+    }
+
+    /// A fake bridge on loopback: answers the first `count` requests by path (`routes`: path, status,
+    /// JSON body) and reports each request target (path and query) on the returned channel.
+    fn fake_bridge(routes: Vec<(&'static str, &'static str, &'static str)>, count: usize) -> (Url, std::sync::mpsc::Receiver<String>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = parse_base(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let (seen, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for mut conn in listener.incoming().flatten().take(count) {
+                let mut buf = [0u8; 4096];
+                let n = conn.read(&mut buf).unwrap_or(0);
+                let target = String::from_utf8_lossy(&buf[..n]).split_whitespace().nth(1).unwrap_or("").to_string();
+                let _ = seen.send(target.clone());
+                let path = target.split('?').next().unwrap_or("");
+                let (status, body) = routes.iter().find(|r| r.0 == path).map(|r| (r.1, r.2)).unwrap_or(("404 Not Found", r#"{"error":"not found"}"#));
+                let head = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                let _ = conn.write_all(head.as_bytes());
+                let _ = conn.write_all(body.as_bytes());
+            }
+        });
+        (base, rx)
+    }
+
+    /// A port nothing listens on: any call there fails as Unreachable.
+    fn closed_port() -> Url {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        parse_base(&format!("http://127.0.0.1:{port}")).unwrap()
+    }
+
+    fn block_on<T>(f: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(f)
+    }
+
+    #[test]
+    fn orbit_reads_status_chats_and_messages_and_the_polling_asks_in_seconds() {
+        let (base, seen) = fake_bridge(
+            vec![
+                ("/api/status", "200 OK", r#"{"connected":true,"authenticated":true,"device_jid":"5500000000002@s.whatsapp.net"}"#),
+                ("/api/chats", "200 OK", r#"{"chats":[{"jid":"5500000000001@s.whatsapp.net","name":"Contato Teste","last_message_time":1700000500}],"count":1}"#),
+                ("/api/messages", "200 OK", r#"{"messages":[{"id":"M1","chat_jid":"5500000000001@s.whatsapp.net","sender_jid":"5500000000001@s.whatsapp.net","timestamp":1700000500,"type":"text","content_text":"oi","is_from_me":false}],"count":1}"#),
+            ],
+            3,
+        );
+        let provider = Provider::new(Kind::Orbit, base, None).unwrap();
+        let status = block_on(provider.status()).unwrap();
+        assert_eq!(status, Status { link: Link::Connected, me: Some("5500000000002@s.whatsapp.net".into()) });
+        let msgs = block_on(provider.recent_messages(1_700_000_000_000, None)).unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!((msgs[0].id.as_str(), msgs[0].date), ("M1", 1_700_000_500_000));
+        // The polling asks for the chat's messages since that time, in seconds, one chat at a time.
+        let targets: Vec<String> = seen.try_iter().collect();
+        assert_eq!(targets[0], "/api/status");
+        assert_eq!(targets[1], "/api/chats?limit=20");
+        assert!(targets[2].starts_with("/api/messages?chat_jid=5500000000001%40s.whatsapp.net&limit=10&since=1700000000"), "{}", targets[2]);
+    }
+
+    #[test]
+    fn orbit_says_no_when_it_cannot_send_and_never_calls_the_bridge_for_it() {
+        let provider = Provider::new(Kind::Orbit, closed_port(), Some("ignored-token".into())).unwrap();
+        // Any network call would be Unreachable: these answers come without one.
+        assert_eq!(block_on(provider.send("oi", "5500000000001@s.whatsapp.net")), Err(WaError::Refused("A ponte do Orbit só lê aqui. Responda pelo Orbit.".into())));
+        assert_eq!(block_on(provider.mark_read("5500000000001@s.whatsapp.net", Some("M1"))), Ok(()));
+        assert_eq!(block_on(provider.register_webhook("http://127.0.0.1:47823/whatsapp", "s")), Ok(()));
+        assert!(block_on(provider.qr()).unwrap().is_none());
+        assert!(block_on(provider.group_name("120363000000000001@g.us")).is_none());
+        // The bridge is down: that is what the status says.
+        assert_eq!(block_on(provider.status()), Err(WaError::Unreachable));
+    }
+
+    #[test]
+    fn orbit_errors_show_its_error_text_only() {
+        let (base, _seen) = fake_bridge(vec![("/api/messages", "500 Internal Server Error", r#"{"error":"query failed","details":"x"}"#)], 1);
+        let provider = Provider::new(Kind::Orbit, base, None).unwrap();
+        assert_eq!(block_on(provider.messages("5500000000001@s.whatsapp.net", 10, None)), Err(WaError::Refused("query failed".into())));
     }
 }
