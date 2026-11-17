@@ -40,8 +40,9 @@ pub enum Action {
 
 /// A press shorter than this is a tap.
 pub const HOLD_THRESHOLD: f64 = 0.30;
-/// The second tap of a double tap comes within this.
-pub const DOUBLE_TAP_WINDOW: f64 = 0.40;
+/// The second tap of a double tap comes within this, counted from the first release
+/// (Windows' double-click time is 0.5 s from press to press).
+pub const DOUBLE_TAP_WINDOW: f64 = 0.50;
 /// Autorepeat sends a Down at least every 0.4 s (Windows' slowest rate) and its
 /// first one within 1 s. A longer gap means the release was lost.
 pub const STUCK_GAP: f64 = 1.5;
@@ -78,6 +79,7 @@ impl KeyLogic {
         self.held = true;
         self.last_down = t;
         match self.phase {
+            Phase::Idle if repeat => Action::None, // still the key that just finished a listen
             Phase::Idle => {
                 self.phase = Phase::Holding { since: t };
                 Action::Start
@@ -97,6 +99,8 @@ impl KeyLogic {
                     Action::Restart
                 }
             }
+            // Held past the press that locked it: the repeats are not a second tap.
+            Phase::Locked if repeat => Action::None,
             Phase::Locked => {
                 self.phase = Phase::Idle;
                 Action::Finish
@@ -401,7 +405,8 @@ mod tests {
         k.key_down(0.0);
         k.key_up(0.1);
         assert_eq!(k.tick(0.3), Action::None);
-        assert_eq!(k.tick(0.6), Action::Cancel);
+        assert_eq!(k.tick(0.6), Action::None); // the window ends at 0.1 + 0.5
+        assert_eq!(k.tick(0.65), Action::Cancel);
         assert!(!k.is_active());
         // A press after an unnoticed timeout starts afresh.
         let mut k = KeyLogic::default();
@@ -471,6 +476,67 @@ mod tests {
         assert!(!k.is_active());
         // A new press after that starts a new dictation, not a Renew.
         assert_eq!(k.key_down(1.0), Action::Start);
+    }
+
+    #[test]
+    fn a_second_tap_within_half_a_second_of_the_first_release_locks() {
+        let mut k = KeyLogic::default();
+        k.key_down(0.0);
+        k.key_up(0.1);
+        // 0.45 s after the first release: inside the window.
+        assert_eq!(k.key_down(0.55), Action::Lock);
+        k.key_up(0.6);
+        assert_eq!(k.phase(), Phase::Locked);
+        // Outside it: the first tap was not a double tap, and the press starts a listen.
+        let mut k = KeyLogic::default();
+        k.key_down(0.0);
+        k.key_up(0.1);
+        assert_eq!(k.key_down(0.7), Action::Restart);
+    }
+
+    #[test]
+    fn a_held_second_tap_does_not_finish_at_its_first_repeat() {
+        let mut k = KeyLogic::default();
+        k.key_down(0.0);
+        k.key_up(0.1);
+        assert_eq!(k.key_down(0.25), Action::Lock);
+        // The second press stays down: Windows repeats it after its delay.
+        for t in [0.8, 1.2, 1.6, 2.0] {
+            assert_eq!(k.key_down(t), Action::None);
+        }
+        assert_eq!(k.key_up(2.1), Action::None);
+        assert!(k.is_active());
+        // The next tap finishes; the key let go afterwards starts nothing.
+        assert_eq!(k.key_down(3.0), Action::Finish);
+        assert_eq!(k.key_up(3.1), Action::None);
+        assert!(!k.is_active());
+    }
+
+    #[test]
+    fn a_finishing_press_held_down_does_not_start_again() {
+        let mut k = KeyLogic::default();
+        k.key_down(0.0);
+        k.key_up(0.1);
+        k.key_down(0.25); // hands-free
+        k.key_up(0.3);
+        assert_eq!(k.key_down(3.0), Action::Finish);
+        // Still held, repeating: no new dictation.
+        assert_eq!(k.key_down(3.4), Action::None);
+        assert_eq!(k.key_down(3.8), Action::None);
+        assert!(!k.is_active());
+        assert_eq!(k.key_up(4.0), Action::None);
+        // A fresh press does start one.
+        assert_eq!(k.key_down(5.0), Action::Start);
+    }
+
+    #[test]
+    fn with_one_tap_the_next_tap_pastes_hands_free() {
+        let mut k = KeyLogic { one_tap: true, ..Default::default() };
+        assert_eq!(k.key_down(0.0), Action::Start);
+        assert_eq!(k.key_up(0.1), Action::Lock);
+        assert_eq!(k.key_down(4.0), Action::Finish);
+        assert_eq!(k.key_up(4.1), Action::None);
+        assert!(!k.is_active());
     }
 
     #[test]

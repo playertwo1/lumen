@@ -26,8 +26,8 @@ Origem: o proprietário usou as versões `0.7.8`–`0.7.10` no notebook e listou
   - Checkpoint L8.1: 20 ditados seguidos, em 3 programas diferentes (navegador, chat e editor), sem falha silenciosa; quando falhar, a pílula diz por quê. **Real: NOT_RUN.**
 - [ ] **L8.2 — Mãos livres (toque duplo) não funciona (M).** Ligar junto com L8.1, mesma peça (`flow/logic.rs`, `os_windows.rs`). Hoje a tela mostra "Alt da esquerda Alt da esquerda" e "Mãos livres com um toque" desligado.
   - [ ] Reproduzir com o toque duplo e com "um toque": medir o intervalo aceito entre os dois toques, o que acontece com a máscara do Alt (`mask_menu`) no segundo toque e se o `Up` do primeiro fecha a dictação antes do segundo `Down`.
-  - [ ] Corrigir e testar a máquina de estados (`Start` → `Lock` → `Finish`) com sequências temporizadas, para o toque duplo e para o de um toque.
-  - [ ] A pílula mostra claramente que está em "mãos livres" (`locked`) e como terminar.
+  - [x] Corrigir e testar a máquina de estados (`Start` → `Lock` → `Finish`) com sequências temporizadas, para o toque duplo e para o de um toque. Spec: `docs/superpowers/specs/2026-11-17-l8-2-maos-livres.md`.
+  - [x] A pílula mostra claramente que está em "mãos livres" (`locked`) e como terminar (já existia: visual `handsFree`, com "Colar · ou pressione <tecla>"; não mexido).
   - Checkpoint L8.2: toque duplo inicia, fala longa (30 s) e novo toque cola; o mesmo no modo de um toque. **Real: NOT_RUN.**
 - [ ] **L8.3 — Anotador: botão "Virar tarefa" nas ações (P).** Cada item de **Ações / To-do** da nota ganha um botão que cria uma tarefa simples em **Tarefas**: só o título, sem data, hora, prioridade nem alarme. Mais detalhe, o dono edita depois em Tarefas.
   - [ ] Reaproveitar o armazenamento de tarefas (`tasks/store.rs`, `Todo/todo.json`) e o caminho de criação existente; guardar a origem (`noteId`) para o item mostrar "já virou tarefa" e **não duplicar** em um segundo clique.
