@@ -16,34 +16,6 @@
 - [ ] Testar que nada é enviado sem opt-in e que reimportar não duplica a transcrição.
 - Checkpoint: integração externa só começa após escolha do fluxo e aprovação da spec.
 
-### Personagens por agente — estudo assumido pela L1.4 (2026-11-13)
-
-**Decisões do proprietário (2026-11-13):** a decisão anterior de cancelar a L1.4 foi substituída. Sem autorização escrita para usar o Mochi, os personagens do Lumen serão originais; a Bússola continua somente como ícone do aplicativo. O proprietário aprovou visualmente a lineup e as pranchas estáticas dos estados dos sete agentes. Com base na revisão técnica da L1.4b, escolheu Canvas na L1.4c. Essa decisão autoriza a implementação por etapas, sem aprovar código, animações ou uso real.
-
-Fontes: [pesquisa clawd-on-desk](../arquivadas/pesquisas/clawd-on-desk.md) (ideias gerais de estados, proporção e pacotes; sem copiar arte ou código) e [pesquisa QwenPaw](../arquivadas/pesquisas/qwenpaw.md) (mapa de eventos para estados). As imagens finais e o código dos personagens permanecem originais, sem copiar arte nem incluir logos, símbolos ou mascotes oficiais.
-
-**L1.4a — imagens de referência, sem código do app:**
-
-- [x] Gerar lineup dos sete personagens, uma prancha por personagem com quatro estados obrigatórios e quatro desejáveis, teste de 22 px, versões transparentes e `README.md` em pt-BR em `windows/design/personagens/`.
-- [x] O proprietário aprovou visualmente a lineup e as pranchas estáticas em 2026-11-13; o estudo isolado de marca do Claude não foi aprovado para o app.
-
-**L1.4b — protótipo sprite × Canvas:**
-
-- [x] Protótipo Codex isolado e documentação comparativa integrados à `main`.
-- [x] O proprietário escolheu Canvas com base na revisão técnica em 2026-11-13.
-- [ ] CPU e memória total de Tauri, delta do instalador e comparação em runtime seguem sem medição; consultar `windows/design/personagens/prototipo/comparacao.md`.
-
-**L1.4d — implementação Canvas, fora deste bloco de itens parqueados:**
-
-- [x] d1 (base da família e Codex em 11 estados) tem implementação e testes sintéticos concluídos; o proprietário aprovou a subetapa em 2026-11-13.
-- [x] d2 (outros seis personagens nos 11 estados e reforço dos símbolos/expressões) tem implementação, testes sintéticos e aprovação visual do proprietário concluídos em 2026-11-13.
-- [x] d3 (animações P1) teve implementação, testes sintéticos e aprovação visual concluídos em 2026-11-13.
-- [x] d4 (animações P2) tem implementação e testes sintéticos concluídos; aguarda revisão visual do proprietário.
-
-**Histórico do escopo anterior enquanto o estudo estava parqueado:** a proposta inicial era gerar imagens de um agente nos quatro estados `idle`, `thinking`, `working` e `sleeping`; a L1.4a ampliou as referências para sete agentes e oito estados visuais.
-
-Checkpoint atual: a seleção do Canvas e os aceites visuais de d1, d2 e d3 estão registrados; d4 aguarda revisão visual. Nada aqui fecha o aceite real da L1.4.
-
 ### Conectores externos do pacote Mochi
 
 - [ ] n8n, PowerToys, LocalSend e KDE Connect: só voltam com um caso de uso real descrito pelo proprietário.
