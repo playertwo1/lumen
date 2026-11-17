@@ -1556,6 +1556,16 @@ input.hub-input:disabled,
   color: var(--hub-muted);
 }
 
+button.hub-btn.notes-todo-task {
+  margin-left: auto;
+  align-self: center;
+  flex: 0 0 auto;
+}
+
+button.hub-btn.notes-todo-task:disabled {
+  opacity: 0.6;
+}
+
 .hub-todo .who {
   color: var(--hub-muted);
   font-size: 12px;

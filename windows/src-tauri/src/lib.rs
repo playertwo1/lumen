@@ -1377,6 +1377,7 @@ pub fn run() {
             notes::notes_rename,
             notes::notes_rename_speaker,
             notes::notes_toggle_todo,
+            notes::notes_virar_tarefa,
             notes::notes_delete,
             notes::notes_summarize,
             notes::notes_retry,

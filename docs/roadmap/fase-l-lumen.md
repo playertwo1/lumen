@@ -30,9 +30,9 @@ Origem: o proprietário usou as versões `0.7.8`–`0.7.10` no notebook e listou
   - [x] A pílula mostra claramente que está em "mãos livres" (`locked`) e como terminar (já existia: visual `handsFree`, com "Colar · ou pressione <tecla>"; não mexido).
   - Checkpoint L8.2: toque duplo inicia, fala longa (30 s) e novo toque cola; o mesmo no modo de um toque. **Real: NOT_RUN.**
 - [ ] **L8.3 — Anotador: botão "Virar tarefa" nas ações (P).** Cada item de **Ações / To-do** da nota ganha um botão que cria uma tarefa simples em **Tarefas**: só o título, sem data, hora, prioridade nem alarme. Mais detalhe, o dono edita depois em Tarefas.
-  - [ ] Reaproveitar o armazenamento de tarefas (`tasks/store.rs`, `Todo/todo.json`) e o caminho de criação existente; guardar a origem (`noteId`) para o item mostrar "já virou tarefa" e **não duplicar** em um segundo clique.
-  - [ ] O clique do dono é a confirmação; nada vira tarefa sozinho. Sem data inferida.
-  - [ ] Testes: cria uma tarefa por clique, não duplica, sobrevive a regerar o resumo (o item continua marcado) e a tarefa criada chega ao sync (L6) como qualquer outra.
+  - [x] Reaproveitar o armazenamento de tarefas (`tasks/store.rs`, `Todo/todo.json`) e o caminho de criação existente; guardar a origem (`noteId`) para o item mostrar "já virou tarefa" e **não duplicar** em um segundo clique.
+  - [x] O clique do dono é a confirmação; nada vira tarefa sozinho. Sem data inferida.
+  - [x] Testes: cria uma tarefa por clique, não duplica, sobrevive a regerar o resumo (o item continua marcado) e a tarefa criada chega ao sync (L6) como qualquer outra.
   - Checkpoint L8.3: uma ação da nota vira tarefa em um clique e aparece em Tarefas sem data. **Real: NOT_RUN.**
 - [ ] **L8.4 — Estilos: escolher quem faz a limpeza (M).** Hoje o texto sempre vai para o Claude (`flow/cleanup.rs` → `claude::complete`). Passa a haver uma escolha de motor, no mesmo molde dos resumos do Anotador (`SummaryEngine`): **Claude** (chave ou CLI), **ChatGPT / Codex** (OAuth ou CLI), **Antigravity / Gemini** e **Mesmo provedor do Chat**.
   - [ ] Nova preferência `cleanupEngine` (padrão: o comportamento atual) e seletor na aba **Estilos**; o aviso de privacidade da aba passa a dizer para onde o texto vai conforme o motor (nunca a voz).

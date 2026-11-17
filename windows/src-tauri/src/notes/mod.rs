@@ -25,6 +25,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::flow::{pill, store::SummaryEngine};
 use crate::i18n::{t, tf};
 use crate::speech::{self, audio};
+use crate::tasks::model::fold_pt;
 use builder::{Line, Speaker, TimedWord, Todo};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -663,7 +664,8 @@ fn summarize(app: &AppHandle, id: &str) {
                 }
                 n.summary = Some(parsed.summary);
                 n.key_points = parsed.key_points;
-                n.todos = parsed.todos;
+                let old = std::mem::take(&mut n.todos);
+                n.todos = carry_task_links(&old, parsed.todos);
             }
             None => n.summary = Some(reply.trim().to_string()),
         }
@@ -1429,6 +1431,46 @@ pub fn notes_toggle_todo(app: AppHandle, taker: State<Arc<NoteTaker>>, id: Strin
     });
 }
 
+/// Um resumo regerado troca os ids dos itens: o item com o mesmo texto (sem acento nem caixa)
+/// continua marcado como tarefa.
+pub fn carry_task_links(old: &[Todo], mut new: Vec<Todo>) -> Vec<Todo> {
+    for todo in &mut new {
+        let key = fold_pt(&todo.text);
+        todo.task_id = old
+            .iter()
+            .find(|o| o.task_id.is_some() && fold_pt(&o.text) == key)
+            .and_then(|o| o.task_id.clone());
+    }
+    new
+}
+
+/// "Virar tarefa": cria uma tarefa por item, no máximo. Um item que já tem `task_id` só devolve a nota.
+fn virar_tarefa(
+    notes: &mut Vec<Note>,
+    id: &str,
+    todo_id: &str,
+    create: impl FnOnce(String) -> Result<String, String>,
+) -> Result<Note, String> {
+    let note = notes.iter_mut().find(|n| n.id == id).ok_or("Nota não encontrada.")?;
+    let item = note.todos.iter_mut().find(|t| t.id == todo_id).ok_or("Item não encontrado.")?;
+    if item.task_id.is_none() {
+        item.task_id = Some(create(item.text.clone())?);
+    }
+    Ok(note.clone())
+}
+
+#[tauri::command]
+pub fn notes_virar_tarefa(app: AppHandle, taker: State<Arc<NoteTaker>>, id: String, todo: String) -> Result<Note, String> {
+    // Segura o lock das notas durante a criação: dois cliques seguidos não criam duas tarefas.
+    let note = {
+        let mut notes = taker.notes.lock().unwrap();
+        virar_tarefa(&mut notes, &id, &todo, |text| crate::tasks::create_plain(&app, text).map(|item| item.id))?
+    };
+    taker.save(&note);
+    let _ = app.emit_to(crate::HUB_LABEL, "notes-changed", &note.id);
+    Ok(note)
+}
+
 #[tauri::command]
 pub fn notes_delete(app: AppHandle, taker: State<Arc<NoteTaker>>, id: String) {
     if taker.recording.lock().unwrap().as_ref().is_some_and(|r| r.id == id) {
@@ -1722,5 +1764,73 @@ mod auto_stop_tests {
         assert_eq!(apply_auto_comments_dedup(&mut note, &hash, vec![first]), 0);
         assert_eq!(note.comments.len(), 1);
         assert!(markdown(&note).contains("## Comentários das personas"));
+    }
+}
+
+#[cfg(test)]
+mod virar_tarefa_tests {
+    use super::*;
+
+    fn note(id: &str, todos: serde_json::Value) -> Note {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "title": "Call · teste",
+            "start": 1000,
+            "status": "ready",
+            "todos": todos,
+        }))
+        .unwrap()
+    }
+
+    fn todo(id: &str, text: &str) -> serde_json::Value {
+        serde_json::json!({ "id": id, "text": text, "done": false })
+    }
+
+    #[test]
+    fn one_click_makes_one_task_and_a_second_click_does_not_duplicate() {
+        let mut notes = vec![note("n1", serde_json::json!([todo("a", "Enviar proposta"), todo("b", "Marcar reunião")]))];
+        let mut created: Vec<String> = Vec::new();
+        let mut create = |text: String| {
+            created.push(text);
+            Ok(format!("task-{}", created.len()))
+        };
+        let first = virar_tarefa(&mut notes, "n1", "a", &mut create).unwrap();
+        assert_eq!(first.todos[0].task_id.as_deref(), Some("task-1"));
+        assert_eq!(first.todos[1].task_id, None, "o outro item não vira tarefa");
+
+        // Segundo clique no mesmo item: nenhuma tarefa nova.
+        let second = virar_tarefa(&mut notes, "n1", "a", &mut create).unwrap();
+        assert_eq!(second.todos[0].task_id.as_deref(), Some("task-1"));
+        drop(create);
+        assert_eq!(created, vec!["Enviar proposta".to_string()]);
+    }
+
+    #[test]
+    fn failed_creation_leaves_the_item_unmarked_and_unknown_ids_are_errors() {
+        let mut notes = vec![note("n1", serde_json::json!([todo("a", "Pagar boleto")]))];
+        let failed = virar_tarefa(&mut notes, "n1", "a", |_| Err("Escreva o título da tarefa antes de salvar.".into()));
+        assert!(failed.is_err());
+        assert_eq!(notes[0].todos[0].task_id, None);
+        assert!(virar_tarefa(&mut notes, "n1", "zz", |_| Ok("x".into())).is_err());
+        assert!(virar_tarefa(&mut notes, "outra", "a", |_| Ok("x".into())).is_err());
+    }
+
+    #[test]
+    fn regenerated_summary_keeps_the_link_for_the_same_text_only() {
+        let old: Vec<Todo> = serde_json::from_value(serde_json::json!([
+            { "id": "a", "text": "Enviar Proposta", "done": false, "taskId": "task-1" },
+            { "id": "b", "text": "Marcar reunião", "done": false },
+        ]))
+        .unwrap();
+        let fresh: Vec<Todo> = serde_json::from_value(serde_json::json!([
+            { "id": "x", "text": "enviar proposta", "done": false },
+            { "id": "y", "text": "Marcar reunião", "done": false },
+            { "id": "z", "text": "Novo item", "done": false },
+        ]))
+        .unwrap();
+        let carried = carry_task_links(&old, fresh);
+        assert_eq!(carried[0].task_id.as_deref(), Some("task-1"), "mesmo texto, sem acento nem caixa");
+        assert_eq!(carried[1].task_id, None, "item que não tinha tarefa continua livre");
+        assert_eq!(carried[2].task_id, None);
     }
 }
