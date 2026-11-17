@@ -31,11 +31,11 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 
 ### M2.4 — Janelas (risco baixo)
 
-- [ ] Listar janelas; mover, redimensionar, minimizar e encaixar lado a lado.
-- [ ] Guardar as posições anteriores e oferecer "desfazer" da última organização.
-- [ ] Tratar monitores com escalas e origens diferentes; janela elevada (administrador) vira erro claro.
+- [x] Listar janelas; mover, redimensionar, minimizar e encaixar lado a lado.
+- [x] Guardar as posições anteriores e oferecer "desfazer" da última organização.
+- [x] Tratar monitores com escalas e origens diferentes; janela elevada (administrador) vira erro claro. *(Em minimizar o Windows não informa a recusa; vira "a janela não ficou como o pedido".)*
 - [ ] Com um só monitor, registrar HARDWARE INDISPONÍVEL para o teste de dois monitores.
-- Checkpoint M2.4: "organize as janelas para programar" arruma e "desfaz" restaura.
+- Checkpoint M2.4: "organize as janelas para programar" arruma e "desfaz" restaura. *(Sintético em 2026-11-17: ferramenta `janelas` em `mochi/tools/arrange.rs`; ids da listagem conferidos com o processo antes de agir; desfazer em memória; suíte Rust `912 passed; 0 failed`. **Real no chat: NOT_RUN**.)*
 
 ### M2.5 — Mídia (risco baixo)
 

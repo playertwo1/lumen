@@ -453,7 +453,7 @@ pub fn process_ancestors(pid: u32) -> Vec<u32> {
 
 /// Visible top-level windows that are nobody's dialog and have a title:
 /// (handle, process ID, title).
-fn top_windows() -> Vec<(isize, u32, String)> {
+pub(crate) fn top_windows() -> Vec<(isize, u32, String)> {
     unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
         let list = unsafe { &mut *(lparam.0 as *mut Vec<(isize, u32, String)>) };
         unsafe {

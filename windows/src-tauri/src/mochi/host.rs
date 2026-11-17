@@ -7,7 +7,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use super::registry::ToolContext;
-use super::tools::{apps, audio, brightness};
+use super::tools::{apps, arrange, audio, brightness};
 
 /// Contexto de um pedido: a pausa rápida e as capacidades que este computador tem agora.
 /// A sondagem fala com COM e WMI, então roda na thread de bloqueio, nunca no runtime assíncrono.
@@ -28,6 +28,9 @@ pub async fn context(paused: bool) -> ToolContext {
         }
         if cached(&MENU, apps::start_menu_present) {
             ctx = ctx.with_capability("start_menu");
+        }
+        if arrange::display_present() {
+            ctx = ctx.with_capability("display");
         }
         ctx
     })
