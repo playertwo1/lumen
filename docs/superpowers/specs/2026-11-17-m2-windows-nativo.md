@@ -325,6 +325,8 @@ Validação automatizada, por subetapa (ver o plano): `cargo test --lib` em `win
 
 ## 9. Pontos em aberto (decisão do dono antes do código)
 
+**Decidido em 2026-11-17:** o dono aceitou todas as recomendações abaixo e a lista de dez comandos da seção 6.7.
+
 1. **Apps da Microsoft Store.** Recomendação: não entram nesta fase. Exigiria enumerar `shell:AppsFolder`. Ficam só os atalhos do Menu Iniciar.
 2. **Aliases de nome** ("VS Code" para "Visual Studio Code"). Recomendação: lista curta fixa de até 10 pares em `tools/apps.rs`.
 3. **Pedido de escolha.** Recomendação: só no chat, sem cartão novo, para não criar tela nesta fase.
