@@ -2,6 +2,20 @@
 
 ## Checklist de release (executar apenas com pedido explícito)
 
+## Windows 0.7.10 — cristal no ícone de abertura e atualização do ícone no Windows Search
+
+- [x] Pedido explícito do proprietário em 2026-11-16 para corrigir o ícone/abertura e publicar uma release versionada (`playertwo1/lumen`).
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.10: 1 item em 1 idioma`), `npx tsc --noEmit`, `npm test` (`750/750`), `npm run build`, `cargo test --lib` (`825` passaram, `10` ignorados; manifesto Common-Controls v6 embutido no exe de teste) e `npm run pack`.
+- [x] Preflight Windows `43981119101` passou; upgrade MSI/NSIS de `0.7.9` para `0.7.10` preservou os dados sintéticos.
+- [x] Microsoft Defender examinou os quatro artefatos finais publicados em `windows-latest`: código 0 e `found no threats`. Os hashes dos instaladores finais diferiram do preflight e foram examinados após o download.
+- [x] SHA-256 dos artefatos finais:
+  - Setup `Lumen-Windows-0.7.10-setup.exe`: `26EA6A62C20CBB4F131C8710759D864F80EAD399CA7F9B7B213AE1B9ABE6CD5E`.
+  - MSI `Lumen-Windows-0.7.10.msi`: `CE7E2E83A6F21DDD60647618D27C8FFE4E1C32482DE79298684AB76E17421EE0`.
+  - App portátil `lumen.exe`: `1C85CBFC71E11AF91A7FAFDC7088CEF69E2C52265F138691DDC1D20A23AA24E0`.
+  - Hook `lumen-hook.exe`: `EDBE691B65120072DFF141D32DB727137510B85C56ADBF92AE6EF08AF9BBA373`.
+- [x] `main` integrada e enviada (`ed68389`); tag `windows-v0.7.10` publicada; workflow `43984761236` concluiu com sucesso e atualizou [Windows 0.7.10](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.10) e `windows-latest`.
+- [ ] Proprietário validar visualmente após instalar/atualizar no Windows, incluindo pesquisa do Menu Iniciar e abertura do Hub. Continua **NOT_RUN**.
+
 - [x] CHANGELOG contém seção desta versão e README tem linha na tabela de versões.
 - [x] `windows/src/whats-new/whats-new.json` tem 1 item em 14 línguas; `python scripts/test-whats-new.py windows` passa.
 - [x] A versão é idêntica em `windows/package.json`, `windows/package-lock.json`, `windows/Cargo.toml`, nas entradas `coucou` e `coucou-hook` de `windows/Cargo.lock` e em `windows/src-tauri/tauri.conf.json` (0.6.5).
