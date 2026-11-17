@@ -228,15 +228,46 @@ function mailCraftTriageCard(
   const list = h("div", { class: "mail-triage-results" });
   const status = h("div", { class: "mail-status-line is-empty", role: "status", "aria-live": "polite" });
 
-  const actionButton = (text: string, run: () => Promise<void>) => {
+  /** O MailCraft está aberto sem `--control`: oferece reiniciá-lo com o canal (um clique do usuário). */
+  const showError = (err: unknown) => {
+    const text = String(err).replace(/^Error:\s*/, "");
+    status.className = "mail-status-line err";
+    status.textContent = text;
+    if (!text.includes("--control")) return;
+    const fix = button("Reiniciar MailCraft com controle", () => {
+      fix.disabled = true;
+      fix.textContent = "Reiniciando…";
+      void MailBridge.restartMailCraft()
+        .then((msg) => {
+          status.className = "mail-status-line ok";
+          status.textContent = `${msg} Clique em Fazer triagem de novo.`;
+        })
+        .catch(showError);
+    }, "primary", true);
+    status.append(" ", fix);
+  };
+
+  /** `confirm`: o primeiro clique só pede confirmação, o segundo faz. `removeRow`: some com a mensagem da lista. */
+  const actionButton = (text: string, run: () => Promise<void>, opts: { confirm?: string; removeRow?: () => void } = {}) => {
+    let armed: number | undefined;
     const btn = button(text, () => {
+      if (opts.confirm && armed === undefined) {
+        btn.textContent = opts.confirm;
+        armed = window.setTimeout(() => {
+          armed = undefined;
+          btn.textContent = text;
+        }, 4000);
+        return;
+      }
+      window.clearTimeout(armed);
+      armed = undefined;
       btn.disabled = true;
       void run()
-        .then(() => btn.remove())
+        .then(() => (opts.removeRow ? opts.removeRow() : btn.remove()))
         .catch((err) => {
           btn.disabled = false;
-          status.className = "mail-status-line err";
-          status.textContent = String(err).replace(/^Error:\s*/, "");
+          btn.textContent = text;
+          showError(err);
         });
     }, "", true);
     return btn;
@@ -274,20 +305,24 @@ function mailCraftTriageCard(
         const actions = h("div", { class: "mail-section-actions" });
         if (!m.flagged) actions.append(actionButton("Importante", () => MailBridge.actChecked(m, "flag")));
         if (m.unread) actions.append(actionButton("Marcar lida", () => MailBridge.actChecked(m, "read")));
-        list.append(
+        const row = h("div", { class: "hub-list-row mail-journal" });
+        const gone = () => row.remove();
+        // Vão para Excluídos / Spam do MailCraft, de onde dá para recuperar; nunca apagam de vez.
+        if (cat === "promocao" || cat === "spam" || cat === "outros") {
+          actions.append(actionButton("Spam", () => MailBridge.actChecked(m, "junk"), { confirm: "Mover p/ Spam?", removeRow: gone }));
+        }
+        actions.append(actionButton("Apagar", () => MailBridge.actChecked(m, "delete"), { confirm: "Apagar? (vai p/ Excluídos)", removeRow: gone }));
+        row.append(
           h(
             "div",
-            { class: "hub-list-row mail-journal" },
-            h(
-              "div",
-              { class: "grow" },
-              h("div", {}, h("b", { text: m.senderName || m.address }), h("span", { class: "mail-dim", text: `  ${m.subject}` })),
-              h("div", { class: "mail-dim small", text: item.reason }),
-            ),
-            h("span", { class: `mail-rule-outcome ${item.recommend === "apagar" ? "warn" : tone}`, text: RECOMMEND_LABEL[item.recommend] }),
-            actions,
+            { class: "grow" },
+            h("div", {}, h("b", { text: m.senderName || m.address }), h("span", { class: "mail-dim", text: `  ${m.subject}` })),
+            h("div", { class: "mail-dim small", text: item.reason }),
           ),
+          h("span", { class: `mail-rule-outcome ${item.recommend === "apagar" ? "warn" : tone}`, text: RECOMMEND_LABEL[item.recommend] }),
+          actions,
         );
+        list.append(row);
       }
     }
   };
@@ -307,10 +342,7 @@ function mailCraftTriageCard(
         status.className = res.note ? "mail-status-line err" : "mail-status-line ok";
         status.textContent = res.note ?? `${res.items.length} mensagens classificadas.`;
       })
-      .catch((err) => {
-        status.className = "mail-status-line err";
-        status.textContent = String(err).replace(/^Error:\s*/, "");
-      })
+      .catch(showError)
       .finally(() => {
         running = false;
         runBtn.disabled = false;
@@ -330,7 +362,7 @@ function mailCraftTriageCard(
         h("h2", { class: "mail-section-title", text: "Triagem do MailCraft" }),
         h("div", {
           class: "mail-section-sub",
-          text: "O Lumen separa contas, renovações, importantes, promoções e spam, e recomenda o que apagar. Ele nunca apaga nem envia nada: você decide no MailCraft. Seus VIPs, palavras proibidas e regras valem primeiro.",
+          text: "O Lumen separa contas, renovações, importantes, promoções e spam, e recomenda o que apagar. Ele só apaga o que você mandar, um clique por mensagem (vai para Excluídos ou Spam, dá para recuperar), e nunca envia e-mails. Seus VIPs, palavras proibidas e regras valem primeiro.",
         }),
       ),
       h("div", { class: "mail-section-actions" }, runBtn),

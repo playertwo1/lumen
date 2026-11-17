@@ -198,6 +198,63 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
   await flush();
   assert.ok(called.some((c) => c.cmd === "mail_act" && c.args.kind === "flag" && c.args.message.entryId === "1"));
   assert.ok(!called.some((c) => /send|delete/.test(c.cmd)));
+
+  // Apagar pede confirmação: o primeiro clique não faz nada, o segundo move para Excluídos.
+  const apagar = () => page.find("button").filter((b) => /^Apagar/.test(b.textContent))[0];
+  const deleteCalls = () => called.filter((c) => c.cmd === "mail_act" && c.args.kind === "delete");
+  const before = page.find("button").filter((b) => /^Apagar/.test(b.textContent)).length;
+  apagar().fire("click");
+  await flush();
+  assert.equal(deleteCalls().length, 0);
+  assert.match(apagar().textContent, /Apagar\?/);
+  apagar().fire("click");
+  await flush();
+  assert.equal(deleteCalls().length, 1);
+  assert.equal(page.find("button").filter((b) => /^Apagar/.test(b.textContent)).length, before - 1);
+  assert.ok(!called.some((c) => c.args?.kind === "deletePermanently"));
+});
+
+test("Triagem: sem o canal de controle, o erro oferece reiniciar o MailCraft com controle", async (t) => {
+  t.after(() => {
+    internals.invoke = originalInvoke;
+  });
+  const called = [];
+  const readOnly = "MailCraft conectado só para leitura local (sem `--control 7991`): para salvar rascunhos ou alterar mensagens, inicie o MailCraft com `--control 7991`.";
+  internals.invoke = async (cmd, args) => {
+    called.push({ cmd, args });
+    if (cmd === "mail_triage") {
+      return {
+        settings: { autoSort: false, autoSortSince: null, banned: [], vip: [], rules: [] },
+        journal: [], sent: [], today: { sorted: 0, junk: 0, important: 0 },
+        windows: true, outlookOpen: false, backend: "mailcraft", classified: [],
+      };
+    }
+    if (cmd === "mail_config_get") return { backend: "mailcraft", mode: "control", host: "127.0.0.1", port: 7991, mcpCommand: "" };
+    if (cmd === "mail_classify") {
+      return {
+        note: null,
+        items: [{ message: { entryId: "9", storeId: "mailcraft", account: "", senderName: "Loja", address: "9@x.com", subject: "Oferta", date: 0, unread: true, flagged: false, local: "" }, category: "promocao", recommend: "apagar", reason: "Oferta" }],
+      };
+    }
+    if (cmd === "mail_act") throw new Error(readOnly);
+    if (cmd === "mail_restart_mailcraft") return "MailCraft aberto com o canal de controle na porta 7991.";
+    return undefined;
+  };
+
+  const page = root();
+  await mailOverviewPage(page, makeCtx());
+  page.find("button").find((b) => b.textContent === "Fazer triagem").fire("click");
+  await flush();
+  page.find("button").find((b) => b.textContent === "Importante").fire("click");
+  await flush();
+  assert.match(page.textContent, /só para leitura local/);
+  const fix = page.find("button").find((b) => b.textContent === "Reiniciar MailCraft com controle");
+  assert.ok(fix, "o botão de reiniciar aparece");
+  assert.ok(!called.some((c) => c.cmd === "mail_restart_mailcraft"), "só reinicia depois do clique");
+  fix.fire("click");
+  await flush();
+  assert.ok(called.some((c) => c.cmd === "mail_restart_mailcraft"));
+  assert.match(page.textContent, /canal de controle na porta 7991/);
 });
 
 test("mailRulesPage, mailBannedPage e mailVIPPage preservam âncoras e manipulam regras e chips com segurança", async (t) => {

@@ -37,6 +37,10 @@ const ALLOWED_COMMANDS: &[&str] = &[
     "mail.markUnread",
     "mail.flag",
     "mail.clearFlag",
+    // Só por clique do usuário em uma mensagem: vai para Excluídos/Spam, onde ainda dá para recuperar.
+    // `mail.deletePermanently` continua bloqueado.
+    "mail.delete",
+    "mail.junk",
     "mail.new",
     "mail.reply",
     "compose.set",
@@ -252,6 +256,30 @@ pub fn open_app_with_control(port: u16) -> Result<String, String> {
     }
     cmd.spawn().map_err(|e| format!("Não foi possível abrir o MailCraft: {e}"))?;
     Ok(format!("MailCraft aberto com o canal de controle na porta {port}."))
+}
+
+/// Fecha o MailCraft aberto sem o canal de controle e o abre de novo com `--control <port>`.
+/// O fechamento é o pedido normal da janela (sem `/F`): se houver rascunho aberto, o MailCraft
+/// pergunta se quer salvar, e nada é perdido à força.
+pub fn restart_app_with_control(port: u16) -> Result<String, String> {
+    if mailcraft_gui_running() {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let _ = std::process::Command::new("taskkill")
+                .args(["/IM", "mailcraft.exe"])
+                .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+                .output();
+        }
+        let started = std::time::Instant::now();
+        while mailcraft_gui_running() {
+            if started.elapsed() > Duration::from_secs(20) {
+                return Err("O MailCraft não fechou (talvez esteja perguntando se salva um rascunho). Responda a ele ou feche-o, e clique de novo.".to_string());
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    }
+    open_app_with_control(port)
 }
 
 pub fn key_path(settings: &Path, port: u16) -> PathBuf {
@@ -1065,6 +1093,18 @@ pub async fn apply_action(cfg: &BackendConfig, id: &str, action: &Action) -> Res
     res.map(|_| ())
 }
 
+/// Move uma mensagem para Excluídos (`junk == false`) ou para Spam, a pedido do clique do usuário.
+pub async fn discard(cfg: &BackendConfig, id: &str, junk: bool) -> Result<(), String> {
+    let numeric_id: u64 = id
+        .trim()
+        .parse()
+        .map_err(|_| format!("ID de mensagem MailCraft inválido: `{id}`"))?;
+    let mut tr = Transport::connect(cfg, None).await?;
+    let res = tr.execute(if junk { "mail.junk" } else { "mail.delete" }, json!({ "ids": [numeric_id] })).await;
+    tr.close().await;
+    res.map(|_| ())
+}
+
 pub async fn clear_flag(cfg: &BackendConfig, id: &str) -> Result<(), String> {
     let numeric_id: u64 = id
         .trim()
@@ -1400,6 +1440,9 @@ mod tests {
         assert!(ensure_allowed_command("send_message", &json!({})).is_err());
         assert!(ensure_allowed_command("ui.click", &json!({})).is_err());
         assert!(ensure_allowed_command("mail.deletePermanently", &json!({"id": 1})).is_err());
+        assert!(ensure_allowed_command("mail.delete", &json!({"ids": [1]})).is_ok());
+        assert!(ensure_allowed_command("mail.junk", &json!({"ids": [1]})).is_ok());
+        assert!(ensure_allowed_command("folder.delete", &json!({})).is_err());
     }
 
     #[test]

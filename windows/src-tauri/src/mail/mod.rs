@@ -446,6 +446,15 @@ pub async fn mail_act(app: AppHandle, message: Message, kind: String) -> Result<
                 mailcraft::clear_flag(&backend, &message.entry_id).await?;
                 rt().last.iter_mut().filter(|x| x.id() == message.id()).for_each(|x| x.flagged = false);
             }
+            // Um clique por mensagem; a mensagem vai para Excluídos ou Spam, não some de vez.
+            "delete" | "junk" => {
+                mailcraft::discard(&backend, &message.entry_id, kind == "junk").await?;
+                let mut r = rt();
+                if r.last.iter().any(|x| x.id() == message.id() && x.unread) {
+                    r.last_unread = (r.last_unread - 1).max(0);
+                }
+                r.last.retain(|x| x.id() != message.id());
+            }
             _ => {
                 return Err("Esta ação de triagem só se aplica ao Outlook clássico (secundário).".to_string());
             }
@@ -523,6 +532,15 @@ pub async fn mail_open_mailcraft(_app: AppHandle) -> Result<String, String> {
         rt().store.set_backend(next);
     }
     tokio::task::spawn_blocking(move || mailcraft::open_app_with_control(port))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Reinicia o MailCraft com o canal de controle (botão da triagem; o usuário clicou nele).
+#[tauri::command]
+pub async fn mail_restart_mailcraft() -> Result<String, String> {
+    let port = active_backend().port;
+    tokio::task::spawn_blocking(move || mailcraft::restart_app_with_control(port))
         .await
         .map_err(|e| e.to_string())?
 }

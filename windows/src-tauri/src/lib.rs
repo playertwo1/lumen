@@ -1171,6 +1171,7 @@ pub fn run() {
             mail::mail_config_set,
             mail::mail_test_connection,
             mail::mail_open_mailcraft,
+            mail::mail_restart_mailcraft,
             mail::mail_summarize_inbox,
             mail::mail_classify,
             mail::mail_prepare_draft,

@@ -204,7 +204,7 @@ export const MailBridge = {
   act: (message: MailMessage, kind: "read" | "flag" | "unflag" | "junk" | "ignore" | "vip") =>
     call<void>("mail_act", { message, kind }),
   /** Como `act`, mas o erro do Rust chega à tela. */
-  actChecked: async (message: MailMessage, kind: "read" | "flag"): Promise<void> => {
+  actChecked: async (message: MailMessage, kind: "read" | "flag" | "delete" | "junk"): Promise<void> => {
     if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
     await invoke<void>("mail_act", { message, kind });
   },
@@ -224,6 +224,11 @@ export const MailBridge = {
   openMailCraft: async (): Promise<string> => {
     if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
     return invoke<string>("mail_open_mailcraft");
+  },
+  /** Fecha o MailCraft (pedido normal, sem forçar) e o abre de novo com o canal de controle. */
+  restartMailCraft: async (): Promise<string> => {
+    if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
+    return invoke<string>("mail_restart_mailcraft");
   },
   prepareDraft: async (payload: { replyToId?: string | null; to: string; subject: string; body: string }): Promise<DraftResult> => {
     if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
