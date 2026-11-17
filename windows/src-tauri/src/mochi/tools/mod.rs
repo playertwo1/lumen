@@ -1,5 +1,6 @@
 //! Ferramentas nativas do Windows da M2. Cada uma é registrada e habilitada aqui.
 
+pub mod apps;
 pub mod audio;
 pub mod brightness;
 
@@ -12,4 +13,7 @@ pub fn register_m2(registry: &mut ToolRegistry) {
     registry
         .register_and_enable(brightness::tool())
         .expect("definição padrão de brilho deve ser válida");
+    registry
+        .register_and_enable(apps::tool())
+        .expect("definição padrão de apps deve ser válida");
 }

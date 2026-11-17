@@ -7,7 +7,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use super::registry::ToolContext;
-use super::tools::{audio, brightness};
+use super::tools::{apps, audio, brightness};
 
 /// Contexto de um pedido: a pausa rápida e as capacidades que este computador tem agora.
 /// A sondagem fala com COM e WMI, então roda na thread de bloqueio, nunca no runtime assíncrono.
@@ -19,11 +19,15 @@ pub async fn context(paused: bool) -> ToolContext {
         }
         static INTERNA: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
         static DDC: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+        static MENU: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
         if cached(&INTERNA, brightness::internal_present) {
             ctx = ctx.with_capability("internal_display");
         }
         if cached(&DDC, brightness::ddc_present) {
             ctx = ctx.with_capability("ddc_display");
+        }
+        if cached(&MENU, apps::start_menu_present) {
+            ctx = ctx.with_capability("start_menu");
         }
         ctx
     })

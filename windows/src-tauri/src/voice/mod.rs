@@ -476,8 +476,9 @@ fn open_app(name: &str) -> (String, bool) {
     }
 }
 
+/// The Start menu folders: the user's and the all-users one.
 #[cfg(windows)]
-fn find_app(wanted: &str) -> Option<(String, Box<dyn FnOnce()>)> {
+pub(crate) fn start_menu_roots() -> Vec<std::path::PathBuf> {
     let mut roots = Vec::new();
     if let Some(p) = std::env::var_os("APPDATA") {
         roots.push(std::path::PathBuf::from(p).join("Microsoft\\Windows\\Start Menu\\Programs"));
@@ -485,8 +486,14 @@ fn find_app(wanted: &str) -> Option<(String, Box<dyn FnOnce()>)> {
     if let Some(p) = std::env::var_os("ProgramData") {
         roots.push(std::path::PathBuf::from(p).join("Microsoft\\Windows\\Start Menu\\Programs"));
     }
-    let mut best: Option<(usize, std::path::PathBuf)> = None;
-    let mut stack = roots;
+    roots
+}
+
+/// Every `.lnk` under the Start menu folders, in the order the scan finds them.
+#[cfg(windows)]
+pub(crate) fn start_menu_shortcuts() -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    let mut stack = start_menu_roots();
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for e in entries.flatten() {
@@ -494,12 +501,21 @@ fn find_app(wanted: &str) -> Option<(String, Box<dyn FnOnce()>)> {
             if path.is_dir() {
                 stack.push(path);
             } else if path.extension().is_some_and(|x| x.eq_ignore_ascii_case("lnk")) {
-                let stem = wake::normalize(&path.file_stem().unwrap_or_default().to_string_lossy());
-                let score = if stem == wanted { 0 } else if stem.starts_with(wanted) { 1 } else if stem.contains(wanted) { 2 } else { continue };
-                if best.as_ref().is_none_or(|(s, p)| score < *s || (score == *s && path.as_os_str().len() < p.as_os_str().len())) {
-                    best = Some((score, path));
-                }
+                found.push(path);
             }
+        }
+    }
+    found
+}
+
+#[cfg(windows)]
+fn find_app(wanted: &str) -> Option<(String, Box<dyn FnOnce()>)> {
+    let mut best: Option<(usize, std::path::PathBuf)> = None;
+    for path in start_menu_shortcuts() {
+        let stem = wake::normalize(&path.file_stem().unwrap_or_default().to_string_lossy());
+        let score = if stem == wanted { 0 } else if stem.starts_with(wanted) { 1 } else if stem.contains(wanted) { 2 } else { continue };
+        if best.as_ref().is_none_or(|(s, p)| score < *s || (score == *s && path.as_os_str().len() < p.as_os_str().len())) {
+            best = Some((score, path));
         }
     }
     let (_, path) = best?;

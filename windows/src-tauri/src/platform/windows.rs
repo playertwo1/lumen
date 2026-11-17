@@ -685,7 +685,7 @@ fn valid_dir(path: Option<&str>) -> Option<&std::path::Path> {
     (p.is_absolute() && p.is_dir()).then_some(p)
 }
 
-fn shell_open_uri(uri: PCWSTR) -> bool {
+pub(crate) fn shell_open_uri(uri: PCWSTR) -> bool {
     unsafe {
         let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {

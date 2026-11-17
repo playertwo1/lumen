@@ -24,10 +24,10 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 
 ### M2.3 — Listar e abrir aplicativos (risco baixo)
 
-- [ ] Listar aplicativos instalados.
-- [ ] Abrir somente um aplicativo escolhido dessa lista; nunca um caminho ou comando vindo do pedido.
-- [ ] Testar: nome ambíguo pede escolha; aplicativo ausente vira erro; nome com `;` ou `&` não executa nada.
-- Checkpoint M2.3: "abre o VS Code" abre o aplicativo certo.
+- [x] Listar aplicativos instalados.
+- [x] Abrir somente um aplicativo escolhido dessa lista; nunca um caminho ou comando vindo do pedido.
+- [x] Testar: nome ambíguo pede escolha; aplicativo ausente vira erro; nome com `;` ou `&` não executa nada.
+- Checkpoint M2.3: "abre o VS Code" abre o aplicativo certo. *(Sintético em 2026-11-17: ferramenta `apps` em `mochi/tools/apps.rs`, varredura do Menu Iniciar compartilhada com a voz (`voice::start_menu_shortcuts`); desinstaladores nunca são listados nem abertos; atalho sem `.exe` conferível (Store) abre mas relata "não dá para confirmar"; suíte Rust `895 passed; 0 failed`. **Real no chat: NOT_RUN**.)*
 
 ### M2.4 — Janelas (risco baixo)
 
