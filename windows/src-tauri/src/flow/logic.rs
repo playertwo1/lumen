@@ -34,22 +34,31 @@ pub enum Action {
     Cancel,
     /// The last listen was dropped (too short) and a new one begins.
     Restart,
+    /// A press after a lost release: the listen so far is pasted, and a new one begins.
+    Renew,
 }
 
 /// A press shorter than this is a tap.
 pub const HOLD_THRESHOLD: f64 = 0.30;
 /// The second tap of a double tap comes within this.
 pub const DOUBLE_TAP_WINDOW: f64 = 0.40;
+/// Autorepeat sends a Down at least every 0.4 s (Windows' slowest rate) and its
+/// first one within 1 s. A longer gap means the release was lost.
+pub const STUCK_GAP: f64 = 1.5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KeyLogic {
     phase: Phase,
     pub one_tap: bool,
+    /// The key is down, as far as its events say.
+    held: bool,
+    /// When its last Down came.
+    last_down: f64,
 }
 
 impl Default for KeyLogic {
     fn default() -> Self {
-        Self { phase: Phase::Idle, one_tap: false }
+        Self { phase: Phase::Idle, one_tap: false, held: false, last_down: 0.0 }
     }
 }
 
@@ -64,12 +73,20 @@ impl KeyLogic {
     }
 
     pub fn key_down(&mut self, t: f64) -> Action {
+        // Down again while held: autorepeat, unless the gap says the release was lost.
+        let repeat = self.held && t - self.last_down <= STUCK_GAP;
+        self.held = true;
+        self.last_down = t;
         match self.phase {
             Phase::Idle => {
                 self.phase = Phase::Holding { since: t };
                 Action::Start
             }
-            Phase::Holding { .. } => Action::None, // key repeat
+            Phase::Holding { .. } if repeat => Action::None, // key repeat
+            Phase::Holding { .. } => {
+                self.phase = Phase::Holding { since: t };
+                Action::Renew
+            }
             Phase::TapWait { until } => {
                 if t <= until {
                     self.phase = Phase::Locked;
@@ -88,6 +105,7 @@ impl KeyLogic {
     }
 
     pub fn key_up(&mut self, t: f64) -> Action {
+        self.held = false;
         let Phase::Holding { since } = self.phase else { return Action::None };
         if t - since >= HOLD_THRESHOLD {
             self.phase = Phase::Idle;
@@ -420,6 +438,39 @@ mod tests {
         assert_eq!(k.other_key(), Action::None); // typing while hands-free is fine
         assert_eq!(k.escape(), Action::Cancel);
         assert_eq!(k.escape(), Action::None);
+    }
+
+    #[test]
+    fn a_lost_release_does_not_hold_the_next_press() {
+        let mut k = KeyLogic::default();
+        assert_eq!(k.key_down(0.0), Action::Start);
+        // The Up never came. The next press, seconds later, pastes the listen so far and starts again.
+        assert_eq!(k.key_down(4.0), Action::Renew);
+        assert_eq!(k.key_up(4.5), Action::Finish);
+        assert!(!k.is_active());
+    }
+
+    #[test]
+    fn autorepeat_while_held_is_not_a_new_press() {
+        let mut k = KeyLogic::default();
+        assert_eq!(k.key_down(0.0), Action::Start);
+        // The first repeat after 0.5 s, then one every 0.4 s, the slowest rate.
+        for i in 0..30 {
+            assert_eq!(k.key_down(0.5 + i as f64 * 0.4), Action::None);
+        }
+        assert_eq!(k.key_up(13.0), Action::Finish);
+        assert!(!k.is_active());
+    }
+
+    #[test]
+    fn alt_tab_cancels_and_the_release_after_it_does_nothing() {
+        let mut k = KeyLogic::default();
+        assert_eq!(k.key_down(0.0), Action::Start); // Alt
+        assert_eq!(k.other_key(), Action::Cancel); // Tab
+        assert_eq!(k.key_up(0.2), Action::None); // Alt let go
+        assert!(!k.is_active());
+        // A new press after that starts a new dictation, not a Renew.
+        assert_eq!(k.key_down(1.0), Action::Start);
     }
 
     #[test]

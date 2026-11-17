@@ -25,7 +25,7 @@ pub mod os;
 #[cfg(target_os = "linux")]
 pub mod wayland;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -213,7 +213,8 @@ fn run(app: AppHandle, flow: Arc<Flow>, rx: mpsc::Receiver<(KeyEvent, Instant)>)
     let secs = |at: Instant| at.saturating_duration_since(epoch).as_secs_f64();
     let mut logic = KeyLogic::default();
     let mut listening: Option<Listening> = None;
-    let busy = Arc::new(AtomicBool::new(false));
+    // Dictations being written out (thinking) in worker threads.
+    let pending = Arc::new(AtomicUsize::new(0));
     loop {
         let active = listening.is_some() || logic.is_active();
         let received = if active {
@@ -272,6 +273,12 @@ fn run(app: AppHandle, flow: Arc<Flow>, rx: mpsc::Receiver<(KeyEvent, Instant)>)
             }
             None => logic.tick(secs(Instant::now())),
         };
+        // Keys' presses and what they decided, never the autorepeat or the other keys.
+        if let Some((ev, _)) = received {
+            if ev == KeyEvent::Up || action != Action::None {
+                crate::log::line(format!("flow: {ev:?} -> {action:?}"));
+            }
+        }
         match action {
             Action::None => {}
             Action::Start => {
@@ -287,6 +294,15 @@ fn run(app: AppHandle, flow: Arc<Flow>, rx: mpsc::Receiver<(KeyEvent, Instant)>)
                     logic.reset();
                 }
             }
+            Action::Renew => {
+                if let Some(l) = listening.take() {
+                    finish(&app, &flow, l, pending.clone());
+                }
+                listening = begin(&app, &flow);
+                if listening.is_none() {
+                    logic.reset();
+                }
+            }
             Action::Lock => pill::update(&app, |s| s.phase = "locked".into()),
             Action::Cancel => {
                 drop(listening.take());
@@ -294,7 +310,7 @@ fn run(app: AppHandle, flow: Arc<Flow>, rx: mpsc::Receiver<(KeyEvent, Instant)>)
             }
             Action::Finish => {
                 if let Some(l) = listening.take() {
-                    finish(&app, &flow, l, busy.clone());
+                    finish(&app, &flow, l, pending.clone());
                 } else {
                     pill::update(&app, |s| s.phase = "idle".into());
                 }
@@ -316,6 +332,7 @@ fn run(app: AppHandle, flow: Arc<Flow>, rx: mpsc::Receiver<(KeyEvent, Instant)>)
 /// Opens the microphone. None (and the pill says why) when it can't.
 fn begin(app: &AppHandle, flow: &Arc<Flow>) -> Option<Listening> {
     if !speech::dictation_ready() {
+        crate::log::line("flow: no voice model to listen with");
         pill::announce(
             app,
             "download",
@@ -341,6 +358,7 @@ fn begin(app: &AppHandle, flow: &Arc<Flow>) -> Option<Listening> {
     });
     match capture {
         Ok(capture) => {
+            crate::log::line("flow: microphone open");
             let app_front = os::foreground_app().filter(|(id, _)| !is_shell(id));
             pill::update(app, |s| s.phase = "listening".into());
             let quiet = flow.store.lock().unwrap().prefs.mute_others;
@@ -365,39 +383,64 @@ fn begin(app: &AppHandle, flow: &Arc<Flow>) -> Option<Listening> {
 
 /// Stops listening and turns what was said into pasted text, on a worker
 /// thread so the key works again at once.
-fn finish(app: &AppHandle, flow: &Arc<Flow>, mut l: Listening, busy: Arc<AtomicBool>) {
+fn finish(app: &AppHandle, flow: &Arc<Flow>, mut l: Listening, pending: Arc<AtomicUsize>) {
     l.capture.stop();
     let seconds = l.started.elapsed().as_secs_f64();
     let (samples, peak) = {
         let mut t = l.take.lock().unwrap();
         (std::mem::take(&mut t.samples), t.peak)
     };
-    // Too short or silent: nothing to send to the model.
+    crate::log::line(format!("flow: heard {seconds:.2} s, peak {peak:.3}"));
+    // Too short or silent: nothing to send to the model, and the pill says why.
     if samples.len() < 16_000 / 4 || peak < 0.004 {
-        pill::update(app, |s| s.phase = "idle".into());
+        let why = if peak < 0.004 {
+            "Não ouvi nada. Confira o microfone escolhido em Configurações."
+        } else {
+            "Segure a tecla um pouco mais enquanto fala."
+        };
+        pill::announce(app, "mic", "#F7B32B", why.into(), None, 6);
+        pill::update(app, |s| {
+            if s.phase != "thinking" {
+                s.phase = "idle".into();
+            }
+        });
         return;
     }
     pill::update(app, |s| s.phase = "thinking".into());
     let app = app.clone();
     let flow = flow.clone();
     let front = l.app.clone();
+    pending.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
-        busy.store(true, Ordering::Relaxed);
         let result = process(&app, &flow, &samples, front.as_ref(), seconds);
-        busy.store(false, Ordering::Relaxed);
         if let Err(err) = result {
             crate::log::line(format!("flow: {err}"));
-            pill::update(&app, |s| s.phase = "idle".into());
         }
+        settle(&app, &pending);
     });
+}
+
+/// Back to rest once the last dictation is written out. A pill that shows
+/// something else by now (a new listen, a message) is left as it is.
+fn settle(app: &AppHandle, pending: &AtomicUsize) {
+    if pending.fetch_sub(1, Ordering::SeqCst) == 1 {
+        pill::update(app, |s| {
+            if s.phase == "thinking" {
+                s.phase = "idle".into();
+            }
+        });
+    }
 }
 
 fn process(app: &AppHandle, flow: &Arc<Flow>, samples: &[f32], front: Option<&(String, String)>, seconds: f64) -> Result<(), String> {
     let started = Instant::now();
-    let transcript = speech::transcribe_dictation(samples).ok_or("the voice model is not loaded")?;
+    let Some(transcript) = speech::transcribe_dictation(samples) else {
+        pill::announce(app, "download", "#3B9EFF", "Coucou não conseguiu usar o modelo de voz. Veja Configurações → Reconhecimento.".into(), None, 8);
+        return Err("the voice model is not loaded".into());
+    };
     let raw = transcript.text.trim().to_string();
     if raw.is_empty() {
-        pill::update(app, |s| s.phase = "idle".into());
+        pill::announce(app, "mic", "#F7B32B", "Não entendi nada. Fale mais perto do microfone.".into(), None, 6);
         return Ok(());
     }
     let (prepared, style, cleanup, words, key) = {
@@ -419,13 +462,14 @@ fn process(app: &AppHandle, flow: &Arc<Flow>, samples: &[f32], front: Option<&(S
     os::wait_key_released(&key);
     let terminal = front.is_some_and(|(id, _)| is_terminal(id));
     let outcome = paste::paste(&final_text, terminal);
+    crate::log::line(format!("flow: paste {outcome:?}"));
     let entry = {
         let mut store = flow.store.lock().unwrap();
         store.record(&final_text, front.map(|(_, n)| n.as_str()), seconds, store::today(), store::now_ms())
     };
     let _ = app.emit_to(crate::HUB_LABEL, "flow-history", entry);
     match outcome {
-        paste::Outcome::Pasted => pill::update(app, |s| s.phase = "idle".into()),
+        paste::Outcome::Pasted => {}
         paste::Outcome::Copied => {
             pill::update(app, |s| s.phase = "copied".into());
             pill::rest_after(app, "copied", 1800);
@@ -438,10 +482,7 @@ fn process(app: &AppHandle, flow: &Arc<Flow>, samples: &[f32], front: Option<&(S
                 8,
             );
         }
-        paste::Outcome::Failed => {
-            pill::update(app, |s| s.phase = "idle".into());
-            return Err("the clipboard refused the text".into());
-        }
+        paste::Outcome::Failed => return Err("the clipboard refused the text".into()),
     }
     Ok(())
 }
