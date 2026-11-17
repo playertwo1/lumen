@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.11 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Cristal na abertura da ilha** — a saudação de inicialização agora mostra a animação do cristal uma vez e termina na imagem estática; com movimento reduzido, começa direto na imagem final.
+
 ## Windows 0.7.10 — 16 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Abertura com o cristal** — a animação de formação do cristal violeta aparece ao abrir a janela do Lumen; com movimento reduzido, aparece a imagem final estática.
