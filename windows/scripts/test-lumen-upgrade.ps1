@@ -5,6 +5,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+# The version being released, from package.json, so the check never goes stale.
+$newVersion = (Get-Content -Raw (Join-Path $PSScriptRoot "..\package.json") | ConvertFrom-Json).version
 
 $oldMsiUrl = "https://github.com/playertwo1/lumen/releases/download/windows-v0.7.10/Lumen-Windows-0.7.10.msi"
 $oldSetupUrl = "https://github.com/playertwo1/lumen/releases/download/windows-v0.7.10/Lumen-Windows-0.7.10-setup.exe"
@@ -85,11 +87,11 @@ try {
   Seed-LegacyData "msi"
   Invoke-Msi ([IO.Path]::GetFullPath($MsiPath))
   $msiApp = Installed-App "Lumen"
-  if (-not $msiApp) { throw "The 0.7.11 MSI did not register Lumen." }
-  if ($msiApp.DisplayVersion -ne "0.7.11") { throw "MSI upgrade left version $($msiApp.DisplayVersion) installed." }
+  if (-not $msiApp) { throw "The $newVersion MSI did not register Lumen." }
+  if ($msiApp.DisplayVersion -ne $newVersion) { throw "MSI upgrade left version $($msiApp.DisplayVersion) installed." }
   Assert-LegacyData "msi"
   Assert-Equal (Get-ItemProperty -LiteralPath $identityPath).DisplayName "Lumen" "notification display name after MSI upgrade"
-  Write-Output "PASS: MSI upgrade updates 0.7.10 to 0.7.11 and preserves synthetic user data."
+  Write-Output "PASS: MSI upgrade updates 0.7.10 to $newVersion and preserves synthetic user data."
 
   $lumenNsiDir = Join-Path $testRoot "lumen-nsis"
   Invoke-Nsis $oldSetup $lumenNsiDir
@@ -99,10 +101,10 @@ try {
   Seed-LegacyData "nsis"
   Invoke-Nsis ([IO.Path]::GetFullPath($SetupPath)) $lumenNsiDir
   if (-not (Test-Path -LiteralPath $lumenNsiExe)) { throw "The Lumen NSIS upgrade removed lumen.exe." }
-  if ((Get-Item -LiteralPath $lumenNsiExe).VersionInfo.ProductVersion -ne "0.7.11") { throw "The NSIS upgrade did not install version 0.7.11." }
+  if ((Get-Item -LiteralPath $lumenNsiExe).VersionInfo.ProductVersion -ne $newVersion) { throw "The NSIS upgrade did not install version $newVersion." }
   Assert-LegacyData "nsis"
   Assert-Equal (Get-ItemProperty -LiteralPath $identityPath).DisplayName "Lumen" "notification display name after NSIS install"
-  Write-Output "PASS: NSIS upgrade updates 0.7.10 to 0.7.11 and preserves synthetic user data."
+  Write-Output "PASS: NSIS upgrade updates 0.7.10 to $newVersion and preserves synthetic user data."
 }
 finally {
   if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force }
