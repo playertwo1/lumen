@@ -2,6 +2,19 @@
 
 ## Checklist de release (executar apenas com pedido explícito)
 
+## Windows 0.7.12 — L8 (ajustes do uso real) e Apagar/Spam da triagem
+
+- [x] Pedido explícito do proprietário em 2026-11-17 ("Merge, push e release") depois da L8 implementada.
+- [x] Conteúdo: L8.1 ditado segurando a tecla, L8.2 mãos livres, L8.3 Anotador → Tarefas, L8.4 motor da limpeza em Estilos, L8.5 Orca em Agentes e Abas ativas, L8.6 WhatsApp pela ponte do Orbit (só leitura) e Apagar/Spam na triagem do MailCraft (`6ca3609`).
+- [x] Validações locais: `python scripts/test-whats-new.py windows`, `npx tsc --noEmit`, `npm test` (`755/755`), `npm run build`, `cargo test --lib` (`854` passaram, `10` ignorados; manifesto Common-Controls v6 embutido no exe de teste).
+- [x] `scripts/test-lumen-upgrade.ps1` passou a ler a versão nova do `package.json` (o primeiro run `44036881245` falhou porque esperava `0.7.11`).
+- [x] Workflow `44039200118` (tag `windows-v0.7.12`, commit `45147c9`) passou, com upgrade MSI/NSIS de `0.7.10` preservando dados sintéticos, e publicou [Windows 0.7.12](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.12) e `windows-latest`.
+- [x] Microsoft Defender examinou os instaladores baixados da release: código 0 e `found no threats`. SHA-256 iguais aos digests do GitHub:
+  - Setup `Lumen-Windows-0.7.12-setup.exe`: `F1FE648E0DA53B928DD35C85FE1193FE768FEE541A05F0B55B8F16763ABA911E`.
+  - MSI `Lumen-Windows-0.7.12.msi`: `8EE6B10445EB0189D80074DC9285B126E452A61EF8CFB294712863FF595DBCAE`.
+- [ ] `lumen.exe` e `lumen-hook.exe` de `windows-latest` continuam os da 0.7.9 (o workflow não os atualiza).
+- [ ] Checkpoints reais L8.1–L8.6 e da triagem: **NOT_RUN**.
+
 ## Windows 0.7.11 — animação do cristal na saudação inicial
 
 - [x] Pedido explícito do proprietário em 2026-11-16 para corrigir o ícone ainda antigo ao iniciar e publicar uma release versionada (`playertwo1/lumen`).
