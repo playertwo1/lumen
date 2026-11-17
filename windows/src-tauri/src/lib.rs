@@ -35,6 +35,7 @@ mod mochi;
 mod net;
 mod notes;
 mod openai_compat;
+mod orca;
 mod phone_link;
 mod pipe;
 mod platform;
@@ -1231,6 +1232,8 @@ pub fn run() {
             approval_decline,
             agy_approvals::agy_approvals_status,
             agy_approvals::agy_approvals_set_enabled,
+            orca::orca_state,
+            orca::orca_focus_terminal,
             log_line,
             chat_send,
             chat_models,
