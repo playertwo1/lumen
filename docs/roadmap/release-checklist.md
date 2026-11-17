@@ -2,6 +2,21 @@
 
 ## Checklist de release (executar apenas com pedido explícito)
 
+## Windows 0.7.11 — animação do cristal na saudação inicial
+
+- [x] Pedido explícito do proprietário em 2026-11-16 para corrigir o ícone ainda antigo ao iniciar e publicar uma release versionada (`playertwo1/lumen`).
+- [x] Saudação inicial da ilha no Lumen agora mostra `/lumen-crystal.gif` uma vez e termina no PNG; `prefers-reduced-motion` usa o PNG estático.
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.11: 1 item em 1 idioma`), `npx tsc --noEmit`, `npm test` (`750/750`), `npm run build`, `cargo test --lib` (`825` passaram, `10` ignorados; manifesto Common-Controls v6 embutido no exe de teste) e `npm run pack`.
+- [x] Preflight Windows `44004540059` passou; upgrade sintético MSI/NSIS preservou os dados de usuário.
+- [x] Microsoft Defender examinou os artefatos de preflight e os quatro arquivos de `windows-latest`; em todos, código 0 e `found no threats`.
+- [x] SHA-256 dos assets finais (iguais aos digests do GitHub):
+  - Setup `Lumen-Windows-0.7.11-setup.exe`: `8CB608BA8EB94F02EE66DE68AF0E4596490282A0FA7BCBB2D1C3AB4E84F0CC56`.
+  - MSI `Lumen-Windows-0.7.11.msi`: `7226F72D870B83B65E909A74B4323F887CC151190C8DDB44C0E81EFA470CBEE1`.
+  - App portátil no `windows-latest` (`lumen.exe`): `1C85CBFC71E11AF91A7FAFDC7088CEF69E2C52265F138691DDC1D20A23AA24E0`.
+  - Hook no `windows-latest` (`lumen-hook.exe`): `EDBE691B65120072DFF141D32DB727137510B85C56ADBF92AE6EF08AF9BBA373`.
+- [x] Merge enviado para `origin/main` em `1dd26de` (inclui `d083612`); tag `windows-v0.7.11`; workflow `44007478316` concluiu com sucesso, publicou [Windows 0.7.11](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.11) e atualizou `windows-latest`.
+- [ ] Proprietário validar visualmente a saudação na instalação atualizada do Windows; continua **NOT_RUN**.
+
 ## Windows 0.7.10 — cristal no ícone de abertura e atualização do ícone no Windows Search
 
 - [x] Pedido explícito do proprietário em 2026-11-16 para corrigir o ícone/abertura e publicar uma release versionada (`playertwo1/lumen`).
