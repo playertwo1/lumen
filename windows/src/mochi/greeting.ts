@@ -6,6 +6,7 @@
 import { closeCurve } from "../core/anim";
 import { Sound } from "../core/sound";
 import { COMPACT_W, NOTCH_H, NOTCH_W } from "../core/layout";
+import { LUMEN_WINDOWS } from "../i18n/i18n";
 
 // ── Timing (GT in the Swift file) ─────────────────────────────────────────────
 
@@ -593,6 +594,8 @@ export class Greeting {
   private tc = Number.POSITIVE_INFINITY;
   private fired = false;
   private timers: number[] = [];
+  private lumenIntro: HTMLImageElement | null = null;
+  private lumenIntroTimer: number | null = null;
 
   onComplete: (() => void) | null = null;
 
@@ -601,6 +604,22 @@ export class Greeting {
     this.tc = Number.POSITIVE_INFINITY;
     this.fired = false;
     this.cancelTimers();
+    if (this.lumenIntroTimer !== null) window.clearTimeout(this.lumenIntroTimer);
+    this.lumenIntroTimer = null;
+    if (LUMEN_WINDOWS) {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      this.lumenIntro ??= new Image();
+      if (!reduceMotion) {
+        this.lumenIntro.onload = () => {
+          if (this.fired || Number.isFinite(this.tc) || !this.lumenIntro?.src.endsWith("lumen-crystal.gif")) return;
+          this.lumenIntroTimer = window.setTimeout(() => {
+            if (this.lumenIntro) this.lumenIntro.src = "/lumen-crystal.png";
+            this.lumenIntroTimer = null;
+          }, 850);
+        };
+      } else this.lumenIntro.onload = null;
+      this.lumenIntro.src = reduceMotion ? "/lumen-crystal.png" : "/lumen-crystal.gif";
+    }
     // The score plays from the start; it outlives greetComplete a little on
     // purpose and fades when the greeting view goes away (see leave()).
     Sound.play(GREETING_SOUND);
@@ -617,12 +636,16 @@ export class Greeting {
     const t = (performance.now() - this.startMs) / 1000;
     if (!Number.isFinite(this.tc) || this.tc > t) this.tc = t;
     this.cancelTimers();
+    if (this.lumenIntroTimer !== null) window.clearTimeout(this.lumenIntroTimer);
+    this.lumenIntroTimer = null;
     Sound.fadeOut(GREETING_SOUND, 0.25);
   }
 
   /** The greeting view is gone: let what is left of its sound fade away. */
   leave() {
     this.cancelTimers();
+    if (this.lumenIntroTimer !== null) window.clearTimeout(this.lumenIntroTimer);
+    this.lumenIntroTimer = null;
     Sound.fadeOut(GREETING_SOUND, 0.2);
   }
 
@@ -652,6 +675,14 @@ export class Greeting {
 
     const p = greetingPose(t, this.tc);
     x.clearRect(0, 0, GREETING_W, GREETING_H);
+
+    if (LUMEN_WINDOWS) {
+      if (this.lumenIntro?.complete && this.lumenIntro.naturalWidth > 0) {
+        const size = GREETING_H;
+        x.drawImage(this.lumenIntro, (GREETING_W - size) / 2, 0, size, size);
+      }
+      return;
+    }
 
     if (p.card > 0) {
       x.save();
