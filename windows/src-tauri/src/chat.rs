@@ -403,6 +403,12 @@ pub fn summary_backends(settings: &Settings) -> SummaryBackends {
     }
 }
 
+/// Whether `engine` has a way to answer now (a key, a login or a CLI). Probes the
+/// files and the programs only; no network call.
+pub fn summary_ready(settings: &Settings, engine: SummaryEngine) -> bool {
+    !summary_steps(engine, SummaryEnv::probe(settings)).is_empty()
+}
+
 fn missing_summary_backend_error(engine: SummaryEngine) -> String {
     match engine {
         SummaryEngine::Claude => {

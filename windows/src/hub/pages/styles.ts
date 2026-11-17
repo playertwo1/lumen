@@ -4,13 +4,36 @@
 
 import { h, clear } from "../../views/dom";
 import { t } from "../../i18n/i18n";
-import { FlowBridge, type AppStyle, type Style } from "../../core/flow";
+import { FlowBridge, type AppStyle, type Style, type SummaryEngine } from "../../core/flow";
 import type { HubContext } from "../shell";
 import { pageSave } from "../save";
 import { card, divider, iconButton, label, row, select, toggle } from "../ui";
+import { summaryAvailability } from "./flowsettings";
 
 export function styleOptions(): [Style, string][] {
   return [["verbatim", t("As said")], ["natural", t("Natural")], ["polished", t("Polished")]];
+}
+
+/** Who cleans the words: the Notetaker's engines, without "off" (the toggle turns the clean-up off). */
+export const cleanupOptions: [SummaryEngine, string][] = [
+  ["claude", "Claude (chave ou CLI)"],
+  ["chatgpt", "ChatGPT / Codex (OAuth ou CLI)"],
+  ["gemini", "Antigravity / Gemini (CLI · OAuth Google)"],
+  ["chat", "Mesmo provedor do Chat"],
+];
+
+/** Where the words go with each engine. Never the voice. */
+export function cleanupDestination(engine: SummaryEngine): string {
+  switch (engine) {
+    case "chatgpt":
+      return "Com ChatGPT / Codex, o texto (nunca sua voz) vai para o ChatGPT pela sua conta conectada por OAuth, com fallback para a CLI do Codex. Desligada, tudo fica neste computador.";
+    case "gemini":
+      return "Com Antigravity / Gemini, o texto (nunca sua voz) vai para a CLI oficial (agy ou gemini) com seu login Google, ou para sua chave Google AI se houver. Desligada, tudo fica neste computador.";
+    case "chat":
+      return "Com o mesmo provedor do Chat, o texto (nunca sua voz) vai para o provedor e o modelo ativos em Ajustes → Chat, que podem ser um servidor local. Desligada, tudo fica neste computador.";
+    default:
+      return t("With the clean-up on, the text (never your voice) goes to Anthropic with your Claude key. Off, everything stays on this computer.");
+  }
 }
 
 export async function stylesPage(page: HTMLElement, ctx: HubContext) {
@@ -43,8 +66,22 @@ export async function stylesPage(page: HTMLElement, ctx: HubContext) {
     });
   };
 
-  const keyNote = h("div", { class: "hub-warn", text: t("The clean-up uses your Claude key. Add it in Notch → Chat.") });
-  keyNote.style.display = status.hasClaudeKey ? "none" : "";
+  const engine: SummaryEngine = cleanupOptions.some(([id]) => id === status.prefs.cleanupEngine) ? status.prefs.cleanupEngine : "claude";
+  const keyNote = h("div", { class: "hub-warn" });
+  const cleanupNote = h("div", { class: "hub-note" });
+  // What is missing for the chosen engine, and where the text goes.
+  const drawEngine = (next: SummaryEngine) => {
+    if (next === "claude") {
+      keyNote.textContent = t("The clean-up uses your Claude key. Add it in Notch → Chat.");
+      keyNote.style.display = status.hasClaudeKey ? "none" : "";
+    } else {
+      const info = summaryAvailability(next, status.summaryBackends);
+      keyNote.textContent = info.text;
+      keyNote.style.display = info.ready || !info.text ? "none" : "";
+    }
+    cleanupNote.textContent = cleanupDestination(next);
+  };
+  drawEngine(engine);
   const defaultRow = row(t("Other apps"), null, select(styleOptions(), status.prefs.defaultStyle, (style) => void ctx.setPrefs((p) => (p.defaultStyle = style))));
   const stylesCard = card(
     row(t("Clean up with Claude"), t("Removes the “um”, the repeats and the corrections you made while speaking, and fixes the punctuation."),
@@ -52,10 +89,14 @@ export async function stylesPage(page: HTMLElement, ctx: HubContext) {
         void ctx.setPrefs((p) => (p.cleanup = on));
         perApp.classList.toggle("dimmed", !on);
       })),
+    row("Quem faz a limpeza", null, select(cleanupOptions, engine, (next) => {
+      drawEngine(next);
+      void ctx.setPrefs((p) => (p.cleanupEngine = next));
+    })),
     keyNote,
     divider(),
     defaultRow,
-    h("div", { class: "hub-note", text: t("With the clean-up on, the text (never your voice) goes to Anthropic with your Claude key. Off, everything stays on this computer.") }),
+    cleanupNote,
   );
   stylesCard.dataset.anchor = "flow.styles";
   page.append(stylesCard);

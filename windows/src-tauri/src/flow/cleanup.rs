@@ -1,39 +1,71 @@
-// The clean-up of Flow dictation: Claude removes the "um", the repeats and the
-// corrections said on the way ("at 3, no, at 4" → "at 4"), fixes the
-// punctuation and writes in the app's style. Only when it is turned on in the
-// Coucou window and a Claude key is set, or else Claude Code is installed; the
-// text (never the audio) then goes to Anthropic with that key or through the
-// user's own Claude Code, and nowhere else. Any problem (no network, slow
-// answer, odd reply) and the words are pasted as they were heard. Port of
-// FlowCleanup.swift.
+// The clean-up of Flow dictation: an engine removes the "um", the repeats and
+// the corrections said on the way ("at 3, no, at 4" → "at 4"), fixes the
+// punctuation and writes in the app's style. The engine is the one chosen in
+// the Styles tab: Claude by default (Claude key or Claude Code), or the same
+// engines as the notetaker's summaries. Only when it is turned on in the Coucou
+// window and that engine is connected; the text (never the audio) then goes to
+// that provider and nowhere else. Any problem (no network, slow answer, odd
+// reply) and the words are pasted as they were heard. Port of FlowCleanup.swift.
 
 use std::time::Duration;
 
-use super::store::Style;
+use super::store::{Style, SummaryEngine};
 use super::text;
+use crate::chat;
+use crate::settings::Settings;
 
 pub const MODEL: &str = "claude-haiku-4-5";
 /// Past this, the words are pasted as heard rather than keeping you waiting.
 const TIMEOUT: Duration = Duration::from_secs(4);
-/// Claude Code takes a couple of seconds just to start.
+/// Claude Code and the other CLIs take a couple of seconds just to start. The
+/// other engines get this much in all, fallbacks included.
 const RELAY_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn has_key() -> bool {
     crate::claude::ready()
 }
 
-pub async fn clean(raw: &str, style: Style, app: Option<&str>, words: &[String]) -> String {
-    if style == Style::Verbatim || text::word_count(raw) < 3 || !has_key() {
+/// Whether `engine` can answer now. No network call.
+pub fn ready(engine: SummaryEngine, settings: &Settings) -> bool {
+    chat::summary_ready(settings, engine)
+}
+
+pub async fn clean(raw: &str, style: Style, app: Option<&str>, words: &[String], engine: SummaryEngine, settings: &Settings) -> String {
+    if !wants_engine(raw, style, engine) {
         return raw.to_string();
     }
+    if !ready(engine, settings) {
+        crate::log::line(format!("flow: clean-up skipped: {engine:?} is not connected"));
+        return raw.to_string();
+    }
+    let system = system(style, app, words);
     let user = format!("<dictation>\n{raw}\n</dictation>");
-    let timeout = if crate::claude::uses_relay() { RELAY_TIMEOUT } else { TIMEOUT };
-    match crate::claude::complete(MODEL, &system(style, app, words), &user, 2048, timeout).await {
+    let reply = if engine == SummaryEngine::Claude {
+        let timeout = if crate::claude::uses_relay() { RELAY_TIMEOUT } else { TIMEOUT };
+        crate::claude::complete(MODEL, &system, &user, 2048, timeout).await
+    } else {
+        match tokio::time::timeout(RELAY_TIMEOUT, chat::complete_summary(settings, engine, &system, &user, 2048, RELAY_TIMEOUT)).await {
+            Ok(reply) => reply,
+            Err(_) => Err(format!("no answer within {} s", RELAY_TIMEOUT.as_secs())),
+        }
+    };
+    finish(reply, raw)
+}
+
+/// "As said" and the "off" engine never reach an engine, nor a dictation too short to clean.
+fn wants_engine(raw: &str, style: Style, engine: SummaryEngine) -> bool {
+    style != Style::Verbatim && engine != SummaryEngine::Off && text::word_count(raw) >= 3
+}
+
+/// The engine's reply as the words to paste: the cleaned text, or the words as heard.
+fn finish(reply: Result<String, String>, raw: &str) -> String {
+    match reply {
         Ok(reply) => {
             let cleaned = reply.replace("<dictation>", "").replace("</dictation>", "").trim().to_string();
             if plausible(&cleaned, raw) {
                 cleaned
             } else {
+                crate::log::line("flow: clean-up skipped: the reply is not a clean-up");
                 raw.to_string()
             }
         }
@@ -88,6 +120,25 @@ mod tests {
         assert!(!plausible("", "un deux trois"));
         assert!(!plausible(&"mot ".repeat(40), "un deux trois quatre"));
         assert!(!plausible("ok", "un deux trois quatre cinq six sept huit neuf dix"));
+    }
+
+    #[test]
+    fn as_said_and_off_never_reach_an_engine() {
+        let long = "un deux trois quatre";
+        assert!(wants_engine(long, Style::Natural, SummaryEngine::ChatGpt));
+        assert!(wants_engine(long, Style::Polished, SummaryEngine::Claude));
+        assert!(!wants_engine(long, Style::Verbatim, SummaryEngine::Claude));
+        assert!(!wants_engine(long, Style::Natural, SummaryEngine::Off));
+        assert!(!wants_engine("deux trois", Style::Natural, SummaryEngine::Gemini));
+    }
+
+    #[test]
+    fn a_failed_or_odd_reply_pastes_the_words_as_heard() {
+        let raw = "un deux trois quatre";
+        assert_eq!(finish(Err("no answer within 10 s".into()), raw), raw);
+        assert_eq!(finish(Ok(String::new()), raw), raw);
+        assert_eq!(finish(Ok("Un deux trois quatre cinq six sept huit neuf dix onze douze treize".into()), raw), raw);
+        assert_eq!(finish(Ok("<dictation>Un deux trois quatre.</dictation>".into()), raw), "Un deux trois quatre.");
     }
 
     #[test]

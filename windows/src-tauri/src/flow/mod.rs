@@ -400,15 +400,16 @@ fn process(app: &AppHandle, flow: &Arc<Flow>, samples: &[f32], front: Option<&(S
         pill::update(app, |s| s.phase = "idle".into());
         return Ok(());
     }
-    let (prepared, style, cleanup, words, key) = {
+    let (prepared, style, cleanup, engine, words, key) = {
         let store = flow.store.lock().unwrap();
         let app_id = front.map(|(id, _)| id.as_str());
-        (store.prepare(&raw), store.style_for(app_id), store.prefs.cleanup, store.words.words.clone(), store.prefs.key.codes(&store.prefs.key_combo))
+        (store.prepare(&raw), store.style_for(app_id), store.prefs.cleanup, store.prefs.cleanup_engine, store.words.words.clone(), store.prefs.key.codes(&store.prefs.key_combo))
     };
     let mut written = prepared.text.clone();
-    if cleanup && style != store::Style::Verbatim && cleanup::has_key() {
+    if cleanup && style != store::Style::Verbatim {
         let app_name = front.map(|(_, n)| n.clone());
-        let cleaned = tauri::async_runtime::block_on(cleanup::clean(&prepared.text, style, app_name.as_deref(), &words));
+        let settings = app.state::<crate::Shared>().settings.lock().unwrap().clone();
+        let cleaned = tauri::async_runtime::block_on(cleanup::clean(&prepared.text, style, app_name.as_deref(), &words, engine, &settings));
         if text::keeps_marks(&cleaned, &prepared.snippets) {
             written = cleaned;
         }

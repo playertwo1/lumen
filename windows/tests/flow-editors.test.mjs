@@ -229,3 +229,30 @@ test("a repeated style event does not unlock the editor while its first save is 
   assert.equal(f.data.styles[0].style, "verbatim");
   assert.equal(f.page.find("select").at(-1).disabled, false);
 });
+
+test("choosing who cleans the words saves the engine and says where the text goes", async t => {
+  const saved = [];
+  const status = {
+    prefs: { cleanup: true, defaultStyle: "natural", cleanupEngine: "claude" },
+    hasClaudeKey: true,
+    summaryBackends: { claude: "Chave Anthropic", chatgpt: "ChatGPT OAuth", gemini: null, chat: "Claude" },
+  };
+  const f = await fixture(t, (page, ctx) => stylesPage(page, {
+    ...ctx,
+    status,
+    refresh: async () => status,
+    setPrefs: async change => { change(status.prefs); saved.push(status.prefs.cleanupEngine); },
+  }));
+  const notes = () => f.page.find(".hub-note").map(e => e.textContent).join("\n");
+  assert.match(notes(), /Anthropic/);
+  const engine = f.page.find("select").at(0);
+  assert.equal(engine.value, "claude");
+  engine.value = "chatgpt";
+  engine.fire("change");
+  await flush();
+  assert.deepEqual(saved, ["chatgpt"]);
+  assert.match(notes(), /nunca sua voz/);
+  assert.doesNotMatch(notes(), /Anthropic/);
+  // The page's save error is a .hub-warn too; no warning may show for a connected engine.
+  assert.ok(f.page.find(".hub-warn").every(e => e.style.display === "none" || e.textContent === ""));
+});

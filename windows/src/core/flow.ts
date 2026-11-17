@@ -57,6 +57,8 @@ export interface FlowPrefs {
   mic: string;
   keepDays: number;
   cleanup: boolean;
+  /** Who cleans the words when `cleanup` is on. */
+  cleanupEngine: SummaryEngine;
   defaultStyle: Style;
   summaryEngine: SummaryEngine;
   openAtLaunch: boolean;
