@@ -82,6 +82,8 @@ windows = { version = "0.61", features = [
   "Win32_Storage_EnhancedStorage",
   # The Spotify pill's volume: Spotify's session in the Windows mixer.
   "Win32_Media_Audio",
+  # Mochi's "audio" tool: the default output's volume and mute (IAudioEndpointVolume).
+  "Win32_Media_Audio_Endpoints",
   "Win32_System_Com",
   "Win32_System_Com_StructuredStorage",
   "Win32_System_WinRT",

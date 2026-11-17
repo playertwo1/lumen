@@ -21,7 +21,6 @@ use tokio::sync::watch;
 
 use super::approval_bridge::TauriApprovalRequester;
 use super::permissions::{ApprovalRequester, DefaultDenyRequester};
-use super::registry::ToolContext;
 use super::MochiRuntime;
 
 pub const MCP_ENDPOINT_FILE_NAME: &str = "mochi-mcp-endpoint.json";
@@ -527,7 +526,7 @@ async fn dispatch_rpc_request(
         "ping" => rpc_ok(id, json!({})),
         "tools/list" => {
             let tools: Vec<Value> = runtime
-                .list_available(&ToolContext::default())
+                .list_available(&super::host::context(crate::integrations::PAUSED.load(Ordering::Relaxed)))
                 .into_iter()
                 .map(|desc| {
                     json!({
@@ -601,7 +600,8 @@ async fn dispatch_rpc_request(
                 .invoke_tool(
                     name,
                     arguments,
-                    &ToolContext::default(),
+                    // A pausa rápida corta também os pedidos que chegam pelo MCP.
+                    &super::host::context(crate::integrations::PAUSED.load(Ordering::Relaxed)),
                     requester_arc.as_ref(),
                     combined_rx,
                 )

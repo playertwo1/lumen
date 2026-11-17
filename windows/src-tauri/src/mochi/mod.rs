@@ -10,11 +10,13 @@
 pub mod approval_bridge;
 pub mod audit;
 pub mod chat_bridge;
+pub mod host;
 pub mod mcp_config;
 pub mod mcp_server;
 pub mod permissions;
 pub mod registry;
 pub mod sanitize;
+pub mod tools;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};

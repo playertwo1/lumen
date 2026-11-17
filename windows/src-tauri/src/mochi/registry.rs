@@ -222,12 +222,13 @@ impl ToolRegistry {
         Self::default()
     }
 
-    /// Cria o registro padrão da M1 contendo apenas `ping` registrada e habilitada.
+    /// Cria o registro padrão: `ping` (M1) e as ferramentas nativas do Windows da M2.
     pub fn with_default_tools() -> Self {
         let mut registry = Self::new();
         registry
             .register_and_enable(ping_tool())
             .expect("definição padrão de ping deve ser válida");
+        super::tools::register_m2(&mut registry);
         registry
     }
 

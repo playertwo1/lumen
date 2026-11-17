@@ -767,10 +767,7 @@ pub async fn chat_send_with_mochi(
         }
     };
 
-    let tool_ctx = ToolContext {
-        paused: crate::integrations::PAUSED.load(Ordering::Relaxed),
-        ..ToolContext::new()
-    };
+    let tool_ctx = super::host::context(crate::integrations::PAUSED.load(Ordering::Relaxed));
     let app_for_req = app.clone();
     let runtime_for_req = runtime.clone();
     let answer = run_tool_loop_with_model(

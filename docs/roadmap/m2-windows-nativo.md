@@ -10,10 +10,10 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 
 ### M2.1 — Volume e mudo (risco baixo)
 
-- [ ] Ler e definir volume master (0–100) e mudo pela API de áudio.
-- [ ] Depois de agir, ler o estado e devolvê-lo.
-- [ ] Testar: valor fora da faixa recusado; sem dispositivo de áudio vira erro claro.
-- Checkpoint M2.1: "volume 20%" e "tira o som" funcionam e relatam o valor final.
+- [x] Ler e definir volume master (0–100) e mudo pela API de áudio.
+- [x] Depois de agir, ler o estado e devolvê-lo.
+- [x] Testar: valor fora da faixa recusado; sem dispositivo de áudio vira erro claro.
+- Checkpoint M2.1: "volume 20%" e "tira o som" funcionam e relatam o valor final. *(Sintético em 2026-11-17: ferramenta `audio` em `mochi/tools/audio.rs`, sondagem em `mochi/host.rs`; suíte Rust `864 passed; 0 failed`. A pausa rápida passou a cortar também os pedidos pelo MCP. **Real no chat: NOT_RUN**.)*
 
 ### M2.2 — Brilho (risco baixo)
 
