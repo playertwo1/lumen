@@ -207,14 +207,16 @@ test("a declaration from an older or edited settings file is made usable", () =>
     "integration_claude");
 });
 
-test("up to four pills next to the main one, never the main one itself", () => {
+test("up to six pills next to the main one, never the main one itself", () => {
   const d = {
     mainPill: "integration_claude",
     activeIntegrations: ["integration_n8n", "integration_github", "integration_stripe"],
   };
-  const four = toggleDeclared(d, "agent_gemini", "linux");
-  assert.equal(four.length, MAX_DECLARED);
-  assert.equal(toggleDeclared({ ...d, activeIntegrations: four }, "ai_anthropic", "linux"), null);
+  assert.equal(MAX_DECLARED, 6);
+  const full = ["agent_gemini", "integration_notion", "integration_vercel"]
+    .reduce((list, id) => toggleDeclared({ ...d, activeIntegrations: list }, id, "linux"), d.activeIntegrations);
+  assert.equal(full.length, MAX_DECLARED);
+  assert.equal(toggleDeclared({ ...d, activeIntegrations: full }, "ai_anthropic", "linux"), null);
   assert.equal(toggleDeclared(d, "integration_claude", "linux"), null);
   assert.equal(toggleDeclared(d, "integration_music", "linux"), null);
   assert.ok(toggleDeclared(d, "agent_claude-desktop", "linux").includes("agent_claude-desktop"));
@@ -341,14 +343,14 @@ test("the Git pill follows the last focused workspace project across service foc
   assert.equal(State.lastWorkspaceSessionCwd, "C:/projects/two");
 });
 
-test("toggling declares up to four pills and never the main one", () => {
+test("toggling declares up to six pills and never the main one", () => {
   State.settings.activeIntegrations = [];
   State.loadIntegrationTasks();
-  for (const id of ["integration_n8n", "agent_gemini", "ai_anthropic", "integration_stripe", "integration_github"]) {
+  for (const id of ["integration_n8n", "agent_gemini", "ai_anthropic", "integration_stripe", "integration_github", "integration_notion", "integration_vercel"]) {
     State.toggleIntegration(id);
   }
   assert.deepEqual(State.settings.activeIntegrations, [
-    "integration_n8n", "agent_gemini", "ai_anthropic", "integration_stripe",
+    "integration_n8n", "agent_gemini", "ai_anthropic", "integration_stripe", "integration_github", "integration_notion",
   ]);
   State.toggleIntegration("integration_claude");
   assert.ok(ids().includes("integration_claude"));

@@ -160,7 +160,7 @@ export const PILL_CATALOG: readonly PillDefinition[] = [
 export const DEFAULT_MAIN_PILL = "integration_claude";
 
 /** How many declared pills may sit next to the main one. */
-export const MAX_DECLARED = 4;
+export const MAX_DECLARED = 6;
 
 /** The OS this page runs on. Only the Windows webview says "Windows". */
 export const HOST_OS: HostOs =
@@ -235,7 +235,7 @@ export function sanitizeDeclared(d: Declared, os: HostOs = HOST_OS): Declared {
 /**
  * Declares or undeclares a pill. Returns the new list, or null when the click
  * changes nothing: the main pill is never toggled, an unknown pill never
- * declared, and a fifth pill never added.
+ * declared, and a pill past MAX_DECLARED never added.
  */
 export function toggleDeclared(d: Declared, id: string, os: HostOs = HOST_OS): string[] | null {
   if (id === d.mainPill) return null;
