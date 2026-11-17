@@ -8,7 +8,10 @@
 - [x] Causa: `vite.config.ts` troca `src/mochi/greeting` por `src/lumen/greeting.ts` no Windows; esse arquivo ainda desenhava a bússola e a 0.7.11 corrigiu o arquivo do Coucou (não empacotado).
 - [x] Validação visual no exe de release local (`lumen.exe` 0.7.13) comparada à instalação 0.7.11, com capturas da tela a cada 250 ms: instalada = 277–627 pixels da cor da bússola por frame; nova = 0, cristal animando e terminando estático.
 - [x] Teste novo `tests/lumen-startup-crystal.test.mjs`; `npx tsc --noEmit` e `npm test` (`757/757`).
-- [ ] Publicação (workflow, Defender, SHA-256): ver abaixo, preenchido após a release.
+- [x] Workflow `44045097666` (tag `windows-v0.7.13`, commit `7a390db`) passou e publicou [Windows 0.7.13](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.13).
+- [x] Defender examinou setup e MSI baixados: código 0, `found no threats`. SHA-256 iguais aos digests do GitHub:
+  - Setup: `451871FEB1AA253B9D3E9EA419D371655C9751282FADE98929350E654559BED8`.
+  - MSI: `1CF294F9ECF9E1D88B73D8418C7E9B4EBBF93E83154BAF133746249BAC6AFD21`.
 - [ ] Proprietário validar na instalação atualizada; **NOT_RUN**.
 
 ## Windows 0.7.12 — L8 (ajustes do uso real) e Apagar/Spam da triagem
