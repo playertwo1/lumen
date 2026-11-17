@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { emit, sent } from "./tauri.mjs";
 import { installFakeDom } from "./fakedom.mjs";
 import {
-  IDLE_WHATSAPP, WHATSAPP_ID, WhatsApp, canSend, duration, initials, installError, installFailure, installStepLabel,
+  DEFAULT_URLS, IDLE_WHATSAPP, WHATSAPP_ID, WhatsApp, canSend, duration, initials, installError, installFailure, installStepLabel,
   keyAction, lastMessages, linkColor, linkLabel, preview, sendErrorLabel, showsLinkState, testResultLabel, timeAgo,
   webhookLine,
 } from "../src/core/whatsapp.ts";
@@ -87,6 +87,14 @@ test("Rust's codes become words, a gateway's own message is shown as it is", () 
   assert.match(installFailure("anything else"), /didn't go through/);
   assert.equal(installError({ step: "done", version: "9.6.0" }), null);
   assert.match(installError({ step: "failed", reason: "noBuild" }), /No GOWA build for this computer/);
+});
+
+test("the Orbit bridge: no QR here, WhatsApp is linked in Orbit, and its own address", () => {
+  assert.equal(DEFAULT_URLS.orbit, "http://127.0.0.1:8080");
+  assert.match(linkLabel({ state: "needsQr" }, "orbit"), /vinculado no Orbit/);
+  assert.equal(linkLabel({ state: "needsQr" }), "Scan the QR code in Settings");
+  assert.match(testResultLabel({ result: "needsQr" }, "orbit"), /vinculado no Orbit/);
+  assert.equal(testResultLabel({ result: "connected", who: "+1" }, "orbit"), "Connected as +1.");
 });
 
 test("the status and QR show once there is a gateway to talk to", () => {

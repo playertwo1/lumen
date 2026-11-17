@@ -14,17 +14,24 @@ use super::model::{self, constant_time_eq, Media, Message};
 pub enum Kind {
     Gowa,
     Openwa,
+    /// The WhatsApp bridge of the Orbit project: read-only, no token, no webhook.
+    Orbit,
 }
 
 impl Kind {
     pub fn from_name(name: &str) -> Kind {
-        if name == "openwa" { Kind::Openwa } else { Kind::Gowa }
+        match name {
+            "openwa" => Kind::Openwa,
+            "orbit" => Kind::Orbit,
+            _ => Kind::Gowa,
+        }
     }
 
     pub fn default_url(self) -> &'static str {
         match self {
             Kind::Gowa => "http://127.0.0.1:3000",
             Kind::Openwa => "http://127.0.0.1:2785",
+            Kind::Orbit => "http://127.0.0.1:8080",
         }
     }
 
@@ -33,6 +40,7 @@ impl Kind {
         match self {
             Kind::Gowa => "x-hub-signature-256",
             Kind::Openwa => "x-openwa-signature",
+            Kind::Orbit => "x-orbit-signature",
         }
     }
 }
@@ -77,6 +85,8 @@ pub fn parse_webhook(kind: Kind, body: &[u8], me: Option<&str>) -> Option<Webhoo
     Some(match kind {
         Kind::Gowa => parse_gowa(&json, me),
         Kind::Openwa => parse_openwa(&json, me),
+        // The Orbit bridge has no webhook: nothing is ever delivered to Coucou.
+        Kind::Orbit => WebhookEvent::Ignored,
     })
 }
 
@@ -402,6 +412,68 @@ pub mod openwa {
             Some(user) => format!("{user}@c.us"),
             None => jid.to_string(),
         }
+    }
+}
+
+/// The WhatsApp bridge of the Orbit project (whatsapp-pj-mcp, Go): plain JSON, no envelope, times in
+/// Unix seconds, no token. Only the reading routes; sending is a draft a person approves in Orbit.
+pub mod orbit {
+    use super::*;
+
+    /// `GET /api/status` → `{connected, authenticated, device_jid, auth_state, …}`. Not authenticated
+    /// means WhatsApp is not linked to the bridge: it is linked in Orbit, not here.
+    pub fn status(data: &[u8]) -> Option<Status> {
+        let v: Value = serde_json::from_slice(data).ok()?;
+        let authed = v.get("authenticated").and_then(Value::as_bool).unwrap_or(false);
+        let connected = v.get("connected").and_then(Value::as_bool).unwrap_or(false);
+        let link = match (authed, connected) {
+            (true, true) => Link::Connected,
+            (true, false) => Link::Connecting,
+            (false, _) => Link::NeedsQr,
+        };
+        Some(Status { link, me: if authed { text(v.get("device_jid")) } else { None } })
+    }
+
+    /// `GET /api/chats` → `{chats: [{jid, name, last_message_time (s), unread_count, …}]}`, newest first.
+    pub fn chats(data: &[u8]) -> Vec<(String, String, i64)> {
+        let Ok(v) = serde_json::from_slice::<Value>(data) else { return vec![] };
+        let Some(list) = v.get("chats").and_then(Value::as_array) else { return vec![] };
+        list.iter()
+            .filter_map(|c| {
+                let jid = text(c.get("jid"))?;
+                let name = c.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+                Some((jid, name, epoch_ms(c.get("last_message_time")).unwrap_or(0)))
+            })
+            .collect()
+    }
+
+    /// `GET /api/messages?chat_jid=…` → `{messages: [{id, chat_jid, sender_jid, sender_display,
+    /// timestamp (s), type, content_text, is_from_me, attachment?}], chat?: {name}}`, newest first.
+    /// Reactions, system rows and revoked messages are not shown.
+    pub fn messages(data: &[u8], me: Option<&str>) -> Vec<Message> {
+        let Ok(v) = serde_json::from_slice::<Value>(data) else { return vec![] };
+        let Some(list) = v.get("messages").and_then(Value::as_array) else { return vec![] };
+        let chat_name = text(v.get("chat").and_then(|c| c.get("name")));
+        list.iter()
+            .filter_map(|m| {
+                let id = text(m.get("id"))?;
+                let chat = text(m.get("chat_jid"))?;
+                let kind = m.get("type").and_then(Value::as_str).unwrap_or("text");
+                if matches!(kind, "reaction" | "system" | "revoked") {
+                    return None;
+                }
+                let body = m.get("content_text").and_then(Value::as_str).unwrap_or("");
+                let sender = text(m.get("sender_jid")).unwrap_or_else(|| chat.clone());
+                let mut msg = Message::new(&id, &chat, &sender, body, epoch_ms(m.get("timestamp")).unwrap_or(0));
+                msg.sender_name = text(m.get("sender_display")).unwrap_or_default();
+                msg.media = openwa_media(kind, text(m.get("attachment").and_then(|a| a.get("filename"))));
+                msg.from_me = m.get("is_from_me").and_then(Value::as_bool).unwrap_or(false);
+                let group = model::is_group(&chat);
+                msg.chat_name = if group { chat_name.clone() } else { None };
+                msg.mentions_me = group && model::text_mentions(body, me);
+                Some(msg)
+            })
+            .collect()
     }
 }
 
@@ -789,5 +861,56 @@ mod tests {
         assert_eq!(release::binary_entry(&names, "windows", "amd64").map(String::as_str), Some("windows-amd64.exe"));
         let names = vec!["linux-amd64".to_string()];
         assert_eq!(release::binary_entry(&names, "linux", "amd64").map(String::as_str), Some("linux-amd64"));
+    }
+
+    // Synthetic answers in the Orbit bridge's shape (whatsapp-pj-mcp): no real chats, names or numbers.
+    #[test]
+    fn orbit_status_says_whether_it_is_linked_and_online() {
+        let s = |json: &str| orbit::status(json.as_bytes()).unwrap();
+        let ready = s(r#"{"connected":true,"authenticated":true,"device_jid":"5500000000002:3@s.whatsapp.net","auth_state":"paired"}"#);
+        assert_eq!((ready.link, ready.me.as_deref()), (Link::Connected, Some("5500000000002:3@s.whatsapp.net")));
+        let offline = s(r#"{"connected":false,"authenticated":true,"device_jid":"5500000000002@s.whatsapp.net"}"#);
+        assert_eq!(offline.link, Link::Connecting);
+        let unlinked = s(r#"{"connected":false,"authenticated":false,"device_jid":"5500000000002@s.whatsapp.net","auth_state":"qr_pending"}"#);
+        assert_eq!((unlinked.link, unlinked.me), (Link::NeedsQr, None), "not linked: no number is kept");
+        assert!(orbit::status(b"not json").is_none());
+    }
+
+    #[test]
+    fn orbit_chats_come_with_seconds_turned_into_milliseconds() {
+        let json = br#"{"chats":[{"jid":"5500000000001@s.whatsapp.net","chat_type":"individual","name":"Contato Teste","last_message_time":1700000500,"unread_count":2},{"jid":"120363000000000001@g.us","name":"","last_message_time":0}],"count":2}"#;
+        assert_eq!(
+            orbit::chats(json),
+            vec![
+                ("5500000000001@s.whatsapp.net".to_string(), "Contato Teste".to_string(), 1_700_000_500_000),
+                ("120363000000000001@g.us".to_string(), String::new(), 0),
+            ]
+        );
+        assert!(orbit::chats(b"{}").is_empty());
+    }
+
+    #[test]
+    fn orbit_messages_keep_text_media_and_who_wrote_and_drop_reactions() {
+        let json = br#"{"messages":[
+            {"id":"A1","chat_jid":"120363000000000001@g.us","sender_jid":"5500000000003@s.whatsapp.net","sender_display":"Pessoa Teste","timestamp":1700000400,"type":"text","content_text":"ola @5500000000002 tudo bem","is_from_me":false},
+            {"id":"A2","chat_jid":"120363000000000001@g.us","sender_jid":"5500000000002@s.whatsapp.net","timestamp":1700000401,"type":"reaction","content_text":"+1","is_from_me":true},
+            {"id":"A3","chat_jid":"120363000000000001@g.us","sender_jid":"5500000000002@s.whatsapp.net","timestamp":1700000402,"type":"document","content_text":"","is_from_me":true,"attachment":{"filename":"relatorio.pdf","downloaded":false,"downloadable":true}},
+            {"id":"A4","chat_jid":"120363000000000001@g.us","timestamp":1700000403,"type":"system","content_text":""}
+        ],"chat":{"name":"Grupo Teste"},"count":4}"#;
+        let me = Some("5500000000002@s.whatsapp.net");
+        let msgs = orbit::messages(json, me);
+        let ids: Vec<&str> = msgs.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["A1", "A3"], "reactions and system rows are not shown");
+        let first = &msgs[0];
+        assert_eq!((first.date, first.sender_name.as_str(), first.from_me), (1_700_000_400_000, "Pessoa Teste", false));
+        assert_eq!(first.chat_name.as_deref(), Some("Grupo Teste"));
+        assert!(first.mentions_me, "a group message that names this account is a mention");
+        assert_eq!(msgs[1].media, Media::Document { name: Some("relatorio.pdf".into()) });
+        assert!(msgs[1].from_me);
+        // Without a group, no name is kept and nothing is a mention.
+        let direct = br#"{"messages":[{"id":"B1","chat_jid":"5500000000001@s.whatsapp.net","timestamp":1700000500,"type":"image","content_text":"oi @5500000000002"}]}"#;
+        let msg = orbit::messages(direct, me).remove(0);
+        assert_eq!((msg.chat_name.is_none(), msg.mentions_me, msg.media.clone()), (true, false, Media::Image));
+        assert!(orbit::messages(b"[]", None).is_empty());
     }
 }

@@ -14,7 +14,7 @@ pub const DEFAULT_PORT: u16 = 47823;
 #[serde(rename_all = "camelCase", default)]
 pub struct Prefs {
     pub enabled: bool,
-    /// "gowa" or "openwa".
+    /// "gowa", "openwa" or "orbit" (the Orbit project's bridge).
     pub gateway: String,
     /// The webhook's port on 127.0.0.1.
     pub port: u16,
@@ -49,7 +49,7 @@ impl Default for Prefs {
 impl Prefs {
     /// What a file (or the webview) may hold, brought back inside the rules.
     pub fn cleaned(mut self) -> Prefs {
-        if self.gateway != "openwa" {
+        if !matches!(self.gateway.as_str(), "openwa" | "orbit") {
             self.gateway = "gowa".into();
         }
         if self.port < 1024 {
@@ -102,5 +102,13 @@ mod tests {
         assert_eq!(odd.gowa_path, "/x/gowa");
         let json = serde_json::to_string(&Prefs::default()).unwrap();
         assert!(json.contains("\"markReadOnOpen\":true") && json.contains("\"muteGroups\":true"));
+    }
+
+    #[test]
+    fn the_orbit_bridge_is_a_choice_of_its_own() {
+        let orbit: Prefs = serde_json::from_str(r#"{"gateway":"orbit"}"#).unwrap();
+        assert_eq!(orbit.cleaned().gateway, "orbit");
+        let other: Prefs = serde_json::from_str(r#"{"gateway":"orbitx"}"#).unwrap();
+        assert_eq!(other.cleaned().gateway, "gowa");
     }
 }

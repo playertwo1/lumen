@@ -619,7 +619,7 @@ export const Bridge = {
     callOrThrow<void>("whatsapp_set_options", { enabled, muteGroups, markReadOnOpen }),
   /** `credential`: null keeps the stored one, "" removes it. */
   whatsappSaveGateway: (g: {
-    gateway: "gowa" | "openwa"; url: string; credential: string | null; port: number; autoStart: boolean; gowaPath: string;
+    gateway: "gowa" | "openwa" | "orbit"; url: string; credential: string | null; port: number; autoStart: boolean; gowaPath: string;
   }) => callOrThrow<void>("whatsapp_save_gateway", g),
   whatsappTest: () => call<WaTestResult>("whatsapp_test"),
   /** "Install WhatsApp" / "Update": GOWA from its GitHub releases, on this click only. */

@@ -80,7 +80,7 @@ export type WaInstallStep =
 
 export interface WaPrefs {
   enabled: boolean;
-  gateway: "gowa" | "openwa";
+  gateway: "gowa" | "openwa" | "orbit";
   port: number;
   markReadOnOpen: boolean;
   muteGroups: boolean;
@@ -112,7 +112,9 @@ export type WaTestResult =
   | { result: "connected"; who: string }
   | { result: "refused"; detail: string };
 
-export const DEFAULT_URLS = { gowa: "http://127.0.0.1:3000", openwa: "http://127.0.0.1:2785" } as const;
+export const DEFAULT_URLS = { gowa: "http://127.0.0.1:3000", openwa: "http://127.0.0.1:2785", orbit: "http://127.0.0.1:8080" } as const;
+/** The Orbit project's bridge: WhatsApp is linked there, never here. */
+export const ORBIT_NOT_LINKED = "A ponte do Orbit responde, mas o WhatsApp ainda não está vinculado no Orbit.";
 export const DEFAULT_PORT = 47823;
 
 // ── Pure rules ────────────────────────────────────────────────────────────────
@@ -179,12 +181,12 @@ export function timeAgo(ms: number, now = Date.now()): string {
 }
 
 /** WhatsAppStatus.label. */
-export function linkLabel(link: WaLink): string {
+export function linkLabel(link: WaLink, gateway = "gowa"): string {
   switch (link.state) {
     case "off": return t("Turned off in Settings");
     case "badUrl": return t("The gateway URL isn’t valid (http://…)");
     case "connecting": return t("Connecting to the gateway…");
-    case "needsQr": return t("Scan the QR code in Settings");
+    case "needsQr": return gateway === "orbit" ? ORBIT_NOT_LINKED : t("Scan the QR code in Settings");
     case "connected": return t("Connected");
     case "unreachable": return t("The gateway doesn’t answer: is it running?");
     case "unauthorized": return t("The gateway refuses the credentials");
@@ -275,10 +277,10 @@ export function webhookLine(w: WaWebhook): string {
 }
 
 /** "Test connection"'s answer. */
-export function testResultLabel(r: WaTestResult): string {
+export function testResultLabel(r: WaTestResult, gateway = "gowa"): string {
   switch (r.result) {
     case "connected": return t("Connected as {number}.", { number: r.who });
-    case "needsQr": return t("The gateway answers. Scan the QR code below with your phone.");
+    case "needsQr": return gateway === "orbit" ? ORBIT_NOT_LINKED : t("The gateway answers. Scan the QR code below with your phone.");
     case "connecting": return t("The gateway answers and is connecting to WhatsApp…");
     case "badUrl": return linkLabel({ state: "badUrl" });
     case "unreachable": return linkLabel({ state: "unreachable" });
