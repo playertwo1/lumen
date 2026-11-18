@@ -325,16 +325,28 @@ mod win {
 
     impl AppBackend for Os {
         fn atalhos(&self) -> Vec<Atalho> {
-            crate::voice::start_menu_shortcuts()
+            let mut atalhos: Vec<Atalho> = crate::voice::start_menu_shortcuts()
                 .into_iter()
                 .filter_map(|lnk| {
                     let nome = lnk.file_stem()?.to_string_lossy().into_owned();
                     Some(Atalho { nome, lnk })
                 })
-                .collect()
+                .collect();
+            // O Bloco de Notas do Windows 11 é app da Store e não tem `.lnk`: entra pelo executável do sistema.
+            if let Some(root) = std::env::var_os("SystemRoot") {
+                let exe = PathBuf::from(root).join("System32").join("notepad.exe");
+                if exe.is_file() && !atalhos.iter().any(|a| a.nome.eq_ignore_ascii_case("bloco de notas")) {
+                    atalhos.push(Atalho { nome: "Bloco de Notas".into(), lnk: exe });
+                }
+            }
+            atalhos
         }
 
         fn alvo(&self, lnk: &Path) -> Option<String> {
+            // Um `.exe` direto (o Bloco de Notas) é o próprio alvo.
+            if lnk.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe")) {
+                return Some(lnk.file_name()?.to_string_lossy().into_owned());
+            }
             unsafe {
                 let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
                 let persist: IPersistFile = link.cast().ok()?;
