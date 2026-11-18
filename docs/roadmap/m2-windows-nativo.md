@@ -56,3 +56,9 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 - [ ] Testar: retomar da suspensão, aplicativo ausente, dispositivo de áudio trocado.
 - [ ] Atualizar `windows/README.md` e o Estado no índice.
 - Checkpoint M2: 10 comandos com sucesso repetível; toda falha aparece como falha, com motivo.
+
+**1º relato do dono (2026-11-18, `0.7.15`, ChatGPT `gpt-6-luna`):** ok em "volume 20%", "abre o VS Code", "pausa a música" e "próxima música". Falharam:
+- "tira o som", "lista os aplicativos", "organize as janelas para programar" e "desfaz a organização das janelas": o ChatGPT mandava campos a mais (`nivel`, `nome`, `alvo`…), a ferramenta recusava e o modelo repetia o erro até o limite de 4 passos. Correção: campo de outra ação é ignorado em `audio`, `apps` e `janelas` (`78e7393` e o commit desta rodada).
+- "abre o Bloco de Notas": no Windows 11 ele é app da Store, sem `.lnk` no Menu Iniciar. Correção: `notepad.exe` de System32 entra como "Bloco de Notas" (`fb9ec38`).
+- "brilho 60%": `0x8004101e` (acesso negado) porque a assinatura de `WmiSetBrightness` era pedida à instância; agora vem da classe. Reproduzido e confirmado num programa à parte, mantendo o brilho no mesmo nível.
+- Próximo: o dono repete os 10 comandos (3 vezes) na versão com essas correções.

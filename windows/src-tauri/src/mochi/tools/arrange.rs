@@ -183,9 +183,9 @@ fn plano(args: &Value) -> Result<Op, ToolError> {
         "lado_a_lado" => &["alvos"],
         _ => return Err(ToolError::InvalidInput("ação de janelas desconhecida".into())),
     };
-    // Campo que falta ou campo de outra ação: recusado antes de qualquer janela ser tocada.
-    let recebidos = args.as_object().map_or(0, |o| o.len());
-    if recebidos != esperados.len() + 1 || !esperados.iter().all(|c| args.get(*c).is_some()) {
+    // Campo que falta: recusado antes de qualquer janela ser tocada. Campo de outra ação é
+    // ignorado (a ação só lê os seus); recusar fazia o ChatGPT repetir o erro até o limite de passos.
+    if !esperados.iter().all(|c| args.get(*c).is_some()) {
         return Err(ToolError::InvalidInput(format!("{acao} aceita só estes campos: {esperados:?}")));
     }
     let id = |campo: &str| faixa(args.get(campo), campo, 0, MAX_ID).map(|n| n as usize);
@@ -883,10 +883,10 @@ mod tests {
     #[test]
     fn dry_run_exige_os_campos_da_acao_e_recusa_os_de_outra() {
         assert!(dry_run(&json!({"acao": "mover", "alvo": 0, "x": 1})).is_err());
-        assert!(dry_run(&json!({"acao": "mover", "alvo": 0, "x": 1, "y": 2, "largura": 300})).is_err());
-        assert!(dry_run(&json!({"acao": "listar", "alvo": 0})).is_err());
+        assert!(dry_run(&json!({"acao": "mover", "alvo": 0, "x": 1, "y": 2, "largura": 300})).is_ok());
+        assert!(dry_run(&json!({"acao": "listar", "alvo": 0})).is_ok());
         assert!(dry_run(&json!({"acao": "lado_a_lado", "alvos": [3, 3]})).is_err());
-        assert!(dry_run(&json!({"acao": "lado_a_lado", "alvos": [3, 4], "x": 0})).is_err());
+        assert!(dry_run(&json!({"acao": "lado_a_lado", "alvos": [3, 4], "x": 0})).is_ok());
         assert_eq!(
             dry_run(&json!({"acao": "lado_a_lado", "alvos": [3, 4]})).unwrap(),
             "Pôr as janelas 3 e 4 lado a lado."

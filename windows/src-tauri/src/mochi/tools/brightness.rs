@@ -358,8 +358,16 @@ mod win {
             let Some(instancia) = primeira(&self.0, METODOS)? else {
                 return Ok(false);
             };
+            // A assinatura do método vem da classe: pedida à instância, o WMI responde 0x8004101e (acesso negado).
+            let mut classe = None;
+            unsafe {
+                self.0
+                    .GetObject(&bstr("WmiMonitorBrightnessMethods"), WBEM_GENERIC_FLAG_TYPE(0), None, Some(&mut classe), None)
+            }
+            .map_err(code)?;
+            let classe = classe.ok_or_else(|| "classe de brilho ausente".to_string())?;
             let mut entrada = None;
-            unsafe { instancia.GetMethod(w!("WmiSetBrightness"), 0, &mut entrada, std::ptr::null_mut()) }
+            unsafe { classe.GetMethod(w!("WmiSetBrightness"), 0, &mut entrada, std::ptr::null_mut()) }
                 .map_err(code)?;
             let entrada = entrada.ok_or_else(|| "método de brilho sem parâmetros".to_string())?;
             unsafe {
