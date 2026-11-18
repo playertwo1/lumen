@@ -23,7 +23,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 - **L8.1–L8.6** e o Apagar/Spam da triagem do MailCraft (`0.7.12`): roteiros nos checkpoints da L8.
 - **Cristal na abertura** (`0.7.10`, `0.7.11` e `0.7.13`): conferir, depois de atualizar, o ícone no Menu Iniciar, a janela de abertura e a saudação da ilha.
-- **`ping` pelo chat** (`0.7.14`): conferir se o ChatGPT chama o `ping` e se a resposta ainda está lenta.
+- **`ping` pelo chat**: na `0.7.14` o ChatGPT quase sempre recusava (ferramentas só como texto no prompt). Corrigido na `main` em 2026-11-18 (funções nativas da Responses API; 3 de 3 no teste real e no modo dev, ~9 s a ida e volta). Sai na próxima versão; conferir no app instalado depois dela.
 - **M2 no notebook** (`0.7.14`): volume, brilho (e se o monitor externo responde por DDC/CI), apps, janelas, mídia e energia; conferir se o notebook é "Modern Standby" e se `suspender` aparece.
 
 ## Pendências técnicas conhecidas
