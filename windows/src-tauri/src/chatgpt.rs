@@ -213,6 +213,7 @@ pub(crate) async fn step(
     app: &AppHandle,
     model: &str,
     system_appendix: Option<&str>,
+    tools: &[crate::mochi::registry::ToolDescriptor],
     history: &[Value],
     user: &Value,
 ) -> Result<String, String> {
@@ -231,6 +232,7 @@ pub(crate) async fn step(
         history,
         user,
         true,
+        &mochi_functions(tools),
         |web| chat::system_prompt_with_appendix(web, system_appendix),
         |visible| {
             let _ = app.emit_to(WINDOW_LABEL, "chat-delta", visible);
@@ -1599,7 +1601,14 @@ fn history_item_to_responses(item: &Value) -> Value {
     })
 }
 
-fn build_responses_body(model: &str, system: &str, history: &[Value], user: &Value, web: bool) -> Value {
+fn build_responses_body(
+    model: &str,
+    system: &str,
+    history: &[Value],
+    user: &Value,
+    web: bool,
+    functions: &[Value],
+) -> Value {
     let mut input: Vec<Value> = history.iter().map(history_item_to_responses).collect();
     input.push(user.clone());
     let mut body = json!({
@@ -1609,10 +1618,42 @@ fn build_responses_body(model: &str, system: &str, history: &[Value], user: &Val
         "instructions": system,
         "input": input,
     });
+    let mut tools: Vec<Value> = functions.to_vec();
     if web {
-        body["tools"] = json!([{ "type": "web_search" }]);
+        tools.push(json!({ "type": "web_search" }));
+    }
+    if !tools.is_empty() {
+        body["tools"] = Value::Array(tools);
     }
     body
+}
+
+/// As ferramentas do Mochi como funções nativas da Responses API: só como texto
+/// no prompt, o modelo muitas vezes se recusa a chamá-las.
+fn mochi_functions(tools: &[crate::mochi::registry::ToolDescriptor]) -> Vec<Value> {
+    tools
+        .iter()
+        .map(|t| {
+            json!({
+                "type": "function",
+                "name": t.id,
+                "description": t.description,
+                "parameters": t.input_schema,
+            })
+        })
+        .collect()
+}
+
+/// Uma `function_call` da resposta vira o bloco `<mochi_tool_call>` que o laço do Mochi já lê.
+fn function_call_block(item: &Value) -> Option<String> {
+    if item.get("type").and_then(Value::as_str) != Some("function_call") {
+        return None;
+    }
+    let name = item.get("name").and_then(Value::as_str)?;
+    let raw = item.get("arguments").and_then(Value::as_str).unwrap_or("{}");
+    let arguments: Value = serde_json::from_str(if raw.trim().is_empty() { "{}" } else { raw }).ok()?;
+    let call = json!({ "tool": name, "arguments": arguments });
+    Some(format!("<mochi_tool_call>{call}</mochi_tool_call>"))
 }
 
 enum SseEvent {
@@ -1625,6 +1666,9 @@ fn completed_output_text(json: &Value) -> String {
     let Some(outputs) = json.pointer("/response/output").and_then(Value::as_array) else {
         return text;
     };
+    if let Some(call) = outputs.iter().find_map(function_call_block) {
+        return call;
+    }
     for item in outputs {
         if let Some(parts) = item.get("content").and_then(Value::as_array) {
             for part in parts {
@@ -1663,6 +1707,10 @@ fn parse_sse_line(line: &str) -> Option<Result<SseEvent, String>> {
         }
         return None;
     }
+    // The ChatGPT backend can leave `response.completed` without its output: the call comes here.
+    if event_type == "response.output_item.done" {
+        return json.get("item").and_then(function_call_block).map(|b| Ok(SseEvent::Completed(b)));
+    }
     if event_type == "response.completed" {
         let completed = completed_output_text(&json);
         if !completed.is_empty() {
@@ -1698,6 +1746,7 @@ async fn complete_oneshot_with_endpoints(
         &[],
         &user_val,
         false,
+        &[],
         |_| system.to_string(),
         |_| {},
     )
@@ -1715,6 +1764,7 @@ async fn request_responses_text(
     history: &[Value],
     user: &Value,
     enable_web: bool,
+    functions: &[Value],
     system_for: impl Fn(bool) -> String,
     mut on_delta: impl FnMut(String),
 ) -> Result<String, String> {
@@ -1739,6 +1789,7 @@ async fn request_responses_text(
         history,
         user,
         web,
+        functions,
     );
 
     let mut refreshed = false;
@@ -1765,6 +1816,7 @@ async fn request_responses_text(
                 history,
                 user,
                 web,
+                functions,
             );
             continue;
         }
@@ -1819,7 +1871,8 @@ async fn request_responses_text(
             _ => {}
         }
     }
-    let answer = if accumulated.trim().is_empty() {
+    // A function call has no text deltas; it wins over any text said around it.
+    let answer = if accumulated.trim().is_empty() || completed_fallback.starts_with("<mochi_tool_call>") {
         completed_fallback.trim().to_string()
     } else {
         accumulated.trim().to_string()
@@ -1857,6 +1910,7 @@ async fn send_with_endpoints(
         &turn.history,
         &user,
         true,
+        &[],
         chat::system_prompt,
         on_delta,
     )
@@ -2285,7 +2339,7 @@ mod tests {
             json!({ "role": "assistant", "content": "olá" }),
         ];
         let user = user_message(true, None, "tudo bem?");
-        let body = build_responses_body("gpt-5.4", "instruções", &history, &user, true);
+        let body = build_responses_body("gpt-5.4", "instruções", &history, &user, true, &[]);
         assert_eq!(body["model"], "gpt-5.4");
         assert_eq!(body["store"], false);
         assert_eq!(body["stream"], true);
@@ -2317,13 +2371,45 @@ mod tests {
     }
 
     #[test]
+    fn mochi_tools_go_as_functions_and_a_function_call_becomes_the_tool_block() {
+        let ping = crate::mochi::registry::ToolDescriptor::from(&crate::mochi::registry::ping_tool());
+        let user = user_message(true, None, "faça um ping");
+        let body = build_responses_body("m", "i", &[], &user, true, &mochi_functions(&[ping]));
+        assert_eq!(body["tools"][0]["type"], "function");
+        assert_eq!(body["tools"][0]["name"], "ping");
+        assert_eq!(body["tools"][1], json!({ "type": "web_search" }));
+
+        let done = json!({ "type": "response.completed", "response": { "output": [
+            { "type": "message", "content": [{ "type": "output_text", "text": "Vou chamar." }] },
+            { "type": "function_call", "name": "audio", "arguments": "{\"volume\":20}", "call_id": "c1" }
+        ]}});
+        let line = format!("data: {done}");
+        match parse_sse_line(&line) {
+            Some(Ok(SseEvent::Completed(text))) => {
+                let call = crate::mochi::chat_bridge::extract_tool_call(&text).unwrap();
+                assert_eq!(call.tool, "audio");
+                assert_eq!(call.arguments, json!({ "volume": 20 }));
+            }
+            _ => panic!("function_call não virou bloco"),
+        }
+        let item_done = json!({ "type": "response.output_item.done", "item":
+            { "type": "function_call", "name": "ping", "arguments": "{}" } });
+        assert!(matches!(parse_sse_line(&format!("data: {item_done}")),
+            Some(Ok(SseEvent::Completed(t))) if t.starts_with("<mochi_tool_call>")));
+        let text_done = json!({ "type": "response.output_item.done", "item": { "type": "message" } });
+        assert!(parse_sse_line(&format!("data: {text_done}")).is_none());
+        let empty_args = json!({ "type": "function_call", "name": "ping", "arguments": "" });
+        assert!(function_call_block(&empty_args).unwrap().contains("\"arguments\":{}"));
+    }
+
+    #[test]
     fn responses_body_asks_for_web_search_only_when_web_is_on() {
         let user = user_message(true, None, "amanhã chove?");
-        let body = build_responses_body("gpt-5.4", "instruções", &[], &user, true);
+        let body = build_responses_body("gpt-5.4", "instruções", &[], &user, true, &[]);
         assert_eq!(body["tools"], json!([{ "type": "web_search" }]));
         assert_eq!(body["store"], false);
         assert_eq!(body["stream"], true);
-        let plain = build_responses_body("gpt-5.4", "instruções", &[], &user, false);
+        let plain = build_responses_body("gpt-5.4", "instruções", &[], &user, false, &[]);
         assert!(plain.get("tools").is_none());
     }
 

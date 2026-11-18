@@ -128,9 +128,9 @@ pub fn build_tools_system_appendix(descriptors: &[ToolDescriptor]) -> String {
     let mut out = String::from(
         "Ferramentas locais do Mochi disponíveis neste dispositivo:\n\
          Estas ferramentas são reais e você PODE executá-las nesta conversa: o aplicativo lê o bloco abaixo na sua resposta e roda a ferramenta. \
-         Elas não fazem parte das ferramentas nativas da sua plataforma; o único jeito de chamá-las é este bloco. \
-         Quando o pedido do usuário corresponder a uma ferramenta da lista (por exemplo, \"faça um ping\" corresponde a `ping`), \
-         responda somente com o bloco, sem texto antes ou depois, e nunca diga que uma ferramenta desta lista está indisponível.\n\
+         Quando o pedido do usuário corresponder a uma ferramenta da lista (por exemplo, \"faça um ping\" corresponde a `ping`), chame-a: \
+         se ela estiver entre as suas funções, chame a função de mesmo nome; senão, responda somente com o bloco, sem texto antes ou depois. \
+         Nunca diga que uma ferramenta desta lista está indisponível.\n\
          Formato:\n\
          <mochi_tool_call>{\"tool\":\"<id>\",\"arguments\":{...}}</mochi_tool_call>\n\
          Após a execução, você receberá o resultado em <mochi_tool_result tool=\"<id>\" ok=\"true|false\">...</mochi_tool_result> para então responder em linguagem natural ao usuário (sem tags).\n\
@@ -233,6 +233,8 @@ pub fn format_tool_result_xml(
 pub struct ModelTurnRequest<'a> {
     pub step: usize,
     pub system_appendix: &'a str,
+    /// As mesmas ferramentas do apêndice, para provedores com chamada de função nativa.
+    pub tools: &'a [ToolDescriptor],
     pub tool_exchange: &'a [(String, String)],
 }
 
@@ -304,6 +306,7 @@ pub async fn run_tool_loop_with_model<M: ToolLoopModel>(
         let req = ModelTurnRequest {
             step,
             system_appendix: &system_appendix,
+            tools: &descriptors,
             tool_exchange: &tool_exchange,
         };
         let raw_reply = tokio::select! {
@@ -633,7 +636,7 @@ impl ToolLoopModel for ProviderToolModel {
                         req.tool_exchange,
                         true,
                     );
-                    crate::chatgpt::step(app, model, appendix, &h, &user).await
+                    crate::chatgpt::step(app, model, appendix, req.tools, &h, &user).await
                 }
                 ProviderKind::Claude { model, last_blocks } => {
                     let (h, user) = Self::json_history_and_user(
