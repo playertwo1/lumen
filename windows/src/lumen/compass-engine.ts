@@ -227,6 +227,33 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
   ctx.closePath();
 }
 
+/** Device pixels per shape unit of the draw in progress (set by `draw`): shadows are measured in device pixels. */
+let deviceUnit = 2;
+/** The thinnest contour that still reads, in CSS pixels: below it the outline turns into a blur on mini sizes. */
+const MIN_STROKE_CSS = 1;
+
+/** Soft drop shadow in shape units (1 unit = what it was at 96 px / DPR 2), never under 0.75 device px. */
+function shadowOf(ctx: CanvasRenderingContext2D) {
+  const px = Math.max(0.75, deviceUnit);
+  ctx.shadowColor = "rgba(0,0,0,0.32)";
+  ctx.shadowBlur = px;
+  ctx.shadowOffsetY = px;
+}
+
+/** Raises every contour width to `minUnits` for one draw; browsers only, tests use a recording stub. */
+function withStrokeFloor(ctx: CanvasRenderingContext2D, minUnits: number, paint: () => void) {
+  const accessor = typeof CanvasRenderingContext2D === "undefined"
+    ? undefined
+    : Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, "lineWidth");
+  if (!accessor?.set || !accessor.get || minUnits <= 3) { paint(); return; }
+  Object.defineProperty(ctx, "lineWidth", {
+    configurable: true,
+    get: () => accessor.get!.call(ctx),
+    set: (v: number) => accessor.set!.call(ctx, Math.max(v, minUnits)),
+  });
+  try { paint(); } finally { delete (ctx as unknown as { lineWidth?: number }).lineWidth; }
+}
+
 function paintOutlinedShape(
   ctx: CanvasRenderingContext2D,
   fill: RGB,
@@ -235,9 +262,7 @@ function paintOutlinedShape(
 ) {
   ctx.save();
   ctx.fillStyle = "rgba(0,0,0,0.28)";
-  ctx.shadowColor = "rgba(0,0,0,0.32)";
-  ctx.shadowBlur = 2;
-  ctx.shadowOffsetY = 2;
+  shadowOf(ctx);
   ctx.fill(fillRule);
   ctx.restore();
   ctx.fillStyle = rgbCss(fill);
@@ -1104,6 +1129,14 @@ export class CompassEngine {
   }
 
   draw(ctx: CanvasRenderingContext2D, width: number, height: number) {
+    // The caller's transform is the pixel ratio; the character then draws at `width / 96` of it (and a bit less in the bar).
+    const dpr = Math.max(1, ctx.getTransform?.()?.a ?? 1);
+    const unit = (width / 96) * (!this.isMini && this.particleOverhang > 0 && width <= 36 ? 0.88 : 1);
+    deviceUnit = dpr * unit;
+    withStrokeFloor(ctx, MIN_STROKE_CSS / unit, () => this.paintCharacter(ctx, width, height));
+  }
+
+  private paintCharacter(ctx: CanvasRenderingContext2D, width: number, height: number) {
     const cfg = this.cfg ?? BOT_STATES.idle;
     const reduced = reducedMotion();
     const emote = !reduced && this.elapsed < this.emoteUntil ? this.emote : null;
@@ -1385,9 +1418,7 @@ export class CompassEngine {
     } else {
       ctx.save();
       ctx.fillStyle = "rgba(0,0,0,0.28)";
-      ctx.shadowColor = "rgba(0,0,0,0.32)";
-      ctx.shadowBlur = 2;
-      ctx.shadowOffsetY = 2;
+      shadowOf(ctx);
       ctx.fill();
       ctx.restore();
 

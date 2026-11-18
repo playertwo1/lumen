@@ -98,6 +98,38 @@ test("desenha todos os estados para todos os personagens a 22/96 px e DPR 1/1,5/
   }
 });
 
+test("em tamanho mini nenhum contorno fica mais fino que 1 px CSS; no tamanho normal nada muda", () => {
+  const writes = [];
+  class FakeContext2D {
+    get lineWidth() { return this._lw; }
+    set lineWidth(v) { this._lw = v; writes.push(v); }
+  }
+  globalThis.CanvasRenderingContext2D = FakeContext2D;
+  try {
+    const draw = (size, mini) => {
+      writes.length = 0;
+      const ctx = new Proxy(new FakeContext2D(), {
+        get: (o, k) => (k in o ? o[k] : typeof k === "string" ? () => ({ addColorStop() {} }) : undefined),
+        set: (o, k, v) => { o[k] = v; return true; },
+      });
+      const engine = new BotEngine();
+      engine.isMini = mini;
+      engine.setAgent("agent_codex");
+      engine.setState("working", true);
+      engine.draw(ctx, size, size);
+      return [...writes];
+    };
+    const grid = draw(21.67, true);
+    const unit = 21.67 / 96;
+    assert.ok(grid.length > 0);
+    for (const w of grid) assert.ok(w * unit >= 1 - 1e-9, `contorno de ${w} unidades some no grid mini`);
+    const normal = draw(96, false);
+    assert.ok(normal.includes(3) && Math.min(...normal) < 3, "tamanho normal mantém as larguras originais");
+  } finally {
+    delete globalThis.CanvasRenderingContext2D;
+  }
+});
+
 test("desenha cada emote nos dois tamanhos sem erro para todos os personagens", () => {
   for (const id of [
     "integration_claude", "agent_claude-desktop", "agent_codex", "ai_openai",
