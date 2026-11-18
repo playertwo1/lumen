@@ -2,6 +2,15 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.16 — correções da M2.7 (brilho, campos soltos, Bloco de Notas)
+
+- [x] Validações locais: `python scripts/test-whats-new.py` (ok), `npx tsc --noEmit`, `npm test` (`761/761`), `cargo test --lib` (`937` passaram, `10` ignorados, com o `resource.lib` linkado ao exe de teste). Brilho: `WmiSetBrightness` pela classe confirmado num programa à parte, mantendo o nível.
+- [x] Workflow `44278921986` (tag `windows-v0.7.16`, commit `d0d722f`) passou e publicou [Windows 0.7.16](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.16).
+- [x] SHA-256 dos arquivos baixados igual ao do GitHub; Defender sem detecções.
+  - Setup `Lumen-Windows-0.7.16-setup.exe`: `18C6183853C5BD86EAB17126F06937DCF0EA543A896C50E0577F75B1EAC897ED`.
+  - MSI `Lumen-Windows-0.7.16.msi`: `DEC623E1A26D4CB17199D71BE1A8CD0B42B75B5B830807E176936B7A175AA236`.
+- [ ] Validação real no app instalado: pendente (dono repete os 10 comandos da M2.7).
+
 ### Windows 0.7.15 — ping pelo chat do ChatGPT como função nativa
 
 - [x] Validações locais: `python scripts/test-whats-new.py` (ok), `npx tsc --noEmit`, `npm test` (`761/761`), `cargo test --lib` (`937` passaram, `10` ignorados, com o `resource.lib` linkado ao exe de teste). Teste real do ChatGPT: `ping` chamado 3 de 3, ida e volta em ~9 s.
