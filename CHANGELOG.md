@@ -1,5 +1,10 @@
 # Changelog
 
+## Windows 0.7.18 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Ferramenta principal** — a lista agora oferece Claude Desktop, Orca, Antigravity e Codex. Claude Code e Cursor saíram da lista e continuam nas abas ativas.
+- **Novo padrão** — a ferramenta principal padrão é o Claude Desktop; quem tinha Claude Code ou Cursor como principal passa para ele.
+
 ## Windows 0.7.17 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Organizar as janelas para programar** — o pedido agora abre Codex, Claude Code e Antigravity e põe os três lado a lado, em colunas iguais. Antes o modelo escolhia os apps por conta própria (VS Code e Firefox).
