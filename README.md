@@ -7,7 +7,7 @@
 **Ilha flutuante inteligente para Windows que acompanha seus agentes de IA, permissões, ditado offline, anotações e integrações sem tirar você do foco.**
 
 <p>
-  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.14"><img src="https://img.shields.io/badge/release-windows--v0.7.14-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.14"></a>
+  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.15"><img src="https://img.shields.io/badge/release-windows--v0.7.14-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.15"></a>
   <a href="https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 e 11"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=black" alt="Tauri 2">
   <img src="https://img.shields.io/badge/Rust-TypeScript-F74C00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust e TypeScript">
@@ -67,10 +67,11 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 > Os instaladores ainda não possuem certificado Authenticode, então o SmartScreen pode exibir aviso de editor desconhecido; clique em **Mais informações → Executar mesmo assim**. Após instalar, novas versões podem ser verificadas em **Ajustes → Geral → Atualizações** com conferência de SHA-256.
 
 <details>
-<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.14</code></summary>
+<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.15</code></summary>
 
 | Versão | Data | Destaques |
 |---|---|---|
+| [`windows-v0.7.15`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.15) | 18 nov. 2026 | O chat do ChatGPT passa a chamar as ferramentas do Lumen (ping 3 de 3, ~9 s); personagens mais nítidos nos tamanhos pequenos e troca de estado suave |
 | [`windows-v0.7.14`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.14) | 18 nov. 2026 | M2: o assistente controla volume, brilho, apps, janelas, mídia e energia (com clique); ferramentas pelo chat do ChatGPT; pausa rápida no MCP; até 6 pílulas |
 | [`windows-v0.7.13`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.13) | 17 nov. 2026 | Cristal de verdade na janela preta de abertura: a bússola antiga não aparece mais ao iniciar |
 | [`windows-v0.7.12`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.12) | 17 nov. 2026 | L8: ditado e mãos livres mais confiáveis, Anotador → Tarefas, escolha do motor da limpeza, Orca, WhatsApp pela ponte do Orbit e Apagar/Spam na triagem do MailCraft |

@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows 0.7.15 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **O chat do ChatGPT agora chama as ferramentas do Lumen** — na 0.7.14 o modelo recebia as ferramentas só como texto e recusava quase sempre ("não consegui executar"), além de levar cerca de 1 minuto. Agora elas vão como funções nativas da API: o `ping` foi chamado 3 vezes em 3 no teste real, com a volta completa em cerca de 9 s. Os outros provedores seguem como estavam.
+- **Personagens mais nítidos nos tamanhos pequenos** — contorno e sombra legíveis na barra de 24 px, na mini pílula e no mini grid; o tamanho normal não muda.
+- **Troca de estado suave** — a pose anterior some aos poucos, olhar e inclinação chegam suaves e o destaque novo entra com estouro; com movimento reduzido a troca continua imediata.
+
 ## Windows 0.7.14 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **O assistente controla o Windows (Fase M2)** — pelo chat, o Lumen agora muda o volume e tira o som, ajusta o brilho (tela do notebook, ou monitor externo que responda por DDC/CI), lista e abre aplicativos do Menu Iniciar, organiza janelas (mover, minimizar, duas lado a lado e desfazer) e toca, pausa ou troca a faixa do player ativo. Tudo por APIs do Windows, sem PowerShell montado a partir do pedido, e cada ação confere o resultado e relata a falha como falha.

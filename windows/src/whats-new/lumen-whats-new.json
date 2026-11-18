@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.7.15",
+      "items": [
+        {
+          "icon": "bolt",
+          "title": { "pt-BR": "O chat chama as ferramentas" },
+          "detail": { "pt-BR": "No ChatGPT, pedidos como volume, brilho e apps agora acionam o Lumen de verdade, e mais rápido." }
+        },
+        {
+          "icon": "sparkles",
+          "title": { "pt-BR": "Personagens mais nítidos" },
+          "detail": { "pt-BR": "Contorno e sombra legíveis nos tamanhos pequenos e troca de estado mais suave." }
+        }
+      ]
+    },
+    {
       "version": "0.7.14",
       "items": [
         {
