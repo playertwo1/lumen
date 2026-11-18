@@ -52,7 +52,7 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 
 ### M2.7 — Fechamento
 
-- [ ] Escolher 10 comandos de rotina; executar cada um 3 vezes pelo chat.
+- [x] Escolher 10 comandos de rotina; executar cada um 3 vezes pelo chat. *(Relato do dono: os 10 na `0.7.16`, e "organizar para programar" refeito na `0.7.17`.)*
 - [ ] Testar: retomar da suspensão, aplicativo ausente, dispositivo de áudio trocado.
 - [ ] Atualizar `windows/README.md` e o Estado no índice.
 - Checkpoint M2: 10 comandos com sucesso repetível; toda falha aparece como falha, com motivo.
@@ -68,3 +68,5 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 - `apps` também abre apps da Store sem `.lnk` (pasta de apps do Windows, pelo AUMID); o Codex aparece como "ChatGPT", e "codex" e "claude code" viraram apelidos. Conferido num programa à parte: a listagem traz Codex, Claude, Calculadora e Bloco de Notas, e a Calculadora abriu pelo AUMID.
 - O limite de passos por resposta subiu de 4 para 8: o pedido usa 5 (três `apps`, listar e lado a lado).
 - Próximo: o dono testa "organize as janelas para programar" e "desfaz a organização das janelas" (3 vezes) na versão com essas correções.
+
+**3º relato do dono (2026-11-18, `0.7.17`):** "organizar as janelas para programar" funcionou. Os 10 comandos estão fechados. Faltam retomar da suspensão, app ausente e troca de dispositivo de áudio, e atualizar o `windows/README.md`.

@@ -10,14 +10,14 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 |---|---|
 | L0–L7, M0, M1 | Concluídas e arquivadas (M1 fechada em 2026-11-17 por decisão do dono, com parte do teste real dispensada) |
 | L8 | Todas as subetapas implementadas e publicadas na `0.7.12`; validação real pendente, uma por vez |
-| M2 | M2.1–M2.6 implementadas e publicadas na `0.7.14` (2026-11-18); a `0.7.15` corrige o ping pelo chat e a `0.7.16` as falhas do 1º relato da M2.7. No 2º relato os 10 comandos funcionaram; a `0.7.17` ajusta "organizar para programar" (Codex, Claude Code e Antigravity lado a lado) |
+| M2 | M2.1–M2.6 implementadas e publicadas na `0.7.14` (2026-11-18); a `0.7.15` corrige o ping pelo chat e a `0.7.16` as falhas do 1º relato da M2.7. No 2º relato os 10 comandos funcionaram; a `0.7.17` ajusta "organizar para programar" (Codex, Claude Code e Antigravity lado a lado), confirmado no 3º relato. Faltam os casos de borda da M2.7 |
 | L6.5 | A fazer depois do contrato v1.1 da Segunda Mente |
 | 0, 1, 2, 2B, 2C | Pausadas (D-053) |
 
 ## Próxima ação
 
 1. O dono testa a L8 no notebook, uma subetapa por vez (L8.1 → L8.6), e relata. Cada relato fecha ou reabre o checkpoint correspondente em [l8-ajustes-uso-real.md](roadmap/l8-ajustes-uso-real.md).
-2. M2.7: o dono atualiza para a `0.7.17` e testa "organize as janelas para programar" e o desfazer (3 vezes), mais retomar da suspensão, app ausente e troca de áudio. O relato fecha ou reabre os checkpoints em [m2-windows-nativo.md](roadmap/m2-windows-nativo.md).
+2. M2.7: os 10 comandos estão fechados (3º relato, `0.7.17`). Falta o dono testar retomar da suspensão (pedir "volume 20%" depois de acordar o notebook), app ausente ("abre o xyzzy" deve dizer que não encontrou) e troca de dispositivo de áudio (trocar a saída e pedir "volume 20%"). Depois disso: atualizar o `windows/README.md` e arquivar a M2. O relato fecha ou reabre os checkpoints em [m2-windows-nativo.md](roadmap/m2-windows-nativo.md).
 
 ## Pendências do dono (validação real)
 
