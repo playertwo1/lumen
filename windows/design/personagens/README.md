@@ -1,42 +1,39 @@
-# Personagens do Lumen — referências visuais L1.4a
+# Personagens do Lumen
 
-Pranchas conceituais geradas em 2026-11-13 e organizadas em PNG para leitura em fundo preto ou transparente. O proprietário aprovou visualmente a lineup e as pranchas estáticas em 2026-11-13. Na mesma data, escolheu Canvas com base na revisão técnica da L1.4b; a implementação está na L1.4d. A escolha do renderer não representa aceite de código ou validação real. A Bússola continua sendo somente o ícone do Lumen.
+Os personagens são desenhados em código (Canvas), em `windows/src/lumen/compass-engine.ts`. As imagens desta pasta foram geradas a partir desse código em 2026-11-18 e mostram o que o app desenha hoje. Quando um personagem mudar no código, gere as imagens de novo (ver "Como gerar" abaixo).
 
-## Família e paleta
+## Família
 
-Todos compartilham contorno índigo `#26224B`, dois olhos ovais grandes com pupilas índigo, pequenos pontos de luz areia `#F4E8C9` e boca feita com uma curva curta. A base é plana, sem textura ou gradiente, e usa formas que podem ser redesenhadas com círculos, retângulos arredondados e curvas. As seis cores de agente conferem com `windows/src/island/agents.ts` e `windows/src/core/pills.ts`; índigo e areia do genérico vêm da paleta em `windows/src/lumen/compass.ts`. Cada personagem ocupa uma caixa de 96 × 96 px no lineup; `teste-22px.png` mostra cada um com 22 px de largura real.
+Todos compartilham contorno índigo `#26224B`, dois olhos ovais grandes com pupilas índigo, pontos de luz areia `#F4E8C9` e boca feita com uma curva curta. Nenhum usa logotipo, símbolo ou mascote oficial.
 
-| Personagem | Silhueta e acessório | Primitivas para Canvas | Cores |
+| Personagem | Pílula (ID) | Forma | Cor principal |
 |---|---|---|---|
-| Claude Code | Página vertical com canto dobrado e marcador pequeno; calmo, cuidadoso e escritor. | Retângulo arredondado, triângulo arredondado do canto, retângulo com ponta curva do marcador, elipses e curvas. | Corpo `#F5F6F8`; marcador e luz dos olhos `#F4E8C9`; contorno, pupilas e boca `#26224B`. |
-| Codex | Quadrado arredondado compacto com pequena aba de ferramenta; focado e rápido. | Retângulo arredondado, aba retangular arredondada, elipses e curvas. | Corpo `#2DD4BF`; aba e luz dos olhos `#F4E8C9`; contorno, pupilas e boca `#26224B`. |
-| ChatGPT | Forma circular com uma pequena ponta lateral de balão, sem qualquer marca; conversador e prestativo. | Círculo ou elipse, pequeno triângulo arredondado, elipses e curvas. | Corpo `#10A37F`; luz dos olhos `#F4E8C9`; contorno, pupilas e boca `#26224B`. |
-| Antigravity | Gota vertical macia acompanhada por duas bolinhas flutuantes; leve e brincalhão. | Curva Bézier fechada para a gota, dois círculos, elipses e curvas. | Corpo e bolinhas `#E879F9`; luz dos olhos `#F4E8C9`; contorno, pupilas e boca `#26224B`. |
-| Gemini CLI | Dois volumes arredondados unidos, com um único rosto compartilhado; curioso e duplo. | Dois círculos ou elipses parcialmente sobrepostos, elipses menores e curvas. | Corpo `#8AB4F8`; luz dos olhos `#F4E8C9`; contorno, pupilas e boca `#26224B`. |
-| OpenCode | Retângulo alto arredondado com arco aberto simples e pequeno retalho de oficina; artesão e aberto. | Retângulo arredondado, arco por curva ou semicírculo, pequeno retângulo arredondado, elipses e curvas. | Corpo `#4ADE80`; retalho `#F4E8C9`; contorno, pupilas e boca `#26224B`. |
-| Genérico | Retângulo arredondado areia com contorno e oval índigo; neutro e simpático. | Retângulo arredondado, elipse, elipses dos olhos e curvas. | Areia `#F4E8C9`; índigo `#26224B` no contorno, pupilas, boca e oval inferior. |
+| Claude Code | `integration_claude` | Folha com canto dobrado e marcador | branco `#F5F6F8` |
+| Claude Desktop | `agent_claude-desktop` | A mesma folha do Claude Code | terracota `#D97757` |
+| Codex | `agent_codex` | Quadrado arredondado com uma aba lateral | turquesa `#2DD4BF` |
+| ChatGPT | `ai_openai` | Balão de conversa redondo | verde `#10A37F` |
+| Antigravity | `agent_antigravity` | Arco em "A" com degradê colorido e duas bolinhas flutuando | degradê (base magenta `#E879F9`) |
+| Gemini CLI | `agent_gemini` | Dois volumes unidos com um rosto só | azul claro `#8AB4F8` |
+| OpenCode | `agent_opencode` | Retângulo alto com arco no topo e boca larga | verde `#4ADE80` |
+| Grok | `grok` | Cápsula chanfrada com visor e satélite em órbita | prata `#B8C5D6` |
+| Hermes | `agent_hermes-desktop` | Corpo arredondado com asinhas e crista | roxo `#C084FC` |
+| YouTube Music | `integration_youtubemusic` | Corpo com fones de ouvido | vermelho `#FF0033` |
+| Email | `integration_mail` | Envelope | azul `#2F8CFF` |
+| Genérico | qualquer outro | Folha A4 com linhas de texto | areia `#F4E8C9` |
 
-## Mudanças por estado
+## Estados
 
-As alterações ficam no olhar, na boca, numa inclinação pequena ou em bolinhas simples. A silhueta, o acessório e as cores do personagem continuam iguais entre estados.
-
-| Estado | Desenho de referência | Ideia para Canvas |
-|---|---|---|
-| Parado | Olhos abertos e sorriso pequeno. | Pupilas centradas; curva de boca ascendente curta. |
-| Pensando | Olhar atento e duas bolinhas de pensamento ao alto. | Deslocar as pupilas dentro das mesmas elipses; desenhar dois círculos areia pequenos. |
-| Trabalhando | Olhar focado e leve inclinação para a frente. | Reduzir o espaço entre pupila e borda inferior; inclinar a forma inteira poucos graus. |
-| Dormindo | Olhos fechados em arcos, boca relaxada e duas bolinhas acima. | Trocar elipses dos olhos por curvas; desenhar dois círculos pequenos. |
-| Aguardando aprovação | Olhar atento e um ponto areia cercado por dois arcos discretos na cor do personagem. | Olhos abertos; traçar dois arcos curtos e um círculo, sem brilho ou animação. |
-| Pergunta | Leve inclinação e boca pequena arredondada aberta. | Inclinar o corpo poucos graus; trocar a curva da boca por um círculo ou elipse pequena. |
-| Erro | Olhos preocupados e boca voltada para baixo; triste, nunca assustado. | Baixar um pouco as pupilas; desenhar uma curva de boca descendente curta. |
-| Concluído | Olhos em arcos felizes, sorriso maior e duas bolinhas. | Fechar os olhos em curvas; ampliar a curva da boca; desenhar dois círculos pequenos. |
+Cada personagem tem 11 estados: Parado, Trabalhando (com monitor e teclado), Pensando, Procurando (lupa), Aguardando aprovação, Pergunta, Erro, Concluído, Limite temporário, Dormindo e Tonto. A silhueta e a cor do personagem não mudam entre estados; mudam os olhos, a boca e o destaque ao lado.
 
 ## Arquivos
 
-- `lineup.png` e `lineup-transparente.png`: sete poses paradas, cada personagem em caixa de 96 × 96 px, com nomes em pt-BR.
-- `claude-code-estados.png`, `codex-estados.png`, `chatgpt-estados.png`, `antigravity-estados.png`, `gemini-cli-estados.png`, `opencode-estados.png`, `generico-estados.png`: uma grade de oito estados por agente, com rótulos em pt-BR sobre preto.
-- `*-estados-transparente.png`: as mesmas pranchas, com fundo transparente.
-- `teste-22px.png`: os sete personagens em 22 px reais de largura sobre preto; a ordem é a mesma do lineup.
-- `claude-marca-mascote-estudo.png` e `claude-marca-mascote-estudo-transparente.png`: uma variação exploratória isolada, feita depois do lineup a pedido do proprietário. Usa como referências visuais as pinças de um caranguejo e um motivo radial coral; não incorpora um arquivo oficial de logo ou ilustração.
+- `lineup.png` e `lineup-transparente.png`: os 12 personagens parados, 96 px cada, com nome.
+- `<personagem>-estados.png` e `<personagem>-estados-transparente.png`: os 11 estados de cada um (`claude-code`, `claude-desktop`, `codex`, `chatgpt`, `antigravity`, `gemini-cli`, `opencode`, `grok`, `hermes`, `youtube-music`, `email`, `generico`).
+- `teste-22px.png`: os 12 em 22 px reais, o tamanho da pílula.
+- `aprovadas-2026-11-13/`: as pranchas desenhadas à mão que o dono aprovou em 2026-11-13 (7 personagens, 8 estados). Ficam como registro do aceite e servem de comparação na página de conferência; não são mais o visual do app.
+- `claude-marca-mascote-estudo*.png`: estudo isolado do Claude, nunca aprovado para o app.
+- `prototipo/`: protótipo sprite × Canvas da L1.4b e a página de conferência `l14d1-conferencia.html`, com todos os estados e animações.
 
-As sete pranchas da família original não incluem logotipos, símbolos ou mascotes oficiais. O estudo pontual do Claude fica separado para comparação e não foi aprovado para o app nem para distribuição. A família original tem aceite visual explícito de 2026-11-13. A revisão técnica da L1.4b levou à escolha do Canvas pelo proprietário na mesma data; o protótipo permanece fora do app até a L1.4d.
+## Como gerar
+
+Em `windows/`, rode `npm run dev` e abra `/design/personagens/prototipo/l14d1-conferencia.html`. A página importa o `BotEngine` do código do app; cada imagem desta pasta é o `BotEngine` desenhado num `<canvas>` (DPR 2, estado fixo, sem animação) e salvo como PNG.

@@ -135,7 +135,8 @@
         const image = new Image();
         image.onload = () => { images.set(sheet, image); resolve(); };
         image.onerror = () => reject(new Error(`Não foi possível carregar ${sheet}`));
-        image.src = `../${sheet}`;
+        // As pranchas aprovadas em 2026-11-13 (referência das comparações) ficam nesta pasta.
+        image.src = `../aprovadas-2026-11-13/${sheet}`;
       })));
     }
 
