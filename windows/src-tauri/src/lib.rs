@@ -1,5 +1,14 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
+// The lib's own test exe imports TaskDialogIndirect from comctl32, which only
+// exists with the Common Controls v6 manifest; tauri-build embeds it in the
+// binary only. Without this the exe dies with 0xc0000139 before any test runs.
+#[cfg(all(test, target_os = "windows", target_env = "msvc"))]
+std::arch::global_asm!(
+    ".section .drectve,\"yn\"",
+    ".ascii \" /MANIFEST:EMBED /MANIFESTDEPENDENCY:\\\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\\\" \"",
+);
+
 mod agent_hooks;
 mod agent_usage;
 mod agents;
