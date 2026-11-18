@@ -2,6 +2,15 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.17 — organizar as janelas para programar (Codex, Claude Code e Antigravity)
+
+- [x] Validações locais: `python scripts/test-whats-new.py` (ok), `cargo check` (backend real do Windows), `cargo test --lib` (`941` passaram, `10` ignorados, com o `resource.lib` linkado ao exe de teste). Sem mudança em TypeScript, então `tsc` e `npm test` não rodaram. Listagem dos apps da Store e abertura pelo AUMID (Calculadora) confirmadas num programa à parte.
+- [x] Workflow `44305316315` (tag `windows-v0.7.17`, commit `b68b372`) passou e publicou [Windows 0.7.17](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.17).
+- [x] SHA-256 dos arquivos baixados igual ao do GitHub; Defender sem detecções.
+  - Setup `Lumen-Windows-0.7.17-setup.exe`: `41F5CC120D53C39700DAE67B80584923AE9017D0178099544331E64CD7C90E34`.
+  - MSI `Lumen-Windows-0.7.17.msi`: `CA49EF670AC5CCACBCA46ACBF2F222BB731C392F361BBD8D4886A87BC4F05DFE`.
+- [ ] Validação real no app instalado: pendente (dono testa "organize as janelas para programar" e o desfazer).
+
 ### Windows 0.7.16 — correções da M2.7 (brilho, campos soltos, Bloco de Notas)
 
 - [x] Validações locais: `python scripts/test-whats-new.py` (ok), `npx tsc --noEmit`, `npm test` (`761/761`), `cargo test --lib` (`937` passaram, `10` ignorados, com o `resource.lib` linkado ao exe de teste). Brilho: `WmiSetBrightness` pela classe confirmado num programa à parte, mantendo o nível.

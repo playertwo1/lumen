@@ -1,6 +1,6 @@
 # STATE do fork — ponto de retomada
 
-**Atualizado:** 2026-11-18 · **Última release:** [`windows-v0.7.16`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.16) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (validação do dono)
+**Atualizado:** 2026-11-18 · **Última release:** [`windows-v0.7.17`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.17) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (validação do dono)
 
 Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação. O que cada etapa faz está no [ROADMAP-FORK](ROADMAP-FORK.md); o histórico deste arquivo até a reorganização está em [arquivadas/state/](arquivadas/state/state-ate-2026-11-17.md).
 
@@ -10,14 +10,14 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 |---|---|
 | L0–L7, M0, M1 | Concluídas e arquivadas (M1 fechada em 2026-11-17 por decisão do dono, com parte do teste real dispensada) |
 | L8 | Todas as subetapas implementadas e publicadas na `0.7.12`; validação real pendente, uma por vez |
-| M2 | M2.1–M2.6 implementadas e publicadas na `0.7.14` (2026-11-18); a `0.7.15` corrige o ping pelo chat e a `0.7.16` as falhas do 1º relato da M2.7. No 2º relato os 10 comandos funcionaram; a `main` ajusta "organizar para programar" (Codex, Claude Code e Antigravity lado a lado), ainda sem release |
+| M2 | M2.1–M2.6 implementadas e publicadas na `0.7.14` (2026-11-18); a `0.7.15` corrige o ping pelo chat e a `0.7.16` as falhas do 1º relato da M2.7. No 2º relato os 10 comandos funcionaram; a `0.7.17` ajusta "organizar para programar" (Codex, Claude Code e Antigravity lado a lado) |
 | L6.5 | A fazer depois do contrato v1.1 da Segunda Mente |
 | 0, 1, 2, 2B, 2C | Pausadas (D-053) |
 
 ## Próxima ação
 
 1. O dono testa a L8 no notebook, uma subetapa por vez (L8.1 → L8.6), e relata. Cada relato fecha ou reabre o checkpoint correspondente em [l8-ajustes-uso-real.md](roadmap/l8-ajustes-uso-real.md).
-2. M2.7: gerar a release com o ajuste de "organizar para programar"; o dono testa esse pedido e o desfazer (3 vezes), mais retomar da suspensão, app ausente e troca de áudio. O relato fecha ou reabre os checkpoints em [m2-windows-nativo.md](roadmap/m2-windows-nativo.md).
+2. M2.7: o dono atualiza para a `0.7.17` e testa "organize as janelas para programar" e o desfazer (3 vezes), mais retomar da suspensão, app ausente e troca de áudio. O relato fecha ou reabre os checkpoints em [m2-windows-nativo.md](roadmap/m2-windows-nativo.md).
 
 ## Pendências do dono (validação real)
 
@@ -30,3 +30,4 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 - L8.4 ainda sem os testes com mock de cada motor; L8.5 deixou o fluxo de hooks do Orca para depois (ver o arquivo da L8).
 - `lumen.exe` e `lumen-hook.exe` do `windows-latest` continuam os da `0.7.9`: o workflow de release não os atualiza.
+- "Windows CI" vermelho desde 2026-11-17: o exe de testes do Rust não abre no runner (`STATUS_ENTRYPOINT_NOT_FOUND`, o mesmo que se contorna localmente linkando o `resource.lib`). O workflow de release não roda esses testes e segue verde.
