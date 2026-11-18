@@ -1,5 +1,12 @@
 # Changelog
 
+## Windows 0.7.17 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Organizar as janelas para programar** — o pedido agora abre Codex, Claude Code e Antigravity e põe os três lado a lado, em colunas iguais. Antes o modelo escolhia os apps por conta própria (VS Code e Firefox).
+- **Lado a lado com três janelas** — a ferramenta de janelas encaixa 2 ou 3 janelas; o desfazer volta todas.
+- **Apps da Store pelo chat** — Codex, Claude, Calculadora e outros apps da Store sem atalho no Menu Iniciar agora são encontrados e abertos. O Codex aparece no Windows como "ChatGPT"; "codex" e "claude code" funcionam como apelidos.
+- **Mais passos por resposta** — o limite de ferramentas por pedido subiu de 4 para 8, para pedidos com várias etapas.
+
 ## Windows 0.7.16 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Brilho volta a funcionar** — "brilho 60%" falhava com `0x8004101e` (acesso negado) porque o Lumen pedia o método de brilho à tela em vez da classe do WMI.

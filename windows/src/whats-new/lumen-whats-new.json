@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.17",
+      "items": [
+        {
+          "icon": "bolt",
+          "title": { "pt-BR": "Janelas para programar" },
+          "detail": { "pt-BR": "Peça para organizar as janelas para programar: Codex, Claude Code e Antigravity lado a lado." }
+        }
+      ]
+    },
+    {
       "version": "0.7.16",
       "items": [
         {
