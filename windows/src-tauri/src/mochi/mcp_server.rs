@@ -914,9 +914,11 @@ mod tests {
         )
         .await;
         let tools = list["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 1);
-        assert_eq!(tools[0]["name"], "ping");
-        assert!(tools[0]["inputSchema"].is_object());
+        // bloquear_tela depende só do Windows; as demais ferramentas precisam de capacidade do computador.
+        let nomes: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert_eq!(nomes, if cfg!(windows) { vec!["bloquear_tela", "ping"] } else { vec!["ping"] });
+        let ping = tools.iter().find(|t| t["name"] == "ping").unwrap();
+        assert!(ping["inputSchema"].is_object());
 
         handle.shutdown();
     }

@@ -941,7 +941,8 @@ mod tests {
                 .into_iter()
                 .map(|t| t.id)
                 .collect::<Vec<_>>(),
-            vec!["ping"]
+            // bloquear_tela depende só do Windows; as demais precisam de capacidade.
+            if cfg!(windows) { vec!["bloquear_tela", "ping"] } else { vec!["ping"] }
         );
 
         let (_tx1, rx1) = watch::channel(false);

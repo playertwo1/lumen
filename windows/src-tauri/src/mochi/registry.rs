@@ -809,9 +809,11 @@ mod tests {
         let ctx = ToolContext::new();
         let listed = registry.list_available(&ctx);
 
-        assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].id, "ping");
-        assert_eq!(listed[0].risk, RiskLevel::Low);
+        // Sem capacidades, só o ping e o bloqueio de tela (que depende só do Windows) aparecem.
+        let ids: Vec<&str> = listed.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, if cfg!(windows) { vec!["bloquear_tela", "ping"] } else { vec!["ping"] });
+        let ping = listed.iter().find(|t| t.id == "ping").unwrap();
+        assert_eq!(ping.risk, RiskLevel::Low);
         assert!(registry.get_if_available("ping", &ctx).is_ok());
     }
 
@@ -850,7 +852,8 @@ mod tests {
 
         let missing_ctx = ToolContext::new();
         let listed = registry.list_available(&missing_ctx);
-        assert_eq!(listed.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), vec!["ping"]);
+        let esperado_sem_capacidade = if cfg!(windows) { vec!["bloquear_tela", "ping"] } else { vec!["ping"] };
+        assert_eq!(listed.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), esperado_sem_capacidade);
         assert_eq!(
             registry
                 .get_if_available("unavailable_probe", &missing_ctx)
@@ -865,7 +868,11 @@ mod tests {
                 .iter()
                 .map(|t| t.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["ping", "unavailable_probe"]
+            if cfg!(windows) {
+                vec!["bloquear_tela", "ping", "unavailable_probe"]
+            } else {
+                vec!["ping", "unavailable_probe"]
+            }
         );
         assert!(registry
             .get_if_available("unavailable_probe", &ready_ctx)

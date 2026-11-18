@@ -45,10 +45,10 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 
 ### M2.6 — Energia (risco médio e alto)
 
-- [ ] Bloquear a tela: risco médio.
-- [ ] Suspender, reiniciar e desligar: risco alto, clique toda vez, com aviso de trabalho não salvo.
-- [ ] Testar: negar não faz nada; timeout não faz nada.
-- Checkpoint M2.6: nenhuma ação de energia ocorre sem clique; o registro mostra a decisão.
+- [x] Bloquear a tela: risco médio.
+- [x] Suspender, reiniciar e desligar: risco alto, clique toda vez, com aviso de trabalho não salvo.
+- [x] Testar: negar não faz nada; timeout não faz nada. *(Sintético, com backend falso e contador de chamadas.)*
+- Checkpoint M2.6: nenhuma ação de energia ocorre sem clique; o registro mostra a decisão. *(Sintético em 2026-11-18: ferramentas `bloquear_tela`, `suspender`, `reiniciar` e `desligar` em `mochi/tools/power.rs`; `ExitWindowsEx` sem `EWX_FORCE`; suíte Rust `936 passed; 0 failed`. A suspensão só aparece com S3: conferir no notebook se ele é "Modern Standby" e, nesse caso, se `suspender` some. **Real: NOT_RUN**.)*
 
 ### M2.7 — Fechamento
 

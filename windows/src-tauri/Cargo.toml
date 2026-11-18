@@ -115,6 +115,8 @@ windows = { version = "0.61", features = [
   "Win32_UI_Accessibility",
   # Mochi feels the PC (vitals.rs): battery, and the ACPI thermal zones.
   "Win32_System_Power",
+  # Mochi's energy tools: LockWorkStation and ExitWindowsEx (restart, shutdown).
+  "Win32_System_Shutdown",
   "Win32_System_Wmi",
   # Screen snip: clipboard sequence and the PNG format the snip leaves there.
   "Win32_System_DataExchange",
