@@ -30,4 +30,3 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 - L8.4 ainda sem os testes com mock de cada motor; L8.5 deixou o fluxo de hooks do Orca para depois (ver o arquivo da L8).
 - `lumen.exe` e `lumen-hook.exe` do `windows-latest` continuam os da `0.7.9`: o workflow de release não os atualiza.
-- "Windows CI" vermelho desde 2026-11-17: o exe de testes do Rust não abre no runner (`STATUS_ENTRYPOINT_NOT_FOUND`, o mesmo que se contorna localmente linkando o `resource.lib`). O workflow de release não roda esses testes e segue verde.
