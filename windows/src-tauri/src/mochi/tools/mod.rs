@@ -4,6 +4,7 @@ pub mod apps;
 pub mod arrange;
 pub mod audio;
 pub mod brightness;
+pub mod media;
 
 use super::registry::ToolRegistry;
 
@@ -20,4 +21,7 @@ pub fn register_m2(registry: &mut ToolRegistry) {
     registry
         .register_and_enable(apps::tool())
         .expect("definição padrão de apps deve ser válida");
+    registry
+        .register_and_enable(media::tool())
+        .expect("definição padrão de mídia deve ser válida");
 }

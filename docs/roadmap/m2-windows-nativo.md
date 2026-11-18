@@ -39,9 +39,9 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 
 ### M2.5 — Mídia (risco baixo)
 
-- [ ] Tocar, pausar, próxima e anterior, reutilizando a sessão de mídia que a pílula de música já usa.
-- [ ] Sem player ativo: responder isso, sem abrir nada.
-- Checkpoint M2.5: os comandos agem no player ativo e em nenhum outro.
+- [x] Tocar, pausar, próxima e anterior, reutilizando a sessão de mídia que a pílula de música já usa.
+- [x] Sem player ativo: responder isso, sem abrir nada.
+- Checkpoint M2.5: os comandos agem no player ativo e em nenhum outro. *(Sintético em 2026-11-18: ferramenta `midia` em `mochi/tools/media.rs`, só a sessão atual do Windows (GSMTC), `spotify.rs` intocado; suíte Rust `927 passed; 0 failed`. **Real com Spotify e outro player: NOT_RUN**.)*
 
 ### M2.6 — Energia (risco médio e alto)
 
