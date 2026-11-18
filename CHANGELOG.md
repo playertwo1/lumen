@@ -1,5 +1,13 @@
 # Changelog
 
+## Windows 0.7.14 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **O assistente controla o Windows (Fase M2)** — pelo chat, o Lumen agora muda o volume e tira o som, ajusta o brilho (tela do notebook, ou monitor externo que responda por DDC/CI), lista e abre aplicativos do Menu Iniciar, organiza janelas (mover, minimizar, duas lado a lado e desfazer) e toca, pausa ou troca a faixa do player ativo. Tudo por APIs do Windows, sem PowerShell montado a partir do pedido, e cada ação confere o resultado e relata a falha como falha.
+- **Energia só com clique** — bloquear a tela pede confirmação na primeira vez (com "sempre permitir"); suspender, reiniciar e desligar pedem toda vez, avisam que o Lumen não sabe se há trabalho não salvo e nunca forçam o fechamento dos apps.
+- **Ferramentas pelo chat do ChatGPT** — o modelo do plano ChatGPT respondia que a ferramenta "não estava disponível" em vez de chamá-la; a instrução agora deixa claro como usar as ferramentas do Lumen.
+- **Pausa rápida também no MCP** — com a pausa ligada, as ferramentas pedidas pelo Claude Code ou pelo Codex também ficam bloqueadas.
+- **Até 6 pílulas ao lado da principal** — o limite era 4, e com as vagas ocupadas o WhatsApp ficava sem pílula.
+
 ## Windows 0.7.13 — 17 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Bússola antiga fora da abertura** — no Windows o app empacotado trocava a saudação da ilha por `src/lumen/greeting.ts`, que ainda desenhava a bússola; a correção da 0.7.11 tinha ido para o arquivo do Coucou, que nunca entra nesse build. Agora a janela preta de abertura mostra o cristal (animação uma vez, depois a imagem estática; só a imagem com movimento reduzido) e um teste impede a volta da bússola.

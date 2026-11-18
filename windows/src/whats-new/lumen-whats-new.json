@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.14",
+      "items": [
+        {
+          "icon": "bolt",
+          "title": { "pt-BR": "O Lumen controla o Windows" },
+          "detail": { "pt-BR": "Peça no chat: volume, brilho, abrir apps, organizar janelas e tocar ou pausar a música." }
+        },
+        {
+          "icon": "shield",
+          "title": { "pt-BR": "Energia só com clique" },
+          "detail": { "pt-BR": "Bloquear, suspender, reiniciar e desligar pedem sua confirmação e nunca forçam os apps a fechar." }
+        },
+        {
+          "icon": "puzzle",
+          "title": { "pt-BR": "Até 6 pílulas" },
+          "detail": { "pt-BR": "Cabem até 6 pílulas ao lado da principal, e o WhatsApp não fica mais de fora." }
+        }
+      ]
+    },
+    {
       "version": "0.7.13",
       "items": [
         {
