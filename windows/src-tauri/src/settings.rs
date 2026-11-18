@@ -167,7 +167,7 @@ impl Default for Settings {
                 "integration_vercel".into(),
                 "integration_github".into(),
             ],
-            main_pill: "integration_claude".into(),
+            main_pill: "agent_claude-desktop".into(),
             screen: "primary".into(),
             autostart: false,
             hooks_installed: false,

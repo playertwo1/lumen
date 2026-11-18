@@ -177,8 +177,10 @@ beforeEach(() => {
   State.focusId = null;
   State.mode = "hidden";
   State.paused = false;
-  State.settings = { ...DEFAULT_SETTINGS };
+  // Claude Code is no longer a main-tool choice: declare it so its pill is there, focused.
+  State.settings = { ...DEFAULT_SETTINGS, activeIntegrations: ["integration_claude", ...DEFAULT_SETTINGS.activeIntegrations] };
   State.loadIntegrationTasks();
+  State.focusId = "integration_claude";
 });
 
 test("an alert badges the GitHub pill when another pill is on screen", () => {

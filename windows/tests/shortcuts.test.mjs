@@ -305,12 +305,14 @@ beforeEach(() => {
   State.pendingApproval = null;
   State.stateOverride = null;
   State.chatHistory = [];
-  State.settings = { ...DEFAULT_SETTINGS };
+  // Claude Code is no longer a main-tool choice: declare it so its pill is there, focused.
+  State.settings = { ...DEFAULT_SETTINGS, activeIntegrations: ["integration_claude", ...DEFAULT_SETTINGS.activeIntegrations] };
   State.mochiOnDesktop = false;
   State.cardSelection = null;
   State.cardItemCount = 0;
   desktopSupported = true;
   State.loadIntegrationTasks();
+  State.focusId = "integration_claude";
 });
 
 test("the wardrobe shortcut's own event opens the wardrobe", () => {
@@ -435,7 +437,7 @@ test("the island toggle opens on a waiting card, and folds it rather than droppi
 });
 
 test("the terminal shortcut is the existing Open terminal (the session's window), and folds the island", () => {
-  State.tasks[0].sessionCwd = "C:\\work\\proj";
+  State.tasks.find((t) => t.id === "integration_claude").sessionCwd = "C:\\work\\proj";
   State.mode = "expanded";
   runGlobalShortcut(host, "jumpToTerminal", resume);
   assert.deepEqual(sent("open_session"), [{ sessionId: null, path: "C:\\work\\proj" }]);

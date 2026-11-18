@@ -37,8 +37,10 @@ beforeEach(() => {
   State.paused = false;
   State.isPinned = false;
   State.pendingApproval = null;
-  State.settings = { ...DEFAULT_SETTINGS };
+  // Claude Code is no longer a main-tool choice: declare it so its pill is there, focused.
+  State.settings = { ...DEFAULT_SETTINGS, activeIntegrations: ["integration_claude", ...DEFAULT_SETTINGS.activeIntegrations] };
   State.loadIntegrationTasks();
+  State.focusId = "integration_claude";
 });
 
 afterEach(() => {

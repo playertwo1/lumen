@@ -41,8 +41,10 @@ beforeEach(() => {
   State.pendingApproval = null;
   State.approvalQueue = [];
   State.focusBeforeApproval = null;
-  State.settings = { ...DEFAULT_SETTINGS };
+  // Claude Code is no longer a main-tool choice: declare it so its pill is there, focused.
+  State.settings = { ...DEFAULT_SETTINGS, activeIntegrations: ["integration_claude", ...DEFAULT_SETTINGS.activeIntegrations] };
   State.loadIntegrationTasks();
+  State.focusId = "integration_claude";
   resetWorkStreak();
 });
 
@@ -329,8 +331,9 @@ test("a new turn within 5.2 s of a stop is not put back to idle", () => {
 
 test("a tagged agent gets its own pill next to Claude Code's", () => {
   hook({ hook_event_name: "PreToolUse", cwd: "/p/proj", coucou_agent: "gemini", tool_name: "Bash", tool_input: { command: "ls" } });
-  assert.equal(State.tasks[0].id, CLAUDE);
-  assert.equal(State.tasks[1].id, "agent_gemini");
+  assert.equal(State.tasks[0].id, "agent_claude-desktop");
+  assert.ok(task(CLAUDE));
+  assert.ok(task("agent_gemini"));
   const agent = task("agent_gemini");
   assert.equal(agent.name, "Gemini CLI");
   assert.equal(agent.source, "agent");
@@ -346,7 +349,7 @@ test("an invalid or reserved agent tag falls back to the Claude Code pill", () =
   for (const tag of ["claude", "Gemini", "has space", "a".repeat(25), ""]) {
     hook({ hook_event_name: "SessionStart", cwd: "/p/proj", coucou_agent: tag });
   }
-  assert.equal(State.tasks.some((t) => t.id.startsWith("agent_")), false);
+  assert.equal(State.tasks.some((t) => t.id.startsWith("agent_") && t.id !== "agent_claude-desktop"), false);
   assert.equal(task().name, "proj");
 });
 
@@ -555,6 +558,7 @@ test("Claude Code in Cursor's terminal works on the Cursor pill, made for the se
 
 test("with another main tool, Claude Code's pill comes for the session and goes after", () => {
   State.settings.mainPill = "agent_codex";
+  State.settings.activeIntegrations = DEFAULT_SETTINGS.activeIntegrations;
   State.loadIntegrationTasks();
   assert.equal(task(), undefined);
   hook({ hook_event_name: "SessionStart", cwd: "/p/proj" });

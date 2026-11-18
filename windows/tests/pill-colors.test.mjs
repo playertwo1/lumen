@@ -81,23 +81,23 @@ test("with no preference every pill is painted as the catalog says", () => {
 });
 
 test("a pill is created in the colour the user gave it", () => {
-  State.settings.pillColors = { integration_claude: TEAL };
+  State.settings.pillColors = { "agent_claude-desktop": TEAL };
   State.loadIntegrationTasks();
-  assert.equal(colorOf("integration_claude"), TEAL);
+  assert.equal(colorOf("agent_claude-desktop"), TEAL);
   assert.equal(colorOf("integration_github"), pillDefinition("integration_github").color);
 });
 
 test("a colour picked later reaches the pills already on the island, and back", () => {
   State.loadIntegrationTasks();
-  assert.equal(colorOf("integration_claude"), VS_CODE);
+  assert.equal(colorOf("agent_claude-desktop"), pillDefinition("agent_claude-desktop").color);
 
-  State.settings = { ...State.settings, pillColors: { integration_claude: TEAL } };
+  State.settings = { ...State.settings, pillColors: { "agent_claude-desktop": TEAL } };
   State.loadIntegrationTasks();
-  assert.equal(colorOf("integration_claude"), TEAL);
+  assert.equal(colorOf("agent_claude-desktop"), TEAL);
 
   State.settings = { ...State.settings, pillColors: {} };
   State.loadIntegrationTasks();
-  assert.equal(colorOf("integration_claude"), VS_CODE);
+  assert.equal(colorOf("agent_claude-desktop"), pillDefinition("agent_claude-desktop").color);
 });
 
 test("pills made for a session wear the colour too", () => {

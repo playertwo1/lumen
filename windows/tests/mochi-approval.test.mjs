@@ -118,10 +118,12 @@ beforeEach(() => {
   State.focusBeforeApproval = null;
   State.settings = {
     ...DEFAULT_SETTINGS,
+    activeIntegrations: ["integration_claude", ...DEFAULT_SETTINGS.activeIntegrations],
     mochiReactsToPc: false,
     closedIsland: "hidden",
   };
   State.loadIntegrationTasks();
+  State.focusId = "integration_claude";
   island.fsm.pinned = false;
   island.fsm.cancelTimers();
   island.fsm.state = "hidden";

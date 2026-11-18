@@ -81,6 +81,9 @@ export const PILL_CATALOG: readonly PillDefinition[] = [
     subtitle: N_("Integration"), source: "agent", support: "yes", connect: hooks },
   { id: "agent_codex", name: "Codex", color: "#2DD4BF", category: "workspace",
     subtitle: N_("Integration"), source: "agent", support: "yes", connect: hooks },
+  // Windows only: the Orca app runs its own terminals, so it has no hook to install here.
+  { id: "agent_orca", name: "Orca", color: "#FB923C", category: "workspace",
+    subtitle: N_("Integration"), source: "agent", support: "yes", connect: none },
   // ── Agents ─────────────────────────────────────────────────────────────────
   { id: "agent_gemini", name: "Gemini CLI", color: "#8AB4F8", category: "agent",
     subtitle: N_("Agent"), source: "agent", support: "yes", connect: hooks },
@@ -157,7 +160,10 @@ export const PILL_CATALOG: readonly PillDefinition[] = [
 ];
 
 /** The always-on pill unless the user picks another workspace tool. */
-export const DEFAULT_MAIN_PILL = "integration_claude";
+export const DEFAULT_MAIN_PILL = "agent_claude-desktop";
+
+/** The main-tool choices, in menu order (Windows). */
+const MAIN_CHOICES = ["agent_claude-desktop", "agent_orca", "agent_antigravity", "agent_codex"];
 
 /** How many declared pills may sit next to the main one. */
 export const MAX_DECLARED = 6;
@@ -190,7 +196,8 @@ export function isHookPill(id: string): boolean {
 
 /** Workspace tools that can be the main pill. */
 export function mainPillChoices(os: HostOs = HOST_OS): PillDefinition[] {
-  return availablePills(os).filter((p) => p.category === "workspace" && p.support !== "soon");
+  const offered = availablePills(os);
+  return MAIN_CHOICES.map((id) => offered.find((p) => p.id === id)).filter((p): p is PillDefinition => !!p);
 }
 
 /** PillDefinition.sessionSubtitle — next to the name in a live session's card. */
@@ -198,6 +205,7 @@ export function sessionSubtitle(id: string): string {
   switch (id) {
     case "integration_claude": return "Claude Code";
     case "agent_cursor": return "Cursor";
+    case "agent_orca": return "Orca";
     case "agent_codex": return "Codex";
     case "agent_hermes": return "Hermes";
     case "agent_hermes-desktop": return "Hermes Desktop";

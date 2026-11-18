@@ -51,7 +51,7 @@ test("the catalog holds the Mac's pills with the Claude Code label for Windows a
     ["integration_coucoudoro", "Coucoudoro", "#0EA5E9", "service", "Integration"],
   ];
   assert.deepEqual(
-    PILL_CATALOG.filter((p) => !["integration_git", "integration_gitlab", "integration_gitea"].includes(p.id))
+    PILL_CATALOG.filter((p) => !["integration_git", "integration_gitlab", "integration_gitea", "agent_orca"].includes(p.id))
       .map((p) => [p.id, p.name, p.color, p.category, p.subtitle]),
     mac,
   );
@@ -165,9 +165,9 @@ test("no chat provider that works here says Coming soon", () => {
 
 test("the main pill is a workspace tool that works here", () => {
   assert.deepEqual(mainPillChoices("linux").map((p) => p.id), [
-    "integration_claude", "agent_cursor", "agent_antigravity", "agent_codex",
+    "agent_claude-desktop", "agent_orca", "agent_antigravity", "agent_codex",
   ]);
-  assert.equal(DEFAULT_MAIN_PILL, "integration_claude");
+  assert.equal(DEFAULT_MAIN_PILL, "agent_claude-desktop");
 });
 
 test("hook-driven pills are the workspace tools and the agents with hooks", () => {
@@ -192,24 +192,27 @@ test("a live session names its tool next to the project", () => {
 test("a declaration from an older or edited settings file is made usable", () => {
   assert.deepEqual(
     sanitizeDeclared({ mainPill: "integration_stripe", activeIntegrations: ["integration_claude", "x"] }, "linux"),
-    { mainPill: "integration_claude", activeIntegrations: [] },
+    { mainPill: "agent_claude-desktop", activeIntegrations: ["integration_claude"] },
   );
   assert.deepEqual(
-    sanitizeDeclared({ mainPill: "agent_cursor", activeIntegrations: ["agent_cursor", "integration_n8n", "integration_n8n", "integration_music"] }, "linux"),
-    { mainPill: "agent_cursor", activeIntegrations: ["integration_n8n"] },
+    sanitizeDeclared({ mainPill: "agent_orca", activeIntegrations: ["agent_orca", "integration_n8n", "integration_n8n", "integration_music"] }, "linux"),
+    { mainPill: "agent_orca", activeIntegrations: ["integration_n8n"] },
   );
   // No mainPill at all: a settings.json from before this version.
   assert.deepEqual(
     sanitizeDeclared({ activeIntegrations: ["integration_github"] }, "windows"),
-    { mainPill: "integration_claude", activeIntegrations: ["integration_github"] },
+    { mainPill: "agent_claude-desktop", activeIntegrations: ["integration_github"] },
   );
-  assert.equal(sanitizeDeclared({ mainPill: "agent_claude-desktop", activeIntegrations: [] }, "windows").mainPill,
-    "integration_claude");
+  // Claude Code and Cursor are no longer main-tool choices: an old setting falls back to the default.
+  for (const old of ["integration_claude", "agent_cursor"]) {
+    assert.equal(sanitizeDeclared({ mainPill: old, activeIntegrations: [] }, "windows").mainPill,
+      "agent_claude-desktop");
+  }
 });
 
 test("up to six pills next to the main one, never the main one itself", () => {
   const d = {
-    mainPill: "integration_claude",
+    mainPill: "agent_claude-desktop",
     activeIntegrations: ["integration_n8n", "integration_github", "integration_stripe"],
   };
   assert.equal(MAX_DECLARED, 6);
@@ -217,10 +220,10 @@ test("up to six pills next to the main one, never the main one itself", () => {
     .reduce((list, id) => toggleDeclared({ ...d, activeIntegrations: list }, id, "linux"), d.activeIntegrations);
   assert.equal(full.length, MAX_DECLARED);
   assert.equal(toggleDeclared({ ...d, activeIntegrations: full }, "ai_anthropic", "linux"), null);
-  assert.equal(toggleDeclared(d, "integration_claude", "linux"), null);
+  assert.equal(toggleDeclared(d, "agent_claude-desktop", "linux"), null);
   assert.equal(toggleDeclared(d, "integration_music", "linux"), null);
-  assert.ok(toggleDeclared(d, "agent_claude-desktop", "linux").includes("agent_claude-desktop"));
-  assert.ok(toggleDeclared(d, "agent_claude-desktop", "windows").includes("agent_claude-desktop"));
+  assert.ok(toggleDeclared(d, "integration_claude", "linux").includes("integration_claude"));
+  assert.ok(toggleDeclared(d, "integration_claude", "windows").includes("integration_claude"));
   assert.deepEqual(toggleDeclared(d, "integration_github", "linux"), ["integration_n8n", "integration_stripe"]);
   // Every chat provider can be declared now that the chat talks to it.
   assert.ok(toggleDeclared(d, "ai_google", "linux").includes("ai_google"));
@@ -228,10 +231,12 @@ test("up to six pills next to the main one, never the main one itself", () => {
 });
 
 test("picking a main pill takes it out of the declared ones, and only workspace tools qualify", () => {
-  const d = { mainPill: "integration_claude", activeIntegrations: ["agent_cursor", "integration_n8n"] };
-  assert.deepEqual(chooseMainPill(d, "agent_cursor", "linux"), {
-    mainPill: "agent_cursor", activeIntegrations: ["integration_n8n"],
+  const d = { mainPill: "agent_claude-desktop", activeIntegrations: ["agent_orca", "integration_n8n"] };
+  assert.deepEqual(chooseMainPill(d, "agent_orca", "linux"), {
+    mainPill: "agent_orca", activeIntegrations: ["integration_n8n"],
   });
+  assert.equal(chooseMainPill(d, "agent_cursor", "linux"), null);
+  assert.equal(chooseMainPill(d, "integration_claude", "linux"), null);
   assert.equal(chooseMainPill(d, "integration_n8n", "linux"), null);
   assert.equal(chooseMainPill(d, "agent_gemini", "linux"), null);
 });
@@ -261,23 +266,23 @@ beforeEach(() => {
 const ids = () => State.tasks.map((t) => t.id);
 
 test("the main pill always loads, the declared ones join it, and focus starts on it", () => {
-  State.settings.mainPill = "agent_cursor";
+  State.settings.mainPill = "agent_orca";
   State.settings.activeIntegrations = ["integration_github", "agent_gemini"];
   State.loadIntegrationTasks();
-  assert.deepEqual(ids(), ["agent_cursor", "agent_gemini", "integration_github"]);
-  assert.equal(State.focusId, "agent_cursor");
+  assert.deepEqual(ids(), ["agent_orca", "agent_gemini", "integration_github"]);
+  assert.equal(State.focusId, "agent_orca");
   assert.equal(State.tasks[1].name, "Gemini CLI");
   assert.equal(State.tasks[1].color, "#8AB4F8");
 });
 
-test("an old settings file gets Claude Code as its main pill and keeps its integrations", () => {
+test("an old settings file gets Claude Desktop as its main pill and keeps its integrations", () => {
   State.settings = { ...DEFAULT_SETTINGS, mainPill: undefined };
   State.loadIntegrationTasks();
   assert.deepEqual(ids(), [
-    "integration_claude", "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
+    "agent_claude-desktop", "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
   ]);
-  assert.equal(State.settings.mainPill, "integration_claude");
-  assert.equal(State.tasks[0].name, "Claude Code");
+  assert.equal(State.settings.mainPill, "agent_claude-desktop");
+  assert.equal(State.tasks[0].name, "Claude Desktop");
 });
 
 test("switching the main pill frees its slot and the old main pill goes when idle", () => {
@@ -285,18 +290,18 @@ test("switching the main pill frees its slot and the old main pill goes when idl
   State.settings.mainPill = "agent_codex";
   State.loadIntegrationTasks();
   assert.equal(ids()[0], "agent_codex");
-  assert.ok(!ids().includes("integration_claude"));
+  assert.ok(!ids().includes("agent_claude-desktop"));
   assert.equal(State.focusId, "agent_codex");
 });
 
 test("a pill in the middle of a session stays until the session ends", () => {
   State.loadIntegrationTasks();
   State.tasks[0].state = "working";
-  State.settings.mainPill = "agent_cursor";
+  State.settings.mainPill = "agent_orca";
   State.loadIntegrationTasks();
-  assert.ok(ids().includes("integration_claude"));
-  State.removeTask("integration_claude");
-  assert.ok(!ids().includes("integration_claude"));
+  assert.ok(ids().includes("agent_claude-desktop"));
+  State.removeTask("agent_claude-desktop");
+  assert.ok(!ids().includes("agent_claude-desktop"));
 });
 
 test("the end of a session puts a kept pill back as it was, and removes any other", () => {
@@ -313,7 +318,7 @@ test("the end of a session puts a kept pill back as it was, and removes any othe
   State.setFocus("agent_mine");
   State.removeTask("agent_mine");
   assert.ok(!ids().includes("agent_mine"));
-  assert.equal(State.focusId, "integration_claude");
+  assert.equal(State.focusId, "agent_claude-desktop");
 });
 
 test("a Claude Code session gets its pill even when it is not loaded", () => {
@@ -352,26 +357,24 @@ test("toggling declares up to six pills and never the main one", () => {
   assert.deepEqual(State.settings.activeIntegrations, [
     "integration_n8n", "agent_gemini", "ai_anthropic", "integration_stripe", "integration_github", "integration_notion",
   ]);
-  State.toggleIntegration("integration_claude");
-  assert.ok(ids().includes("integration_claude"));
+  State.toggleIntegration("agent_claude-desktop");
+  assert.ok(ids().includes("agent_claude-desktop"));
   State.setFocus("agent_gemini");
   State.toggleIntegration("agent_gemini");
   assert.ok(!ids().includes("agent_gemini"));
-  assert.equal(State.focusId, "integration_claude");
+  assert.equal(State.focusId, "agent_claude-desktop");
 });
 
-test("Claude Code is named after the agent in main-tool choices on both platforms", () => {
+test("Claude Desktop and Orca are main-tool choices on both platforms; Claude Code and Cursor are not", () => {
   for (const os of ["windows", "linux"]) {
-    const choice = mainPillChoices(os).find((p) => p.id === "integration_claude");
-    assert.equal(choice.name, "Claude Code");
-    assert.equal(choice.source, "claudeCode");
+    const names = mainPillChoices(os).map((p) => p.name);
+    assert.deepEqual(names, ["Claude Desktop", "Orca", "Antigravity", "Codex"]);
   }
 });
 
 test("the Claude Code idle card keeps the agent title when the task has a project name", () => {
   State.loadIntegrationTasks();
-  const task = State.tasks.find((t) => t.id === "integration_claude");
-  task.name = "my-project";
+  const task = State.upsertWorkspacePill("integration_claude", "my-project", "/p");
   const card = renderIntegrationCard(task, { openSettings() {} });
   assert.ok(card.textContent.includes("Claude Code"));
   assert.ok(!card.textContent.includes("my-project"));
