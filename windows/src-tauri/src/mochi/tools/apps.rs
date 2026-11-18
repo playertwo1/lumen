@@ -94,9 +94,9 @@ fn plano(args: &Value) -> Result<Op, ToolError> {
     let acao = args.get("acao").and_then(Value::as_str).unwrap_or_default();
     let nome = args.get("nome").and_then(Value::as_str);
     match (acao, nome) {
-        ("listar", None) => Ok(Op::Listar),
+        // listar só lê: um nome solto é ignorado, para o modelo não repetir o erro até estourar os passos
+        ("listar", _) => Ok(Op::Listar),
         ("abrir", Some(nome)) => Ok(Op::Abrir(nome.to_string())),
-        ("listar", Some(_)) => Err(ToolError::InvalidInput("nome só vale com abrir".into())),
         ("abrir", None) => Err(ToolError::InvalidInput("abrir exige nome".into())),
         _ => Err(ToolError::InvalidInput("ação de aplicativos desconhecida".into())),
     }
@@ -596,7 +596,7 @@ mod tests {
         ] {
             assert!(matches!(validate_schema(&s, &bad), Err(ToolError::InvalidInput(_))), "{bad}");
         }
-        assert!(dry_run(&json!({"acao": "listar", "nome": "Notepad"})).is_err());
+        assert!(dry_run(&json!({"acao": "listar", "nome": "Notepad"})).is_ok());
         assert!(dry_run(&json!({"acao": "abrir"})).is_err());
         assert_eq!(dry_run(&json!({"acao": "listar"})).unwrap(), "Listar os aplicativos do Menu Iniciar.");
         assert_eq!(

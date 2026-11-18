@@ -80,9 +80,7 @@ fn plano(args: &Value) -> Result<Op, ToolError> {
             .ok_or_else(|| ToolError::InvalidInput("definir_volume exige nivel de 0 a 100".into()))?;
         return Ok(Op::Volume(n as u8));
     }
-    if nivel.is_some() {
-        return Err(ToolError::InvalidInput("nivel só vale com definir_volume".into()));
-    }
+    // `nivel` solto (o modelo costuma mandar o volume atual) não muda nada nas outras ações: ignora.
     match acao {
         "ler" => Ok(Op::Ler),
         "silenciar" => Ok(Op::Mudo(true)),
@@ -390,14 +388,10 @@ mod tests {
             dry_run(&json!({"acao": "definir_volume"})),
             Err(ToolError::InvalidInput(_))
         ));
-        assert!(matches!(
-            dry_run(&json!({"acao": "silenciar", "nivel": 10})),
-            Err(ToolError::InvalidInput(_))
-        ));
-        assert!(matches!(
-            dry_run(&json!({"acao": "ler", "nivel": 10})),
-            Err(ToolError::InvalidInput(_))
-        ));
+        // nivel solto é ignorado, não rejeitado: o modelo repetia o erro até estourar o limite de passos
+        assert!(dry_run(&json!({"acao": "silenciar", "nivel": 10})).is_ok());
+        assert!(dry_run(&json!({"acao": "ler", "nivel": 10})).is_ok());
+        assert_eq!(plano(&json!({"acao": "silenciar", "nivel": 10})).unwrap(), Op::Mudo(true));
         assert!(matches!(
             dry_run(&json!({"acao": "definir_volume", "nivel": 101})),
             Err(ToolError::InvalidInput(_))
