@@ -27,7 +27,8 @@ use super::{
 pub use super::{MochiRunState, MochiRunStatePayload};
 
 /// Limite máximo de chamadas consecutivas de ferramentas em um único turno de chat.
-pub const MAX_TOOL_STEPS: usize = 4;
+/// 8: "organizar para programar" usa 5 (três `apps`, `janelas` listar e lado a lado).
+pub const MAX_TOOL_STEPS: usize = 8;
 
 const CALL_OPEN: &str = "<mochi_tool_call>";
 const CALL_CLOSE: &str = "</mochi_tool_call>";

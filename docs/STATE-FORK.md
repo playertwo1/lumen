@@ -10,14 +10,14 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 |---|---|
 | L0–L7, M0, M1 | Concluídas e arquivadas (M1 fechada em 2026-11-17 por decisão do dono, com parte do teste real dispensada) |
 | L8 | Todas as subetapas implementadas e publicadas na `0.7.12`; validação real pendente, uma por vez |
-| M2 | M2.1–M2.6 implementadas e publicadas na `0.7.14` (2026-11-18); a `0.7.15` corrige o ping pelo chat e a `0.7.16` as falhas do 1º relato da M2.7; falta a M2.7, o teste real pelo chat |
+| M2 | M2.1–M2.6 implementadas e publicadas na `0.7.14` (2026-11-18); a `0.7.15` corrige o ping pelo chat e a `0.7.16` as falhas do 1º relato da M2.7. No 2º relato os 10 comandos funcionaram; a `main` ajusta "organizar para programar" (Codex, Claude Code e Antigravity lado a lado), ainda sem release |
 | L6.5 | A fazer depois do contrato v1.1 da Segunda Mente |
 | 0, 1, 2, 2B, 2C | Pausadas (D-053) |
 
 ## Próxima ação
 
 1. O dono testa a L8 no notebook, uma subetapa por vez (L8.1 → L8.6), e relata. Cada relato fecha ou reabre o checkpoint correspondente em [l8-ajustes-uso-real.md](roadmap/l8-ajustes-uso-real.md).
-2. M2.7: o dono atualiza para a `0.7.16` e repete pelo chat os 10 comandos da spec, 3 vezes cada, mais retomar da suspensão, app ausente e troca de áudio. O relato fecha ou reabre os checkpoints em [m2-windows-nativo.md](roadmap/m2-windows-nativo.md).
+2. M2.7: gerar a release com o ajuste de "organizar para programar"; o dono testa esse pedido e o desfazer (3 vezes), mais retomar da suspensão, app ausente e troca de áudio. O relato fecha ou reabre os checkpoints em [m2-windows-nativo.md](roadmap/m2-windows-nativo.md).
 
 ## Pendências do dono (validação real)
 

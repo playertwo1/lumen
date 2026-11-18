@@ -26,12 +26,18 @@ const MAX_ESCOLHAS: usize = 5;
 const PASSOS: u32 = 10;
 
 /// Nomes que o Menu Iniciar não usa, já normalizados. Lista fixa e curta (spec, seção 9).
-const ALIASES: [(&str, &str); 4] = [
+/// O app Codex da Store aparece no Menu Iniciar como "ChatGPT".
+const ALIASES: [(&str, &str); 6] = [
     ("vs code", "visual studio code"),
     ("vscode", "visual studio code"),
     ("chrome", "google chrome"),
     ("edge", "microsoft edge"),
+    ("codex", "chatgpt"),
+    ("claude code", "claude"),
 ];
+
+/// Prefixo do caminho de um app da Store sem `.lnk`: o resto é o AUMID lido da pasta de apps do Windows.
+const STORE: &str = "shell:AppsFolder\\";
 
 /// Operação já validada: é o que `run_with` leva ao sistema.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +59,8 @@ pub(crate) trait AppBackend {
     /// Nome do executável que o atalho abre, lido por `IShellLinkW::GetPath`. `None` quando não há um `.exe` a conferir.
     fn alvo(&self, lnk: &Path) -> Option<String>;
     fn abrir(&self, lnk: &Path) -> bool;
+    /// Abre um app da Store pelo AUMID. `true` quando o Windows devolve o processo dele (aberto ou já rodando).
+    fn ativar(&self, aumid: &str) -> bool;
     fn ativo(&self, exe: &str) -> bool;
     fn pausa(&self);
 }
@@ -142,18 +150,30 @@ fn listar(mut atalhos: Vec<Atalho>) -> Value {
 }
 
 fn abrir(backend: &dyn AppBackend, nome: &str) -> Result<Value, ToolError> {
-    let pedido = alias(&normalize(nome));
-    let mut casados = casar(atalhos(backend), &pedido);
+    let pedido = normalize(nome);
+    let lista = atalhos(backend);
+    let mut casados = casar(lista.clone(), &alias(&pedido));
+    // O apelido não existe neste Windows (ex.: o Codex com o próprio nome): tenta o nome pedido.
+    if casados.is_empty() {
+        casados = casar(lista, &pedido);
+    }
     match casados.len() {
         0 => Err(ToolError::ExecutionFailed(NAO_ENCONTRADO.into())),
         1 => {
             let atalho = casados.remove(0);
-            // Lido antes de abrir: sem ele não há processo para conferir depois.
-            let exe = backend.alvo(&atalho.lnk);
-            if !backend.abrir(&atalho.lnk) {
-                return Err(ToolError::ExecutionFailed(NAO_ABRIU.into()));
-            }
-            let observado = exe.map(|exe| esperar(backend, &exe));
+            let observado = if let Some(aumid) = atalho.lnk.to_str().and_then(|c| c.strip_prefix(STORE)) {
+                if !backend.ativar(aumid) {
+                    return Err(ToolError::ExecutionFailed(NAO_ABRIU.into()));
+                }
+                Some(true)
+            } else {
+                // Lido antes de abrir: sem ele não há processo para conferir depois.
+                let exe = backend.alvo(&atalho.lnk);
+                if !backend.abrir(&atalho.lnk) {
+                    return Err(ToolError::ExecutionFailed(NAO_ABRIU.into()));
+                }
+                exe.map(|exe| esperar(backend, &exe))
+            };
             Ok(json!({
                 "aberto": sanitize_external_text(&atalho.nome, MAX_NOME),
                 "observado": observado,
@@ -263,6 +283,10 @@ impl AppBackend for SemApps {
         false
     }
 
+    fn ativar(&self, _aumid: &str) -> bool {
+        false
+    }
+
     fn ativo(&self, _exe: &str) -> bool {
         false
     }
@@ -315,10 +339,17 @@ mod win {
     use std::time::Duration;
 
     use windows::core::{Interface, HSTRING, PCWSTR};
-    use windows::Win32::System::Com::{CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER, STGM_READ};
-    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoTaskMemFree, IPersistFile, CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER, STGM_READ,
+    };
+    use windows::Win32::UI::Shell::{
+        ApplicationActivationManager, FOLDERID_AppsFolder, IApplicationActivationManager, IEnumShellItems,
+        IShellItem, IShellLinkW, SHGetKnownFolderItem, ShellLink, AO_NONE, BHID_EnumItems, KF_FLAG_DEFAULT,
+        SIGDN, SIGDN_NORMALDISPLAY, SIGDN_PARENTRELATIVEPARSING,
+    };
 
-    use super::{AppBackend, Atalho};
+    use super::{AppBackend, Atalho, STORE};
+    use crate::voice::wake::normalize;
     use crate::platform::{process_running, shell_open_uri};
 
     pub struct Os;
@@ -337,6 +368,12 @@ mod win {
                 let exe = PathBuf::from(root).join("System32").join("notepad.exe");
                 if exe.is_file() && !atalhos.iter().any(|a| a.nome.eq_ignore_ascii_case("bloco de notas")) {
                     atalhos.push(Atalho { nome: "Bloco de Notas".into(), lnk: exe });
+                }
+            }
+            // Apps da Store sem `.lnk` (Codex, Claude, Calculadora…) vêm da pasta de apps; o nome de um `.lnk` vence.
+            for (nome, aumid) in apps_da_store() {
+                if !atalhos.iter().any(|a| normalize(&a.nome) == normalize(&nome)) {
+                    atalhos.push(Atalho { nome, lnk: PathBuf::from(format!("{STORE}{aumid}")) });
                 }
             }
             atalhos
@@ -367,12 +404,62 @@ mod win {
             shell_open_uri(PCWSTR(caminho.as_ptr()))
         }
 
+        fn ativar(&self, aumid: &str) -> bool {
+            unsafe {
+                let Ok(gerente): windows::core::Result<IApplicationActivationManager> =
+                    CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_LOCAL_SERVER)
+                else {
+                    return false;
+                };
+                gerente
+                    .ActivateApplication(&HSTRING::from(aumid), PCWSTR::null(), AO_NONE)
+                    .is_ok_and(|pid| pid != 0)
+            }
+        }
+
         fn ativo(&self, exe: &str) -> bool {
             process_running(exe)
         }
 
         fn pausa(&self) {
             std::thread::sleep(Duration::from_millis(500));
+        }
+    }
+
+    /// (nome exibido, AUMID) dos apps empacotados da pasta de apps do Windows, a mesma de `Get-StartApps`.
+    /// Só os que têm `!` no AUMID: os outros já vêm dos `.lnk` do Menu Iniciar.
+    fn apps_da_store() -> Vec<(String, String)> {
+        let mut lista = Vec::new();
+        unsafe {
+            let Ok(pasta) = SHGetKnownFolderItem::<IShellItem>(&FOLDERID_AppsFolder, KF_FLAG_DEFAULT, None) else {
+                return lista;
+            };
+            let Ok(itens) = pasta.BindToHandler::<_, IEnumShellItems>(None, &BHID_EnumItems) else {
+                return lista;
+            };
+            loop {
+                let mut item = [None];
+                let mut lidos = 0u32;
+                if itens.Next(&mut item, Some(&mut lidos)).is_err() || lidos == 0 {
+                    break;
+                }
+                let Some(item) = item[0].take() else { break };
+                if let (Some(nome), Some(aumid)) = (texto(&item, SIGDN_NORMALDISPLAY), texto(&item, SIGDN_PARENTRELATIVEPARSING)) {
+                    if aumid.contains('!') {
+                        lista.push((nome, aumid));
+                    }
+                }
+            }
+        }
+        lista
+    }
+
+    fn texto(item: &IShellItem, tipo: SIGDN) -> Option<String> {
+        unsafe {
+            let p = item.GetDisplayName(tipo).ok()?;
+            let s = p.to_string().ok();
+            CoTaskMemFree(Some(p.0 as *const std::ffi::c_void));
+            s
         }
     }
 }
@@ -422,6 +509,11 @@ mod tests {
 
         fn abrir(&self, lnk: &Path) -> bool {
             self.abertos.borrow_mut().push(lnk.to_path_buf());
+            true
+        }
+
+        fn ativar(&self, aumid: &str) -> bool {
+            self.abertos.borrow_mut().push(PathBuf::from(format!("ativado:{aumid}")));
             true
         }
 
@@ -496,6 +588,30 @@ mod tests {
         let out = run_with(&menu, abre("VS Code")).unwrap();
         assert_eq!(out["aberto"], "Visual Studio Code");
         assert_eq!(out["observado"], true);
+    }
+
+    #[test]
+    fn a_store_app_opens_by_its_aumid_and_codex_finds_chatgpt() {
+        let mut menu = falso(&["Claude Trabalho"]);
+        for (nome, aumid) in [("ChatGPT", "OpenAI.Codex_x!App"), ("Claude", "Claude_y!Claude")] {
+            menu.atalhos.push(Atalho { nome: nome.into(), lnk: PathBuf::from(format!("{STORE}{aumid}")) });
+        }
+        let out = run_with(&menu, abre("Codex")).unwrap();
+        assert_eq!((&out["aberto"], &out["observado"]), (&json!("ChatGPT"), &json!(true)));
+        assert!(verify(&json!({}), &out).is_ok());
+        // "Claude Code" vira "claude": o nome exato vence o perfil "Claude Trabalho".
+        assert_eq!(run_with(&menu, abre("Claude Code")).unwrap()["aberto"], "Claude");
+        assert_eq!(
+            *menu.abertos.borrow(),
+            vec![PathBuf::from("ativado:OpenAI.Codex_x!App"), PathBuf::from("ativado:Claude_y!Claude")]
+        );
+        assert_eq!(menu.pausas.get(), 0);
+    }
+
+    #[test]
+    fn an_alias_missing_on_this_machine_falls_back_to_the_asked_name() {
+        let menu = falso(&["Codex"]);
+        assert_eq!(run_with(&menu, abre("codex")).unwrap()["aberto"], "Codex");
     }
 
     #[test]

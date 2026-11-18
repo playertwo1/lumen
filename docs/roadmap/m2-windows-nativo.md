@@ -62,3 +62,9 @@ Cada subfase entrega uma ferramenta completa: schema, risco, execução, verific
 - "abre o Bloco de Notas": no Windows 11 ele é app da Store, sem `.lnk` no Menu Iniciar. Correção: `notepad.exe` de System32 entra como "Bloco de Notas" (`fb9ec38`).
 - "brilho 60%": `0x8004101e` (acesso negado) porque a assinatura de `WmiSetBrightness` era pedida à instância; agora vem da classe. Reproduzido e confirmado num programa à parte, mantendo o brilho no mesmo nível.
 - Próximo: o dono repete os 10 comandos (3 vezes) na versão com essas correções.
+
+**2º relato do dono (2026-11-18, `0.7.16`):** os 10 comandos funcionaram. Só "organize as janelas para programar" não fez o que o dono queria: o modelo escolheu VS Code e Firefox. O dono quer Codex, Claude Code e Antigravity lado a lado. Correções na `main`:
+- `janelas` põe 2 **ou 3** janelas lado a lado (colunas iguais, na ordem pedida), e a descrição da ferramenta diz ao modelo o que é "organizar para programar". *(Atalho: os três apps estão fixos na descrição; uma preferência configurável fica para quando alguém pedir.)*
+- `apps` também abre apps da Store sem `.lnk` (pasta de apps do Windows, pelo AUMID); o Codex aparece como "ChatGPT", e "codex" e "claude code" viraram apelidos. Conferido num programa à parte: a listagem traz Codex, Claude, Calculadora e Bloco de Notas, e a Calculadora abriu pelo AUMID.
+- O limite de passos por resposta subiu de 4 para 8: o pedido usa 5 (três `apps`, listar e lado a lado).
+- Próximo: o dono testa "organize as janelas para programar" e "desfaz a organização das janelas" (3 vezes) na versão com essas correções.

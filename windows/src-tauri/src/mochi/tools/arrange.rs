@@ -92,13 +92,14 @@ pub(crate) trait WindowBackend {
 }
 
 /// Operação já validada: é o que `run_with` leva às janelas.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Op {
     Listar,
     Mover { alvo: usize, x: i32, y: i32 },
     Redimensionar { alvo: usize, largura: i32, altura: i32 },
     Minimizar { alvo: usize },
-    LadoALado { alvos: [usize; 2] },
+    /// 2 ou 3 janelas diferentes, da esquerda para a direita.
+    LadoALado { alvos: Vec<usize> },
     Desfazer,
 }
 
@@ -125,7 +126,7 @@ pub(crate) struct Memoria {
 pub fn tool() -> ToolDefinition {
     ToolDefinition {
         id: "janelas",
-        description: "Lista janelas abertas; move, redimensiona, minimiza ou põe duas lado a lado; desfaz a última organização.",
+        description: "Lista janelas abertas; move, redimensiona, minimiza ou põe duas ou três lado a lado (alvos da esquerda para a direita); desfaz a última organização. \"Organizar as janelas para programar\": abra Codex, Claude Code e Antigravity com a ferramenta apps, liste as janelas e ponha as três lado a lado, nessa ordem.",
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -134,7 +135,7 @@ pub fn tool() -> ToolDefinition {
                 "alvos": {
                     "type": "array",
                     "minItems": 2,
-                    "maxItems": 2,
+                    "maxItems": 3,
                     "items": { "type": "integer", "minimum": 0, "maximum": MAX_ID }
                 },
                 "x": { "type": "integer", "minimum": -10000, "maximum": 10000 },
@@ -202,16 +203,18 @@ fn plano(args: &Value) -> Result<Op, ToolError> {
         }),
         "minimizar" => Ok(Op::Minimizar { alvo: id("alvo")? }),
         _ => {
-            let alvos = args["alvos"]
+            let lista = args["alvos"]
                 .as_array()
-                .filter(|a| a.len() == 2)
-                .ok_or_else(|| ToolError::InvalidInput("alvos exige exatamente 2 janelas".into()))?;
-            let a = faixa(alvos.first(), "alvos", 0, MAX_ID)? as usize;
-            let b = faixa(alvos.get(1), "alvos", 0, MAX_ID)? as usize;
-            if a == b {
+                .filter(|a| (2..=3).contains(&a.len()))
+                .ok_or_else(|| ToolError::InvalidInput("alvos exige 2 ou 3 janelas".into()))?;
+            let alvos = lista
+                .iter()
+                .map(|v| faixa(Some(v), "alvos", 0, MAX_ID).map(|n| n as usize))
+                .collect::<Result<Vec<_>, _>>()?;
+            if alvos.iter().enumerate().any(|(i, a)| alvos[..i].contains(a)) {
                 return Err(ToolError::InvalidInput(MESMA_JANELA.into()));
             }
-            Ok(Op::LadoALado { alvos: [a, b] })
+            Ok(Op::LadoALado { alvos })
         }
     }
 }
@@ -224,18 +227,26 @@ fn dry_run(args: &Value) -> Result<String, ToolError> {
             format!("Redimensionar a janela {alvo} para {largura} por {altura}.")
         }
         Op::Minimizar { alvo } => format!("Minimizar a janela {alvo}."),
-        Op::LadoALado { alvos: [a, b] } => format!("Pôr as janelas {a} e {b} lado a lado."),
+        Op::LadoALado { alvos } => {
+            let nomes: Vec<String> = alvos.iter().map(usize::to_string).collect();
+            let (ultima, resto) = nomes.split_last().expect("plano garante 2 ou 3 alvos");
+            format!("Pôr as janelas {} e {ultima} lado a lado.", resto.join(", "))
+        }
         Op::Desfazer => "Desfazer a última organização de janelas.".to_string(),
     })
 }
 
-/// Metades do monitor: a da esquerda, e a da direita com o pixel extra de largura ímpar.
-fn metades(trabalho: Rect) -> (Rect, Rect) {
-    let meia = trabalho.largura() / 2;
-    (
-        Rect { right: trabalho.left + meia, ..trabalho },
-        Rect { left: trabalho.left + meia, ..trabalho },
-    )
+/// `n` colunas iguais do monitor, da esquerda para a direita; a última leva os pixels que sobram da divisão.
+fn colunas(trabalho: Rect, n: usize) -> Vec<Rect> {
+    let n = n as i32;
+    let largura = trabalho.largura() / n;
+    (0..n)
+        .map(|i| Rect {
+            left: trabalho.left + i * largura,
+            right: if i == n - 1 { trabalho.right } else { trabalho.left + (i + 1) * largura },
+            ..trabalho
+        })
+        .collect()
 }
 
 /// Índice do monitor com maior área de interseção. Janela fora de todos cai no primeiro.
@@ -369,25 +380,30 @@ pub(crate) fn run_with(b: &dyn WindowBackend, op: Op, m: &mut Memoria) -> Result
             let minimizada = atual(b, r)?.minimizada;
             Ok(resposta("minimizar", &[alvo], json!([{ "minimizada": true }]), json!([{ "minimizada": minimizada }])))
         }
-        Op::LadoALado { alvos: [primeira, segunda] } => {
-            let refs = organizar(b, m, &[primeira, segunda])?;
-            let (rp, rs) = (refs[0], refs[1]);
-            // A primeira define o monitor: as duas janelas vão para as metades da área de trabalho dele.
-            let lida = preparar(b, rp)?;
-            preparar(b, rs)?;
+        Op::LadoALado { alvos } => {
+            let refs = organizar(b, m, &alvos)?;
+            // A primeira define o monitor: as janelas vão para colunas iguais da área de trabalho dele.
+            let lida = preparar(b, refs[0])?;
+            for r in &refs[1..] {
+                preparar(b, *r)?;
+            }
             let monitores = b.monitores();
             let trabalho = *monitores
                 .get(monitor_de(&monitores, lida.rect))
                 .ok_or_else(|| ToolError::ExecutionFailed(SEM_DISPLAY.into()))?;
-            let (esquerda, direita) = metades(trabalho);
-            b.mover(rp.hwnd, esquerda).map_err(erro)?;
-            b.mover(rs.hwnd, direita).map_err(erro)?;
-            let (dp, ds) = (atual(b, rp)?.rect, atual(b, rs)?.rect);
+            let destinos = colunas(trabalho, refs.len());
+            for (r, destino) in refs.iter().zip(&destinos) {
+                b.mover(r.hwnd, *destino).map_err(erro)?;
+            }
+            let mut observado = Vec::with_capacity(refs.len());
+            for r in &refs {
+                observado.push(pos(atual(b, *r)?.rect));
+            }
             Ok(resposta(
                 "lado_a_lado",
-                &[primeira, segunda],
-                json!([pos(esquerda), pos(direita)]),
-                json!([pos(dp), pos(ds)]),
+                &alvos,
+                Value::Array(destinos.into_iter().map(pos).collect()),
+                Value::Array(observado),
             ))
         }
         Op::Desfazer => {
@@ -830,21 +846,28 @@ mod tests {
 
     #[test]
     fn metades_de_monitor_com_origem_negativa_e_deslocada() {
-        let (e, d) = metades(Rect { left: -1920, top: 0, right: 0, bottom: 1080 });
-        assert_eq!(e, Rect { left: -1920, top: 0, right: -960, bottom: 1080 });
-        assert_eq!(d, Rect { left: -960, top: 0, right: 0, bottom: 1080 });
+        let c = colunas(Rect { left: -1920, top: 0, right: 0, bottom: 1080 }, 2);
+        assert_eq!(c[0], Rect { left: -1920, top: 0, right: -960, bottom: 1080 });
+        assert_eq!(c[1], Rect { left: -960, top: 0, right: 0, bottom: 1080 });
 
-        let (e, d) = metades(Rect { left: 1920, top: -200, right: 3840, bottom: 880 });
-        assert_eq!(e, Rect { left: 1920, top: -200, right: 2880, bottom: 880 });
-        assert_eq!(d, Rect { left: 2880, top: -200, right: 3840, bottom: 880 });
+        let c = colunas(Rect { left: 1920, top: -200, right: 3840, bottom: 880 }, 2);
+        assert_eq!(c[0], Rect { left: 1920, top: -200, right: 2880, bottom: 880 });
+        assert_eq!(c[1], Rect { left: 2880, top: -200, right: 3840, bottom: 880 });
     }
 
     #[test]
     fn largura_impar_da_o_pixel_extra_a_direita() {
-        let (e, d) = metades(Rect { left: 0, top: 0, right: 1921, bottom: 1080 });
-        assert_eq!(e.largura(), 960);
-        assert_eq!(d.largura(), 961);
-        assert_eq!(d.right, 1921);
+        let c = colunas(Rect { left: 0, top: 0, right: 1921, bottom: 1080 }, 2);
+        assert_eq!(c[0].largura(), 960);
+        assert_eq!(c[1].largura(), 961);
+        assert_eq!(c[1].right, 1921);
+    }
+
+    #[test]
+    fn tres_colunas_cobrem_o_monitor_sem_buraco() {
+        let c = colunas(Rect { left: 100, top: 0, right: 2021, bottom: 1040 }, 3);
+        assert_eq!(c.iter().map(|r| r.largura()).collect::<Vec<_>>(), [640, 640, 641]);
+        assert_eq!((c[0].left, c[1].left, c[2].left, c[2].right), (100, 740, 1380, 2021));
     }
 
     #[test]
@@ -862,6 +885,7 @@ mod tests {
         let s = tool().input_schema;
         for ok in [
             json!({"acao": "lado_a_lado", "alvos": [0, 1]}),
+            json!({"acao": "lado_a_lado", "alvos": [0, 1, 2]}),
             json!({"acao": "mover", "alvo": 100000, "x": -10000, "y": 10000}),
             json!({"acao": "redimensionar", "alvo": 0, "largura": 100, "altura": 10000}),
         ] {
@@ -869,7 +893,7 @@ mod tests {
         }
         for bad in [
             json!({"acao": "lado_a_lado", "alvos": [0]}),
-            json!({"acao": "lado_a_lado", "alvos": [0, 1, 2]}),
+            json!({"acao": "lado_a_lado", "alvos": [0, 1, 2, 3]}),
             json!({"acao": "minimizar", "alvo": 100001}),
             json!({"acao": "minimizar", "alvo": -1}),
             json!({"acao": "mover", "alvo": 0, "x": 10001, "y": 0}),
@@ -886,6 +910,11 @@ mod tests {
         assert!(dry_run(&json!({"acao": "mover", "alvo": 0, "x": 1, "y": 2, "largura": 300})).is_ok());
         assert!(dry_run(&json!({"acao": "listar", "alvo": 0})).is_ok());
         assert!(dry_run(&json!({"acao": "lado_a_lado", "alvos": [3, 3]})).is_err());
+        assert!(dry_run(&json!({"acao": "lado_a_lado", "alvos": [3, 4, 3]})).is_err());
+        assert_eq!(
+            dry_run(&json!({"acao": "lado_a_lado", "alvos": [5, 3, 4]})).unwrap(),
+            "Pôr as janelas 5, 3 e 4 lado a lado."
+        );
         assert!(dry_run(&json!({"acao": "lado_a_lado", "alvos": [3, 4], "x": 0})).is_ok());
         assert_eq!(
             dry_run(&json!({"acao": "lado_a_lado", "alvos": [3, 4]})).unwrap(),
@@ -899,14 +928,14 @@ mod tests {
         let f = duas_janelas();
         let mut m = listada(&f);
         assert_eq!(
-            run_with(&f, Op::LadoALado { alvos: [0, 5] }, &mut m),
+            run_with(&f, Op::LadoALado { alvos: vec![0, 5] }, &mut m),
             Err(ToolError::ExecutionFailed(ID_DESCONHECIDO.into()))
         );
 
         // O HWND 1 foi reaproveitado por outro processo: o pid não bate mais.
         f.ajusta(1, |j, _| j.pid = 99);
         assert_eq!(
-            run_with(&f, Op::LadoALado { alvos: [0, 1] }, &mut m),
+            run_with(&f, Op::LadoALado { alvos: vec![0, 1] }, &mut m),
             Err(ToolError::ExecutionFailed(SUMIU.into()))
         );
         assert!(f.toques.borrow().is_empty());
@@ -916,7 +945,7 @@ mod tests {
     fn lado_a_lado_encaixa_as_duas_e_desfazer_restaura_o_placement() {
         let f = duas_janelas();
         let mut m = listada(&f);
-        let out = run_with(&f, Op::LadoALado { alvos: [0, 1] }, &mut m).unwrap();
+        let out = run_with(&f, Op::LadoALado { alvos: vec![0, 1] }, &mut m).unwrap();
         assert_eq!(f.rect(1), Rect { left: 0, top: 0, right: 960, bottom: 1040 });
         assert_eq!(f.rect(2), Rect { left: 960, top: 0, right: 1920, bottom: 1040 });
         assert!(verify(&json!({}), &out).is_ok());
@@ -933,10 +962,28 @@ mod tests {
     }
 
     #[test]
+    fn tres_janelas_viram_tres_colunas_na_ordem_pedida_e_desfazer_volta() {
+        let f = Falso::com(vec![
+            falsa(1, 10, "Codex", Rect::de(100, 100, 400, 300)),
+            falsa(2, 20, "Claude", Rect::de(600, 100, 300, 400)),
+            falsa(3, 30, "Antigravity", Rect::de(50, 50, 800, 600)),
+        ]);
+        let mut m = listada(&f);
+        let out = run_with(&f, Op::LadoALado { alvos: vec![0, 1, 2] }, &mut m).unwrap();
+        assert_eq!(f.rect(1), Rect { left: 0, top: 0, right: 640, bottom: 1040 });
+        assert_eq!(f.rect(2), Rect { left: 640, top: 0, right: 1280, bottom: 1040 });
+        assert_eq!(f.rect(3), Rect { left: 1280, top: 0, right: 1920, bottom: 1040 });
+        assert!(verify(&json!({}), &out).is_ok());
+
+        run_with(&f, Op::Desfazer, &mut m).unwrap();
+        assert_eq!(f.rect(3), Rect::de(50, 50, 800, 600));
+    }
+
+    #[test]
     fn desfazer_com_janela_que_sumiu_erra_sem_tocar_nas_outras() {
         let f = duas_janelas();
         let mut m = listada(&f);
-        run_with(&f, Op::LadoALado { alvos: [0, 1] }, &mut m).unwrap();
+        run_with(&f, Op::LadoALado { alvos: vec![0, 1] }, &mut m).unwrap();
         f.janelas.borrow_mut().retain(|(j, _)| j.hwnd != 2);
         f.toques.borrow_mut().clear();
 
