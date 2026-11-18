@@ -30,3 +30,4 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 - L8.4 ainda sem os testes com mock de cada motor; L8.5 deixou o fluxo de hooks do Orca para depois (ver o arquivo da L8).
 - `lumen.exe` e `lumen-hook.exe` do `windows-latest` continuam os da `0.7.9`: o workflow de release não os atualiza.
+- Resolvida: o exe de teste da lib saía com `0xc0000139` (sem o manifesto de Common Controls v6, que o `tauri-build` só embute no binário). Corrigido em `windows/src-tauri/src/lib.rs` (`global_asm!` em `cfg(test)`); `cargo test --lib` passa sem RUSTFLAGS e o "Windows CI" está verde no `main` (commit `3c1034a`).
