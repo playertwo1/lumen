@@ -130,6 +130,57 @@ test("em tamanho mini nenhum contorno fica mais fino que 1 px CSS; no tamanho no
   }
 });
 
+test("trocar de estado não dá tranco: a pose do laço anterior some aos poucos e olhar e inclinação chegam suaves", () => {
+  const engine = new BotEngine();
+  engine.setAgent("agent_codex");
+  engine.setState("approval", true);
+  engine.update(0.01);
+  for (let i = 0; i < 12; i++) engine.update(0.016); // no meio do pulo da aprovação
+  const before = engine.oy;
+  assert.ok(Math.abs(before) > 0.03, "o pulo da aprovação precisa estar fora do repouso para o teste valer");
+  engine.setState("thinking");
+  engine.update(0.001);
+  assert.ok(Math.abs(engine.oy) > Math.abs(before) * 0.8, `oy saltou de ${before} para ${engine.oy}`);
+  assert.notDeepEqual(engine.gazeBase, [1.8, -2.5], "o olhar não pode pular para o alvo");
+  assert.ok(engine.busy, "a transição precisa manter o laço de quadros ligado");
+  for (let i = 0; i < 60; i++) engine.update(0.016);
+  assert.deepEqual(engine.gazeBase, [1.8, -2.5]);
+  assert.equal(engine.tiltBase, 0);
+  assert.equal(engine.carryStart, -1);
+});
+
+test("o destaque do estado anterior encolhe antes de sumir e o novo entra pequeno", () => {
+  const engine = new BotEngine();
+  engine.setAgent("agent_codex");
+  engine.setState("working", true);
+  engine.update(0.5);
+  engine.setState("idle");
+  assert.equal(engine.leaving.state, "working");
+  assert.equal(engine.accentS, 0.05);
+  engine.update(0.05);
+  assert.ok(engine.leaving, "ainda saindo aos 50 ms");
+  engine.update(0.2);
+  assert.equal(engine.leaving, null);
+  engine.setState("working");
+  for (let i = 0; i < 30; i++) engine.update(0.016);
+  assert.equal(engine.accentS, 1);
+});
+
+test("com movimento reduzido a troca de estado é imediata, sem rastro", () => {
+  globalThis.window = { matchMedia: () => ({ matches: true }) };
+  try {
+    const engine = new BotEngine();
+    engine.setState("thinking");
+    engine.update(0.016);
+    assert.deepEqual(engine.gazeBase, [1.8, -2.5]);
+    assert.equal(engine.leaving, null);
+    assert.equal(engine.carryStart, -1);
+    assert.equal(engine.accentS, 1);
+  } finally {
+    delete globalThis.window;
+  }
+});
+
 test("desenha cada emote nos dois tamanhos sem erro para todos os personagens", () => {
   for (const id of [
     "integration_claude", "agent_claude-desktop", "agent_codex", "ai_openai",

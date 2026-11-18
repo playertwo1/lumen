@@ -208,6 +208,12 @@ const SQUASH_SY: ReadonlyArray<EnvelopeStep> = [[0.07, 0.78], [0.13, 1.1], [0.17
 const SQUASH_SX: ReadonlyArray<EnvelopeStep> = [[0.07, 1.16], [0.13, 0.95], [0.17, 1]];
 const ERROR_SHAKE: ReadonlyArray<EnvelopeStep> = [[0.05, 0.08], [0.07, -0.08], [0.07, 0.05], [0.09, 0]];
 const BADGE_POP: ReadonlyArray<EnvelopeStep> = [[0.18, 1.14], [0.1, 1]];
+/** How long the previous state's accent (monitor, lupa, bubble…) shrinks away when the state changes. */
+const ACCENT_EXIT_SECONDS = 0.14;
+/** The old state's loop pose fades out at this rate (1/s) instead of snapping to the new state's. */
+const POSE_CARRY_RATE = 13;
+/** Gaze and tilt of the new state are reached at this rate (1/s). */
+const FACE_EASE_RATE = 16;
 const ACTIVE_LOOP_STATES: ReadonlySet<BotStateName> = new Set([
   "working", "thinking", "searching", "approval", "ratelimit", "sleeping", "dizzy",
 ]);
@@ -215,6 +221,12 @@ const MOOD_ACTIVE_STATES: ReadonlySet<BotStateName> = new Set([
   "idle", "working", "thinking", "searching", "finished",
 ]);
 const CALM_STATES: ReadonlySet<BotStateName> = new Set(["idle", "finished"]);
+
+/** Moves `value` toward `target` by `k`, landing exactly once it is within a hair so the frame loop can rest. */
+function easeToward(value: number, target: number, k: number) {
+  const next = value + (target - value) * k;
+  return Math.abs(target - next) < 0.001 ? target : next;
+}
 
 function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const radius = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -365,6 +377,15 @@ export class CompassEngine {
   private cloudBackupStart = -1;
   private cloudBackupDuration = 0;
   private badgePopStart = -1;
+  /** State-change continuity: eased gaze/tilt, the old loop pose fading out, the accent popping in and the old one leaving. */
+  private tiltBase = 0;
+  private gazeBase: [number, number] = [0, 0];
+  private carry = { ox: 0, oy: 0, tilt: 0, sx: 0, sy: 0 };
+  private carryStart = -1;
+  private lastStatePose = { ox: 0, oy: 0, tilt: 0, sx: 0, sy: 0 };
+  private accentS = 1;
+  private accentPopStart = -1;
+  private leaving: { state: BotStateName; start: number; stateStart: number } | null = null;
   private gulpStart = -1;
   private gulpChewStarted = false;
   private pendingSparkAt = -1;
@@ -417,9 +438,25 @@ export class CompassEngine {
   setState(next: BotStateName, force = false) {
     const prev = this.state;
     if (!force && next === prev) return;
+    const prevStateStart = this.stateStart;
     this.state = next;
     this.stateStart = this.elapsed;
     this.cfg = BOT_STATES[next] ?? BOT_STATES.idle;
+    if (!force && !reducedMotion()) {
+      this.carry = { ...this.lastStatePose };
+      this.carryStart = this.elapsed;
+      this.leaving = prev === "idle" ? null : { state: prev, start: this.elapsed, stateStart: prevStateStart };
+      this.accentS = 0.05;
+      this.accentPopStart = this.elapsed;
+      this.markBusyFor(0.4);
+    } else {
+      this.tiltBase = this.cfg.tilt;
+      this.gazeBase = [this.cfg.gaze[0], this.cfg.gaze[1]];
+      this.carryStart = -1;
+      this.leaving = null;
+      this.accentS = 1;
+      this.accentPopStart = -1;
+    }
     this.setBadge(this.showsUpdateHint && this.updateHint ? { kind: "arrow", color: this.updateHint } : this.cfg.badge, !force);
     this.pendingSparkAt = -1;
     if (force && (next === "idle" || next === "error" || next === "question" || next === "finished")) {
@@ -785,7 +822,22 @@ export class CompassEngine {
       this.animSx = 1;
       this.animSy = 1;
       this.badgeS = this.badge ? 1 : 0;
+      this.tiltBase = this.cfg.tilt;
+      this.gazeBase = [this.cfg.gaze[0], this.cfg.gaze[1]];
+      this.carryStart = -1;
+      this.leaving = null;
+      this.accentS = 1;
+      this.accentPopStart = -1;
       return;
+    }
+    const faceK = 1 - Math.exp(-step * FACE_EASE_RATE);
+    this.tiltBase = easeToward(this.tiltBase, this.cfg.tilt, faceK);
+    this.gazeBase = [easeToward(this.gazeBase[0], this.cfg.gaze[0], faceK), easeToward(this.gazeBase[1], this.cfg.gaze[1], faceK)];
+    if (this.leaving && this.elapsed - this.leaving.start >= ACCENT_EXIT_SECONDS) this.leaving = null;
+    if (this.accentPopStart >= 0) {
+      const age = this.elapsed - this.accentPopStart;
+      this.accentS = evalEnvelope(age, 0.05, BADGE_POP);
+      if (age >= envelopeDuration(BADGE_POP)) { this.accentS = 1; this.accentPopStart = -1; }
     }
     this.dancingLevel = stepDanceLevel(this.dancingLevel, this.isDancing, step);
     this.es += (this.tgEs - this.es) * (1 - Math.exp(-step * 9));
@@ -945,6 +997,19 @@ export class CompassEngine {
         stateTilt = Math.sin(t * 4.2 + 0.85) * 0.075;
         break;
     }
+
+    if (this.carryStart >= 0) {
+      const fade = Math.exp(-(this.elapsed - this.carryStart) * POSE_CARRY_RATE);
+      if (fade < 0.01) this.carryStart = -1;
+      else {
+        stateOx += this.carry.ox * fade;
+        stateOy += this.carry.oy * fade;
+        stateTilt += this.carry.tilt * fade;
+        stateSx += this.carry.sx * fade;
+        stateSy += this.carry.sy * fade;
+      }
+    }
+    this.lastStatePose = { ox: stateOx, oy: stateOy, tilt: stateTilt, sx: stateSx - 1, sy: stateSy - 1 };
 
     this.ox = gestureOx + stateOx;
     this.oy = gestureOy + stateOy;
@@ -1151,7 +1216,8 @@ export class CompassEngine {
     const scale = width / 96;
     const sx = reduced ? 1 : this.animSx;
     const sy = reduced ? 1 : this.animSy;
-    const stateTilt = cfg.tilt + (reduced ? 0 : this.animTilt);
+    const baseGaze = reduced ? cfg.gaze : this.gazeBase;
+    const stateTilt = (reduced ? cfg.tilt : this.tiltBase) + (reduced ? 0 : this.animTilt);
 
     const compact = this.isMini || width <= 42;
     // Em barra compacta/fechada com overhang, reduz levemente a escala para manter cabeça e destaques dentro do recorte vertical.
@@ -1174,8 +1240,8 @@ export class CompassEngine {
     const gaze: readonly [number, number] = !reduced && this.state === "searching"
       ? [Math.cos(motionTime * 2.6) * 2.8 + this.lookX * 0.8, -0.5 - this.lookY * 0.8]
       : !reduced && this.state === "thinking"
-        ? [cfg.gaze[0] + Math.sin(motionTime * 2.1) * 0.9 + this.lookX * 1.4, cfg.gaze[1] + Math.cos(motionTime * 1.7) * 0.4 - this.lookY * 1.4]
-        : [cfg.gaze[0] + (miniGaze ? miniGaze.x : this.lookX) * 2, cfg.gaze[1] - (miniGaze ? miniGaze.y : this.lookY) * 2];
+        ? [baseGaze[0] + Math.sin(motionTime * 2.1) * 0.9 + this.lookX * 1.4, baseGaze[1] + Math.cos(motionTime * 1.7) * 0.4 - this.lookY * 1.4]
+        : [baseGaze[0] + (miniGaze ? miniGaze.x : this.lookX) * 2, baseGaze[1] - (miniGaze ? miniGaze.y : this.lookY) * 2];
     const spiralPhase = !reduced && this.state === "dizzy" ? motionTime * 4.5 : 0;
 
     this.drawCharacter(ctx, fill, reduced);
@@ -1191,6 +1257,7 @@ export class CompassEngine {
     this.drawEyes(ctx, eyes, gaze, sleepingEyes, face, spiralPhase, eyeOpen, compact);
     this.drawMouth(ctx, mouth, face, compact);
     this.drawStateAccent(ctx, motionTime, compact);
+    if (!reduced) this.drawLeavingAccent(ctx, compact);
     if (!reduced && this.noteWriteStart >= 0 && this.elapsed < this.noteWriteStart + this.noteWriteDuration) {
       this.drawNoteWriteGesture(ctx, compact);
     }
@@ -2080,8 +2147,22 @@ export class CompassEngine {
     }
   }
 
-  private drawStateAccent(ctx: CanvasRenderingContext2D, motionTime = 0, compact = false) {
-    const popScale = this.badgeS > 0 ? this.badgeS : 1;
+  /** The previous state's accent shrinks and fades for ACCENT_EXIT_SECONDS instead of vanishing. */
+  private drawLeavingAccent(ctx: CanvasRenderingContext2D, compact: boolean) {
+    const leaving = this.leaving;
+    if (!leaving || this.updateHint) return;
+    const left = 1 - (this.elapsed - leaving.start) / ACCENT_EXIT_SECONDS;
+    if (left <= 0) return;
+    const now = this.state;
+    this.state = leaving.state;
+    ctx.save();
+    ctx.globalAlpha *= left;
+    try { this.drawStateAccent(ctx, this.elapsed - leaving.stateStart, compact, 0.55 + 0.45 * left); }
+    finally { ctx.restore(); this.state = now; }
+  }
+
+  private drawStateAccent(ctx: CanvasRenderingContext2D, motionTime = 0, compact = false, scale?: number) {
+    const popScale = scale ?? (this.badgeS > 0 ? this.badgeS : this.accentS);
     if (compact) {
       this.drawCompactStateAccent(ctx, motionTime, popScale);
       return;
