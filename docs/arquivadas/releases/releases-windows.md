@@ -2,6 +2,15 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.18 — ferramenta principal: Claude Desktop, Orca, Antigravity e Codex
+
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (ok), `npx tsc --noEmit`, `npm run build`, `cargo test --lib` (`941` passaram, `10` ignorados). Testes JS: `761/761` (ajustados ao novo padrão, Claude Desktop).
+- [ ] Workflow `44357540100` (tag `windows-v0.7.18`, commit `0ffff6c`): publicou a release, mas o job `build` ainda estava `in_progress` na última conferência. Conclusão final não confirmada.
+- [x] Release [Windows 0.7.18](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.18) publicada (não é rascunho) com os dois instaladores.
+  - Digests do GitHub (ainda não conferidos com os arquivos baixados): setup `Lumen-Windows-0.7.18-setup.exe` `48758E17EFBB974E7DE5A74345A7455B170DC370DA2689FC96ED6553017D2E4E`; MSI `Lumen-Windows-0.7.18.msi` `2F388921E896056D9429321155EB79C1F81DC08087592B3AB1973CA76897D4CD`.
+- [ ] SHA-256 dos arquivos baixados e Defender: pendentes.
+- [ ] Validação real no app instalado: pendente (dono testa a lista Ferramenta principal e o Claude Desktop como padrão).
+
 ### Windows 0.7.17 — organizar as janelas para programar (Codex, Claude Code e Antigravity)
 
 - [x] Validações locais: `python scripts/test-whats-new.py` (ok), `cargo check` (backend real do Windows), `cargo test --lib` (`941` passaram, `10` ignorados, com o `resource.lib` linkado ao exe de teste). Sem mudança em TypeScript, então `tsc` e `npm test` não rodaram. Listagem dos apps da Store e abertura pelo AUMID (Calculadora) confirmadas num programa à parte.
