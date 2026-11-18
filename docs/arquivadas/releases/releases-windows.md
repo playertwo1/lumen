@@ -2,6 +2,15 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.15 — ping pelo chat do ChatGPT como função nativa
+
+- [x] Validações locais: `python scripts/test-whats-new.py` (ok), `npx tsc --noEmit`, `npm test` (`761/761`), `cargo test --lib` (`937` passaram, `10` ignorados, com o `resource.lib` linkado ao exe de teste). Teste real do ChatGPT: `ping` chamado 3 de 3, ida e volta em ~9 s.
+- [x] Workflow `44246862486` (tag `windows-v0.7.15`, commit `8538e3d`) passou e publicou [Windows 0.7.15](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.15).
+- [x] SHA-256 dos arquivos baixados igual ao do GitHub; Defender sem detecções.
+  - Setup `Lumen-Windows-0.7.15-setup.exe`: `823943A5108F95F4A423A114540B6AACD2CE4076A10A7B0E20EDDC464C472541`.
+  - MSI `Lumen-Windows-0.7.15.msi`: `E0A55E1831E692187B0FE9AC02F15A0501878B104D8B73D494C3E6F3BF692F8A`.
+- [ ] Validação real no app instalado: pendente (dono).
+
 ### Windows 0.7.14 — M2 (controle nativo do Windows), ping pelo chat e 6 pílulas
 
 - [x] Pedido explícito do proprietário em 2026-11-18 ("Gera versão nova") depois da M2.1–M2.6 implementada.
