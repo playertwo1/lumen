@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows 0.7.16 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Brilho volta a funcionar** — "brilho 60%" falhava com `0x8004101e` (acesso negado) porque o Lumen pedia o método de brilho à tela em vez da classe do WMI.
+- **Pedidos ao chat não travam mais no limite de passos** — tirar o som, listar aplicativos e organizar ou desfazer janelas falhavam com "Limite máximo de execução de ferramentas": o ChatGPT mandava um campo a mais, a ferramenta recusava e ele repetia o erro. Agora o campo a mais é ignorado; um campo que falta continua recusado.
+- **Abrir o Bloco de Notas** — no Windows 11 ele é app da Store e não tem atalho no Menu Iniciar; agora o Lumen o encontra pelo executável do sistema.
+
 ## Windows 0.7.15 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **O chat do ChatGPT agora chama as ferramentas do Lumen** — na 0.7.14 o modelo recebia as ferramentas só como texto e recusava quase sempre ("não consegui executar"), além de levar cerca de 1 minuto. Agora elas vão como funções nativas da API: o `ping` foi chamado 3 vezes em 3 no teste real, com a volta completa em cerca de 9 s. Os outros provedores seguem como estavam.
