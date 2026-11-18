@@ -2,6 +2,18 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.14 — M2 (controle nativo do Windows), ping pelo chat e 6 pílulas
+
+- [x] Pedido explícito do proprietário em 2026-11-18 ("Gera versão nova") depois da M2.1–M2.6 implementada.
+- [x] Conteúdo: ferramentas `audio`, `brilho`, `apps`, `janelas`, `midia`, `bloquear_tela`, `suspender`, `reiniciar` e `desligar` (`ec9088c`–`99cf281`); instrução de ferramentas explícita para o ChatGPT e pausa rápida no MCP (`f54f5ef`, `ec9088c`); até 6 pílulas (`f96cc87`).
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.14: 3 items`), `npx tsc --noEmit`, `npm test` (`757/757`), `npm run build`, `cargo test --lib` (`936` passaram, `10` ignorados, com o `resource.lib` linkado ao exe de teste; rodado antes da troca do número de versão).
+- [x] Preflight separado não rodado: o workflow da tag já testa o upgrade antes de publicar.
+- [x] Workflow `44236804726` (tag `windows-v0.7.14`, commit `d7bdada`) passou e publicou [Windows 0.7.14](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.14) e `windows-latest`.
+- [x] Defender examinou setup e MSI baixados: código 0, `found no threats`. SHA-256 iguais aos digests do GitHub:
+  - Setup `Lumen-Windows-0.7.14-setup.exe`: `A27E8157DEB90A0C27D30B0DC094369B93970C8A950A0041CC4D4869EBFA8709`.
+  - MSI `Lumen-Windows-0.7.14.msi`: `80C525292FF2EF702801D7300C7867CDC8B8EA2A6C25B44DE996E51864952941`.
+- [ ] Proprietário validar: `ping` pelo chat (e se ainda está lento) e a M2.7 (10 comandos × 3, retomar da suspensão, app ausente, troca de áudio); **NOT_RUN**.
+
 ### Windows 0.7.13 — cristal na janela de abertura (a bússola vinha de `src/lumen/greeting.ts`)
 
 - [x] Pedido explícito do proprietário em 2026-11-17 para corrigir de vez o ícone antigo ao iniciar e publicar (`playertwo1/lumen`).
