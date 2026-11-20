@@ -400,6 +400,20 @@ button.hub-icon:focus-visible,
   display: flex;
   flex-direction: column;
   gap: 18px;
+  animation: hub-page-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A page change reads as arrival, not a swap; no fill, so content stays visible if it fails. */
+@keyframes hub-page-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-page { animation: hub-page-fade 120ms ease-out; }
+}
+
+@keyframes hub-page-fade {
+  from { opacity: 0; }
 }
 
 /* The notch's pages keep their sections as they ship, at the panel's width. */
@@ -3525,6 +3539,16 @@ button.hub-btn.tasks-preset-add:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  transform-origin: top left;
+  animation: hub-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes hub-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tasks-picker-popover { animation: hub-page-fade 120ms ease-out; }
 }
 
 .tasks-picker-head {
@@ -4675,5 +4699,365 @@ button.hub-icon.tasks-cal-close {
 
   .phone-service-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Triagem do MailCraft ─────────────────────────────────────────────────────
+   Texto à esquerda, ação recomendada à direita; as demais ações aparecem sobre o fim
+   da linha no hover/foco, sem mudar a altura. Os números do topo são filtros. */
+
+.mail-triage-filters .mail-filter-tile {
+  appearance: none;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-inline-start: 1px solid var(--hub-line);
+  border-radius: 0;
+  padding: 6px 12px 8px;
+  position: relative;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+
+.mail-triage-filters .mail-filter-tile:first-child {
+  border-inline-start: 0;
+  padding-inline-start: 0;
+}
+
+.mail-triage-filters .mail-filter-tile::after {
+  content: "";
+  position: absolute;
+  inset-inline: 12px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--hub-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mail-triage-filters .mail-filter-tile:first-child::after {
+  inset-inline-start: 0;
+}
+
+.mail-triage-filters .mail-filter-tile:hover {
+  background: rgba(243, 238, 230, 0.03);
+}
+
+.mail-triage-filters .mail-filter-tile:hover .mail-stat-label {
+  color: var(--hub-body);
+}
+
+.mail-triage-filters .mail-filter-tile.is-on::after {
+  transform: scaleX(1);
+}
+
+.mail-triage-filters .mail-filter-tile.is-on .mail-stat-label {
+  color: var(--hub-text);
+}
+
+.mail-triage-filters .mail-filter-tile:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.mail-stat-dot.accent {
+  background: var(--hub-accent);
+}
+
+.mail-filter-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--hub-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mail-filter-note.is-empty {
+  display: none;
+}
+
+.mail-filter-note {
+  flex-wrap: wrap;
+}
+
+.mail-filter-note .mail-bulk-delete {
+  margin-inline-start: auto;
+}
+
+.mail-filter-note .mail-bulk-delete.is-armed {
+  background: rgba(255, 90, 78, 0.22);
+  border-color: rgba(255, 90, 78, 0.5);
+  color: #ffd2ce;
+}
+
+.mail-filter-clear {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: 600 12.5px/1.2 var(--font);
+  color: var(--hub-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(233, 154, 61, 0.4);
+}
+
+.mail-triage-intro .mail-intro-more {
+  margin-inline-start: 6px;
+}
+
+.mail-triage-intro .mail-intro-more.is-empty {
+  display: none;
+}
+
+.mail-filter-clear:hover {
+  text-decoration-color: currentColor;
+}
+
+.mail-filter-clear:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.mail-triage-results {
+  --mail-row-hover: color-mix(in srgb, var(--hub-card) 94%, var(--hub-text));
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+}
+
+.mail-triage-results > .mail-triage-group {
+  padding: 18px 0 6px;
+  border-top: 1px solid var(--hub-line);
+}
+
+.mail-triage-results > .mail-triage-group:first-child {
+  padding-top: 6px;
+  border-top: 0;
+}
+
+.mail-triage-group .mail-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--hub-secondary);
+}
+
+.mail-triage-group .mail-chips-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.mail-triage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  padding: 10px 10px;
+  margin-inline: -10px;
+  border-top: 0;
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+  transition: background-color 150ms ease-out;
+  animation: mail-row-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 24ms);
+}
+
+.mail-triage-row + .mail-triage-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline: 10px;
+  height: 1px;
+  background: var(--hub-line);
+}
+
+.mail-triage-row:hover::before,
+.mail-triage-row:focus-within::before,
+.mail-triage-row:hover + .mail-triage-row::before,
+.mail-triage-row:focus-within + .mail-triage-row::before {
+  opacity: 0;
+}
+
+.mail-triage-row:hover,
+.mail-triage-row:focus-within {
+  background: var(--mail-row-hover);
+}
+
+.mail-triage-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mail-triage-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mail-triage-sender {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mail-triage-head .mail-rule-outcome {
+  flex: none;
+  padding: 1px 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.mail-triage-subject {
+  min-width: 0;
+  color: var(--hub-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mail-triage-reason {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+.mail-triage-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.mail-triage-actions .hub-btn {
+  white-space: nowrap;
+}
+
+.mail-triage-actions .hub-btn.danger {
+  min-width: 78px; /* "Apagar?" não desloca a linha */
+}
+
+.mail-triage-actions .hub-btn.is-armed {
+  background: rgba(255, 90, 78, 0.22);
+  border-color: rgba(255, 90, 78, 0.5);
+  color: #ffd2ce;
+}
+
+/* As ações secundárias ficam sobre o fim do texto, com um degradê da cor da linha. */
+.mail-row-more {
+  position: absolute;
+  inset-block: -10px;
+  inset-inline-end: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 40px 8px;
+  background: linear-gradient(to right, transparent, var(--mail-row-hover) 36px);
+  opacity: 0;
+  transform: translateX(6px);
+  pointer-events: none;
+  transition: opacity 150ms ease-out, transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mail-triage-actions:not(:has(> .hub-btn)) .mail-row-more {
+  inset-inline-end: 0;
+  padding-inline-end: 0;
+}
+
+.mail-triage-row:hover .mail-row-more,
+.mail-triage-row:focus-within .mail-row-more {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* No lugar da linha apagada: quem saiu e para onde, com "Desfazer". */
+.mail-undo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 6px 10px;
+  margin-inline: -10px;
+  border-radius: 10px;
+  background: rgba(243, 238, 230, 0.03);
+  font-size: 12.5px;
+  color: var(--hub-secondary);
+  animation: mail-undo-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.mail-undo-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mail-triage-group.is-emptied .mail-chips-count {
+  opacity: 0.5;
+}
+
+@keyframes mail-undo-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes mail-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Coluna estreita: tudo visível, ações embaixo do texto. */
+@container (max-width: 560px) {
+  .mail-triage-row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 8px;
+  }
+
+  .mail-triage-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .mail-row-more {
+    position: static;
+    inset: auto;
+    padding: 0;
+    background: none;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mail-triage-row {
+    animation: none;
+  }
+
+  .mail-row-more,
+  .mail-triage-filters .mail-filter-tile::after {
+    transition: opacity 150ms ease-out;
+    transform: none;
   }
 }

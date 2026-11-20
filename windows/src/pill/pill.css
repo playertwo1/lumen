@@ -385,3 +385,17 @@ body {
     transform: scale(1);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .capsule {
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+
+  .content,
+  .capsule.open .content {
+    transform: none;
+    transition: opacity 0.15s ease-out;
+  }
+
+  .bubble { animation: none; }
+}

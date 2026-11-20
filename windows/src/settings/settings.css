@@ -432,3 +432,8 @@ html[dir="rtl"] :is(.diff, .path, .keycap, input[type="password"], input[type="t
 .qr { width: 220px; max-width: 100%; background: #fff; border-radius: 8px; padding: 4px; }
 .qr svg { display: block; width: 100%; height: auto; }
 .qr.phone-qr { width: min(100%, 496px); padding: 12px; border-radius: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  button { transition: background 0.14s; }
+  .switch::after { transition: none; }
+}
