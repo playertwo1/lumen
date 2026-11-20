@@ -112,6 +112,7 @@ const AGENT_NAMES: Record<string, string> = {
   "agent_hermes-desktop": "Hermes Desktop",
   agent_grok: "Grok",
   "agent_grok-desktop": "Grok",
+  agent_orca: "Orca",
   "agent_claude-desktop": "Claude Desktop",
 };
 

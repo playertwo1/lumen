@@ -191,12 +191,32 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
   await flush();
   assert.match(page.textContent, /Contas a pagar/);
   assert.match(page.textContent, /Renovações de assinatura/);
-  assert.match(page.textContent, /Recomendo apagar/);
   assert.match(page.textContent, /3 mensagens classificadas/);
+  // Com resultado, a explicação vira uma linha; "Saiba mais" mostra o texto inteiro.
+  assert.match(page.textContent, /Só recomenda: nada sai da caixa sem o seu clique/);
+  assert.doesNotMatch(page.textContent, /Seus VIPs, palavras proibidas/);
+  page.find("button").find((b) => b.textContent === "Saiba mais").fire("click");
+  assert.match(page.textContent, /Seus VIPs, palavras proibidas/);
+  page.find("button").find((b) => b.textContent === "Menos").fire("click");
+  assert.match(page.textContent, /2prioritários/);
+  // Contas e renovações não oferecem "Importante": já estão no topo.
+  assert.equal(page.find("button").filter((b) => b.textContent === "Importante").length, 1);
+
+  // Os números filtram: "recomendo apagar" mostra só a promoção; "Mostrar tudo" volta.
+  const tile = (caption) => page.find("button").find((b) => b.textContent.endsWith(caption));
+  tile("recomendo apagar").fire("click");
+  await flush();
+  assert.equal(tile("recomendo apagar").getAttribute("aria-pressed"), "true");
+  assert.match(page.textContent, /Só recomendo apagar: 1 de 3/);
+  assert.doesNotMatch(page.textContent, /Contas a pagar/);
+  page.find("button").find((b) => b.textContent === "Mostrar tudo").fire("click");
+  await flush();
+  assert.match(page.textContent, /Contas a pagar/);
+  assert.equal(tile("recomendo apagar").getAttribute("aria-pressed"), "false");
 
   page.find("button").find((b) => b.textContent === "Importante").fire("click");
   await flush();
-  assert.ok(called.some((c) => c.cmd === "mail_act" && c.args.kind === "flag" && c.args.message.entryId === "1"));
+  assert.ok(called.some((c) => c.cmd === "mail_act" && c.args.kind === "flag" && c.args.message.entryId === "3"));
   assert.ok(!called.some((c) => /send|delete/.test(c.cmd)));
 
   // Apagar pede confirmação: o primeiro clique não faz nada, o segundo move para Excluídos.
@@ -212,6 +232,42 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
   assert.equal(deleteCalls().length, 1);
   assert.equal(page.find("button").filter((b) => /^Apagar/.test(b.textContent)).length, before - 1);
   assert.ok(!called.some((c) => c.args?.kind === "deletePermanently"));
+
+  // "Desfazer" devolve a mensagem para a Entrada e para a lista.
+  assert.match(page.textContent, /· movida para Excluídos/);
+  const deletedId = deleteCalls()[0].args.message.entryId;
+  page.find("button").find((b) => b.textContent === "Desfazer").fire("click");
+  await flush();
+  assert.ok(called.some((c) => c.cmd === "mail_act" && c.args.kind === "undelete" && c.args.message.entryId === deletedId));
+  assert.match(page.textContent, /De volta à Entrada/);
+  assert.equal(page.find("button").filter((b) => /^Apagar/.test(b.textContent)).length, before);
+
+  // "Abrir" mostra a mensagem no MailCraft, sem mexer na caixa.
+  page.find("button").find((b) => b.textContent === "Abrir").fire("click");
+  await flush();
+  assert.ok(called.some((c) => c.cmd === "mail_open" && c.args.reply === false));
+
+  // "Apagar os N": só com o filtro "recomendo apagar", pede confirmação e move só os recomendados.
+  assert.ok(!page.find("button").some((b) => /^Apagar os/.test(b.textContent)));
+  tile("recomendo apagar").fire("click");
+  await flush();
+  const bulk = () => page.find("button").find((b) => /^Apagar (os )?1/.test(b.textContent));
+  const deletesBefore = deleteCalls().length;
+  bulk().fire("click");
+  await flush();
+  assert.equal(deleteCalls().length, deletesBefore);
+  assert.match(bulk().textContent, /Clique de novo/);
+  bulk().fire("click");
+  await flush();
+  await new Promise((r) => setTimeout(r, 400));
+  await flush();
+  assert.equal(deleteCalls().length, deletesBefore + 1);
+  assert.equal(deleteCalls().at(-1).args.message.entryId, "3");
+  assert.match(page.textContent, /1 mensagem movida para Excluídos/);
+  page.find("button").find((b) => b.textContent === "Desfazer").fire("click");
+  await flush();
+  assert.equal(called.filter((c) => c.cmd === "mail_act" && c.args.kind === "undelete" && c.args.message.entryId === "3").length, 1);
+  assert.match(page.textContent, /1 mensagem de volta à Entrada/);
 });
 
 test("Triagem: sem o canal de controle, o erro oferece reiniciar o MailCraft com controle", async (t) => {

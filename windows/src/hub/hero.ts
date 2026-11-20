@@ -275,7 +275,7 @@ export interface MochiSpec {
   size: number;
   /** Where he starts along the floor, 0…1. */
   start: number;
-  /** Optional Lumen character ID (defaults to a random pick from the 12 characters). */
+  /** Optional Lumen character ID (defaults to a random pick from the 13 characters). */
   agent?: string;
   outfit?: Outfit;
   state?: BotStateName;
@@ -293,12 +293,13 @@ const LUMEN_CAST_AGENTS = [
   "opencode",
   "grok",
   "hermes",
+  "orca",
   "youtube-music",
   "mail",
   "generic",
 ] as const;
 
-/** Picks `count` distinct character IDs from the 12 Lumen characters in random order. */
+/** Picks `count` distinct character IDs from the 13 Lumen characters in random order. */
 export function randomCastAgents(count: number, rng = Math.random): string[] {
   const pool = [...LUMEN_CAST_AGENTS];
   for (let i = pool.length - 1; i > 0; i--) {

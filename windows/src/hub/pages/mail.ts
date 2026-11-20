@@ -208,25 +208,73 @@ function triageAside(
 
 // ── Triagem do MailCraft ─────────────────────────────────────────────────────
 
-const CATEGORY_ORDER: [MailCategory, string, "accent" | "neutral" | "warn"][] = [
-  ["conta", "Contas a pagar", "accent"],
-  ["assinatura", "Renovações de assinatura", "accent"],
-  ["importante", "Importantes", "accent"],
-  ["outros", "Outros", "neutral"],
-  ["promocao", "Promoções", "neutral"],
-  ["spam", "Spam", "warn"],
+const CATEGORY_ORDER: [MailCategory, string][] = [
+  ["conta", "Contas a pagar"],
+  ["assinatura", "Renovações de assinatura"],
+  ["importante", "Importantes"],
+  ["compra", "Compras e entregas"],
+  ["notificacao", "Notificações automáticas"],
+  ["outros", "Outros"],
+  ["promocao", "Promoções"],
+  ["spam", "Spam"],
 ];
 
-const RECOMMEND_LABEL = { manter: "Manter", ler: "Ler", apagar: "Recomendo apagar" } as const;
+/** Os números do topo também filtram a lista: um clique mostra só aqueles, outro mostra tudo. */
+type TriageFilter = "importantes" | "apagar" | "promo";
+const TRIAGE_FILTERS: { id: TriageFilter; caption: string; tone: "accent" | "warn" | "neutral"; has: (i: ClassifiedMail) => boolean }[] = [
+  { id: "importantes", caption: "prioritários", tone: "accent", has: (i) => ["conta", "assinatura", "importante"].includes(i.category) },
+  { id: "apagar", caption: "recomendo apagar", tone: "warn", has: (i) => i.recommend === "apagar" },
+  { id: "promo", caption: "promoções e spam", tone: "neutral", has: (i) => i.category === "promocao" || i.category === "spam" },
+];
 
-/** Lê a caixa do MailCraft, separa contas, renovações, importantes, promoções e spam e recomenda o que apagar. */
-function mailCraftTriageCard(
-  initial: ClassifiedMail[],
-  statTile: (val: number, caption: string, dotTone: "neutral" | "warn" | "ok") => HTMLElement,
-): HTMLElement {
-  const stats = h("div", { class: "mail-stats" });
+/** Some com a linha: desliza e fecha a altura, para a lista não pular. */
+function leaveRow(row: HTMLElement, done: () => void) {
+  if (typeof row.animate !== "function") return done();
+  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const h0 = row.getBoundingClientRect().height;
+  const anim = reduced
+    ? row.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: "ease-out" })
+    : row.animate(
+        [
+          { opacity: 1, transform: "translateX(0)", height: `${h0}px`, offset: 0 },
+          { opacity: 0, transform: "translateX(14px)", height: `${h0}px`, offset: 0.55 },
+          { opacity: 0, transform: "translateX(14px)", height: "0px", paddingTop: "0px", paddingBottom: "0px" },
+        ],
+        { duration: 320, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+      );
+  anim.onfinish = done;
+  anim.oncancel = done;
+}
+
+/** Lê a caixa do MailCraft, separa contas, renovações, importantes, compras, notificações, promoções e spam e recomenda o que apagar. */
+function mailCraftTriageCard(initial: ClassifiedMail[]): HTMLElement {
+  const stats = h("div", { class: "mail-stats mail-triage-filters", role: "group", "aria-label": "Filtrar a triagem" });
+  const filterNote = h("div", { class: "mail-filter-note is-empty", role: "status", "aria-live": "polite" });
   const list = h("div", { class: "mail-triage-results" });
   const status = h("div", { class: "mail-status-line is-empty", role: "status", "aria-live": "polite" });
+  let items = initial.slice();
+  let filter: TriageFilter | null = null;
+  let rows = new Map<ClassifiedMail, HTMLElement>();
+  // A explicação inteira antes da primeira triagem; depois, uma linha e "Saiba mais".
+  const INTRO_FULL =
+    "O Lumen separa contas, renovações, importantes, compras, notificações, promoções e spam, e recomenda o que apagar. Ele só apaga o que você mandar, um clique por mensagem (vai para Excluídos ou Spam, dá para recuperar), e nunca envia e-mails. Seus VIPs, palavras proibidas e regras valem primeiro.";
+  const INTRO_SHORT = "Só recomenda: nada sai da caixa sem o seu clique, e tudo vai para Excluídos ou Spam.";
+  const introText = h("span", { text: INTRO_FULL });
+  const introMore = h("button", { class: "mail-filter-clear mail-intro-more", type: "button", text: "Saiba mais" });
+  const intro = h("div", { class: "mail-section-sub mail-triage-intro" }, introText, introMore);
+  let introOpen = false;
+  const syncIntro = () => {
+    const short = items.length > 0 && !introOpen;
+    introText.textContent = short ? INTRO_SHORT : INTRO_FULL;
+    introMore.textContent = introOpen ? "Menos" : "Saiba mais";
+    introMore.classList.toggle("is-empty", items.length === 0);
+    introMore.setAttribute("aria-expanded", String(introOpen));
+  };
+  introMore.addEventListener("click", () => {
+    introOpen = !introOpen;
+    syncIntro();
+  });
+  let bulkBusy = false;
 
   /** O MailCraft está aberto sem `--control`: oferece reiniciá-lo com o canal (um clique do usuário). */
   const showError = (err: unknown) => {
@@ -248,14 +296,16 @@ function mailCraftTriageCard(
   };
 
   /** `confirm`: o primeiro clique só pede confirmação, o segundo faz. `removeRow`: some com a mensagem da lista. */
-  const actionButton = (text: string, run: () => Promise<void>, opts: { confirm?: string; removeRow?: () => void } = {}) => {
+  const actionButton = (text: string, run: () => Promise<void>, opts: { confirm?: string; removeRow?: () => void; kind?: "" | "danger"; label?: string } = {}) => {
     let armed: number | undefined;
     const btn = button(text, () => {
       if (opts.confirm && armed === undefined) {
         btn.textContent = opts.confirm;
+        btn.classList.add("is-armed");
         armed = window.setTimeout(() => {
           armed = undefined;
           btn.textContent = text;
+          btn.classList.remove("is-armed");
         }, 4000);
         return;
       }
@@ -267,59 +317,243 @@ function mailCraftTriageCard(
         .catch((err) => {
           btn.disabled = false;
           btn.textContent = text;
+          btn.classList.remove("is-armed");
           showError(err);
         });
-    }, "", true);
+    }, opts.kind ?? "", true);
+    if (opts.label) btn.setAttribute("aria-label", opts.label);
     return btn;
   };
 
-  const draw = (items: ClassifiedMail[]) => {
-    clear(stats);
-    clear(list);
-    const important = items.filter((i) => ["conta", "assinatura", "importante"].includes(i.category)).length;
-    const toDelete = items.filter((i) => i.recommend === "apagar").length;
-    const promo = items.filter((i) => i.category === "promocao" || i.category === "spam").length;
-    stats.append(
-      statTile(important, "importantes", "ok"),
-      statTile(toDelete, "recomendo apagar", "warn"),
-      statTile(promo, "promoções e spam", "neutral"),
+  /** Depois de Apagar/Spam, no lugar da linha: "Desfazer" devolve a mensagem para a Entrada e para a lista. */
+  const undoStrip = (item: ClassifiedMail, at: number, where: "Excluídos" | "Spam") => {
+    const undo = h("button", { class: "mail-filter-clear mail-undo", type: "button", text: "Desfazer" });
+    undo.setAttribute("aria-label", `Desfazer: voltar para a Entrada: ${item.message.subject}`);
+    undo.addEventListener("click", () => {
+      undo.disabled = true;
+      undo.textContent = "Desfazendo…";
+      void MailBridge.actChecked(item.message, where === "Spam" ? "unjunk" : "undelete")
+        .then(() => {
+          items.splice(Math.min(at, items.length), 0, item);
+          drawStats();
+          drawList();
+          status.className = "mail-status-line ok";
+          status.textContent = "De volta à Entrada.";
+        })
+        .catch((err) => {
+          undo.disabled = false;
+          undo.textContent = "Desfazer";
+          showError(err);
+        });
+    });
+    return h(
+      "div",
+      { class: "mail-undo-row", role: "status" },
+      h("span", { class: "mail-undo-text", text: `${item.message.senderName || item.message.address} · movida para ${where}` }),
+      undo,
     );
+  };
+
+  const setFilter = (next: TriageFilter | null) => {
+    filter = next;
+    drawStats();
+    drawList();
+  };
+
+  const drawStats = () => {
+    syncIntro();
+    clear(stats);
+    clear(filterNote);
+    if (items.length === 0) {
+      filterNote.classList.add("is-empty");
+      return;
+    }
+    for (const f of TRIAGE_FILTERS) {
+      const on = filter === f.id;
+      const tile = h(
+        "button",
+        { class: `mail-stat-tile mail-filter-tile${on ? " is-on" : ""}`, type: "button", "aria-pressed": String(on), "aria-label": `${items.filter(f.has).length} ${f.caption}` },
+        h("span", { class: "mail-stat", text: String(items.filter(f.has).length) }),
+        h(
+          "span",
+          { class: "mail-stat-label" },
+          h("span", { class: `mail-stat-dot ${f.tone}`, "aria-hidden": "true" }),
+          h("span", { text: f.caption }),
+        ),
+      );
+      tile.addEventListener("click", () => setFilter(on ? null : f.id));
+      stats.append(tile);
+    }
+    const active = TRIAGE_FILTERS.find((f) => f.id === filter);
+    filterNote.classList.toggle("is-empty", !active);
+    if (active) {
+      const clearBtn = h("button", { class: "mail-filter-clear", type: "button", text: "Mostrar tudo" });
+      clearBtn.addEventListener("click", () => setFilter(null));
+      filterNote.append(h("span", { text: `Só ${active.caption}: ${items.filter(active.has).length} de ${items.length}` }), clearBtn);
+      const targets = items.filter(active.has);
+      if (active.id === "apagar" && targets.length > 0) filterNote.append(bulkDeleteButton(targets));
+    }
+  };
+
+  /** "Apagar os N recomendados": um clique arma, o segundo move todos para Excluídos (dá para desfazer). */
+  const bulkDeleteButton = (targets: ClassifiedMail[]) => {
+    const text = `Apagar os ${targets.length}`;
+    const btn = button(text, () => {
+      if (bulkBusy) return;
+      if (!btn.classList.contains("is-armed")) {
+        btn.classList.add("is-armed");
+        btn.textContent = `Apagar ${targets.length}? Clique de novo`;
+        window.setTimeout(() => {
+          if (!bulkBusy && btn.isConnected) {
+            btn.classList.remove("is-armed");
+            btn.textContent = text;
+          }
+        }, 4000);
+        return;
+      }
+      void bulkDelete(targets, btn);
+    }, "danger", true);
+    btn.classList.add("mail-bulk-delete");
+    btn.setAttribute("aria-label", `Apagar as ${targets.length} mensagens recomendadas (vão para Excluídos)`);
+    return btn;
+  };
+
+  /** Uma mensagem por vez, na ordem da lista; para no primeiro erro e mantém o que já foi feito. */
+  const bulkDelete = async (targets: ClassifiedMail[], btn: HTMLButtonElement) => {
+    bulkBusy = true;
+    btn.disabled = true;
+    const done: { item: ClassifiedMail; at: number }[] = [];
+    let failure: unknown = null;
+    for (const item of targets) {
+      btn.textContent = `Apagando ${done.length + 1} de ${targets.length}…`;
+      try {
+        await MailBridge.actChecked(item.message, "delete");
+        done.push({ item, at: items.indexOf(item) });
+        const row = rows.get(item);
+        if (row) leaveRow(row, () => row.remove());
+      } catch (err) {
+        failure = err;
+        break;
+      }
+    }
+    await new Promise((r) => window.setTimeout(r, 340)); // a última linha termina de sair
+    items = items.filter((i) => !done.some((d) => d.item === i));
+    bulkBusy = false;
+    drawStats();
+    drawList();
+    if (done.length > 0) list.prepend(bulkUndoStrip(done));
+    if (failure) showError(failure);
+  };
+
+  /** Desfaz o lote: devolve para a Entrada, uma por vez, e as linhas voltam ao lugar. */
+  const bulkUndoStrip = (done: { item: ClassifiedMail; at: number }[]) => {
+    const undo = h("button", { class: "mail-filter-clear mail-undo", type: "button", text: "Desfazer" });
+    undo.setAttribute("aria-label", `Desfazer: voltar as ${done.length} mensagens para a Entrada`);
+    undo.addEventListener("click", async () => {
+      undo.disabled = true;
+      const back: typeof done = [];
+      for (const d of done) {
+        undo.textContent = `Voltando ${back.length + 1} de ${done.length}…`;
+        try {
+          await MailBridge.actChecked(d.item.message, "undelete");
+          back.push(d);
+        } catch (err) {
+          showError(err);
+          break;
+        }
+      }
+      for (const d of [...back].sort((a, b) => a.at - b.at)) items.splice(Math.min(d.at, items.length), 0, d.item);
+      drawStats();
+      drawList();
+      if (back.length === done.length) {
+        status.className = "mail-status-line ok";
+        status.textContent = `${back.length} ${back.length === 1 ? "mensagem" : "mensagens"} de volta à Entrada.`;
+      }
+    });
+    const n = done.length;
+    return h(
+      "div",
+      { class: "mail-undo-row", role: "status" },
+      h("span", { class: "mail-undo-text", text: `${n} ${n === 1 ? "mensagem movida" : "mensagens movidas"} para Excluídos` }),
+      undo,
+    );
+  };
+
+  const drawList = () => {
+    clear(list);
+    rows = new Map();
     if (items.length === 0) {
       list.append(h("div", { class: "mail-section-sub", text: "Clique em Fazer triagem para o Lumen ler as mensagens recentes." }));
       return;
     }
-    for (const [cat, title, tone] of CATEGORY_ORDER) {
-      const group = items.filter((i) => i.category === cat);
+    const active = TRIAGE_FILTERS.find((f) => f.id === filter);
+    const shown = active ? items.filter(active.has) : items;
+    if (shown.length === 0) {
+      list.append(h("div", { class: "mail-section-sub mail-triage-empty", text: "Nada nesta seleção agora." }));
+      return;
+    }
+    let rowIdx = 0;
+    for (const [cat, title] of CATEGORY_ORDER) {
+      const group = shown.filter((i) => i.category === cat);
       if (group.length === 0) continue;
-      list.append(
-        divider(),
-        h(
-          "div",
-          { class: "mail-section-head" },
-          h("h3", { class: "mail-section-title", text: title }),
-          h("span", { class: "mail-chips-count", text: String(group.length) }),
-        ),
-      );
+      const countEl = h("span", { class: "mail-chips-count", text: String(group.length) });
+      const groupHead = h("div", { class: "mail-section-head mail-triage-group" }, h("h3", { class: "mail-section-title", text: title }), countEl);
+      let left = group.length;
+      list.append(groupHead);
       for (const item of group) {
         const m = item.message;
-        const actions = h("div", { class: "mail-section-actions" });
-        if (!m.flagged) actions.append(actionButton("Importante", () => MailBridge.actChecked(m, "flag")));
-        if (m.unread) actions.append(actionButton("Marcar lida", () => MailBridge.actChecked(m, "read")));
-        const row = h("div", { class: "hub-list-row mail-journal" });
-        const gone = () => row.remove();
+        const row = h("div", { class: "hub-list-row mail-journal mail-triage-row" });
+        rows.set(item, row);
+        // A mensagem saiu da caixa (Apagar/Spam): some da lista, do grupo e dos números do topo.
+        const gone = (where: "Excluídos" | "Spam") => () =>
+          leaveRow(row, () => {
+            const at = items.indexOf(item);
+            items = items.filter((i) => i !== item);
+            drawStats();
+            row.replaceWith(undoStrip(item, at, where));
+            countEl.textContent = String(--left);
+            if (left === 0 && !filter) groupHead.classList.add("is-emptied");
+          });
+        const deletes = item.recommend === "apagar";
+        const reads = !deletes && item.recommend === "ler";
+        const mkRead = () => actionButton("Marcar lida", () => MailBridge.actChecked(m, "read"), { label: `Marcar como lida: ${m.subject}` });
+        const mkOpen = () => {
+          const open = button("Abrir", () => {
+            open.disabled = true;
+            void MailBridge.openChecked(m)
+              .catch(showError)
+              .finally(() => (open.disabled = false));
+          }, "", true);
+          open.setAttribute("aria-label", `Abrir no MailCraft: ${m.subject}`);
+          open.title = "Abrir no MailCraft";
+          return open;
+        };
         // Vão para Excluídos / Spam do MailCraft, de onde dá para recuperar; nunca apagam de vez.
-        if (cat === "promocao" || cat === "spam" || cat === "outros") {
-          actions.append(actionButton("Spam", () => MailBridge.actChecked(m, "junk"), { confirm: "Mover p/ Spam?", removeRow: gone }));
+        const mkDelete = (kind: "" | "danger") =>
+          actionButton("Apagar", () => MailBridge.actChecked(m, "delete"), { confirm: "Apagar?", removeRow: gone("Excluídos"), kind, label: `Apagar (vai para Excluídos): ${m.subject}` });
+        // Em repouso, só a ação que o Lumen recomenda; as outras aparecem ao passar o mouse ou focar a linha.
+        const more = h("div", { class: "mail-row-more" });
+        if (!reads) more.append(mkOpen());
+        if (!m.flagged && !["conta", "assinatura", "importante"].includes(cat)) more.append(actionButton("Importante", () => MailBridge.actChecked(m, "flag"), { label: `Marcar como importante: ${m.subject}` }));
+        if (m.unread) more.append(mkRead());
+        if (["promocao", "spam", "outros", "notificacao"].includes(cat)) {
+          more.append(actionButton("Spam", () => MailBridge.actChecked(m, "junk"), { confirm: "Spam?", removeRow: gone("Spam"), label: `Mover para Spam: ${m.subject}` }));
         }
-        actions.append(actionButton("Apagar", () => MailBridge.actChecked(m, "delete"), { confirm: "Apagar? (vai p/ Excluídos)", removeRow: gone }));
+        if (!deletes) more.append(mkDelete(""));
+        const actions = h("div", { class: "mail-triage-actions" }, more);
+        if (deletes) actions.append(mkDelete("danger"));
+        else if (reads) actions.append(mkOpen());
+        // Quiet Row Rule: "Manter" não vira selo, e "apagar" já se vê no botão vermelho; só "Ler" ganha selo.
+        const badge = item.recommend === "ler" ? h("span", { class: "mail-rule-outcome accent", text: "Ler" }) : null;
+        row.style.setProperty("--i", String(Math.min(rowIdx++, 12)));
         row.append(
           h(
             "div",
-            { class: "grow" },
-            h("div", {}, h("b", { text: m.senderName || m.address }), h("span", { class: "mail-dim", text: `  ${m.subject}` })),
-            h("div", { class: "mail-dim small", text: item.reason }),
+            { class: "grow mail-triage-text" },
+            h("div", { class: "mail-triage-head" }, h("b", { class: "mail-triage-sender", text: m.senderName || m.address, title: m.address }), badge),
+            h("div", { class: "mail-triage-subject", text: m.subject, title: m.subject }),
+            h("div", { class: "mail-dim small mail-triage-reason", text: item.reason, title: item.reason }),
           ),
-          h("span", { class: `mail-rule-outcome ${item.recommend === "apagar" ? "warn" : tone}`, text: RECOMMEND_LABEL[item.recommend] }),
           actions,
         );
         list.append(row);
@@ -338,7 +572,8 @@ function mailCraftTriageCard(
     status.textContent = "Lendo e classificando as mensagens recentes…";
     void MailBridge.classify(20)
       .then((res) => {
-        draw(res.items);
+        items = res.items.slice();
+        setFilter(null);
         status.className = res.note ? "mail-status-line err" : "mail-status-line ok";
         status.textContent = res.note ?? `${res.items.length} mensagens classificadas.`;
       })
@@ -351,7 +586,7 @@ function mailCraftTriageCard(
       });
   }, "primary");
 
-  draw(initial);
+  setFilter(null);
   const triageCard = card(
     h(
       "div",
@@ -360,15 +595,13 @@ function mailCraftTriageCard(
         "div",
         { class: "mail-section-title-col" },
         h("h2", { class: "mail-section-title", text: "Triagem do MailCraft" }),
-        h("div", {
-          class: "mail-section-sub",
-          text: "O Lumen separa contas, renovações, importantes, promoções e spam, e recomenda o que apagar. Ele só apaga o que você mandar, um clique por mensagem (vai para Excluídos ou Spam, dá para recuperar), e nunca envia e-mails. Seus VIPs, palavras proibidas e regras valem primeiro.",
-        }),
+        intro,
       ),
       h("div", { class: "mail-section-actions" }, runBtn),
     ),
     status,
     stats,
+    filterNote,
     list,
   );
   triageCard.classList.add("mail-card");
@@ -759,7 +992,7 @@ export async function mailOverviewPage(page: HTMLElement, ctx: HubContext) {
   const onMailCraft = cfg.backend !== "outlook";
   const sidebarCol = h("div", { class: "mail-sidebar" }, configCard);
   if (onMailCraft) {
-    primaryCol.prepend(mailCraftTriageCard(view.classified ?? [], statTile));
+    primaryCol.prepend(mailCraftTriageCard(view.classified ?? []));
   } else {
     sortCard.dataset.anchor = "mail.autosort";
     sidebarCol.append(sortCard);

@@ -373,6 +373,9 @@ pub async fn mail_detail(message: Message) -> Result<Detail, String> {
 pub async fn mail_open(message: Message, reply: bool) -> Result<(), String> {
     if message.store_id == "mailcraft" {
         if !reply {
+            // Mostra a mensagem no MailCraft e traz a janela dele para a frente (o usuário clicou em Abrir).
+            mailcraft::reveal(&active_backend(), &message.entry_id).await?;
+            let _ = tokio::task::spawn_blocking(|| crate::platform::focus_app("mailcraft.exe")).await;
             return Ok(());
         }
         let backend = active_backend();
@@ -454,6 +457,10 @@ pub async fn mail_act(app: AppHandle, message: Message, kind: String) -> Result<
                     r.last_unread = (r.last_unread - 1).max(0);
                 }
                 r.last.retain(|x| x.id() != message.id());
+            }
+            // "Desfazer" do Apagar/Spam acima: a mensagem volta para a Entrada.
+            "undelete" | "unjunk" => {
+                mailcraft::restore(&backend, &message.entry_id, &message.account, kind == "unjunk").await?;
             }
             _ => {
                 return Err("Esta ação de triagem só se aplica ao Outlook clássico (secundário).".to_string());

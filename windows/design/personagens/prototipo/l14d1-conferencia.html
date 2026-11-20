@@ -55,7 +55,7 @@
 <body>
   <main>
     <h1>L1.4d-4 · conferência da família Canvas e animações P1/P2</h1>
-    <p>Matriz completa: 12 personagens × (11 estados + 7 emotes) em Canvas ao lado das pranchas PNG aprovadas, mais faixa mini/compacta (22–28 px e barra fechada 24 px). Os controles de prévia P1/P2 ficam desativados em repouso (0% de CPU) e animam os quadros sob demanda só nesta página de desenvolvimento.</p>
+    <p>Matriz completa: 13 personagens × (11 estados + 7 emotes) em Canvas ao lado das pranchas PNG aprovadas, mais faixa mini/compacta (22–28 px e barra fechada 24 px). Os controles de prévia P1/P2 ficam desativados em repouso (0% de CPU) e animam os quadros sob demanda só nesta página de desenvolvimento.</p>
     <div class="controls">
       <label for="dpr">DPR do bitmap
         <select id="dpr">
@@ -115,6 +115,7 @@
       { id: "agent_opencode", name: "OpenCode", color: "#4ADE80", sheet: "opencode-estados-transparente.png", stage: "d2" },
       { id: "grok", name: "Grok", color: "#B8C5D6", sheet: null, stage: "novo" },
       { id: "agent_hermes-desktop", name: "Hermes Desktop", color: "#C084FC", sheet: null, stage: "novo" },
+      { id: "agent_orca", name: "Orca", color: "#3870E3", sheet: null, stage: "novo" },
       { id: "integration_youtubemusic", name: "YouTube Music", color: "#FF0033", sheet: null, stage: "novo" },
       { id: "integration_mail", name: "Email", color: "#2F8CFF", sheet: null, stage: "novo" },
       { id: "generic", name: "Genérico", color: "#F4E8C9", sheet: "generico-estados-transparente.png", stage: "d2" },
@@ -280,6 +281,8 @@
         ["grok", "working"],
         ["agent_hermes-desktop", "idle"],
         ["agent_hermes-desktop", "working"],
+        ["agent_orca", "idle"],
+        ["agent_orca", "working"],
         ["integration_youtubemusic", "ratelimit"],
         ["integration_mail", "sleeping"],
         ["generic", "dizzy"],

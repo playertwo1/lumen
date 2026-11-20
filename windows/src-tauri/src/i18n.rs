@@ -29,7 +29,12 @@ fn table() -> &'static Table {
             let Some(Value::Object(strings)) = root.get("strings") else { continue };
             for (key, entry) in strings {
                 if let Value::Object(langs) = entry {
-                    out.insert(key.clone(), langs.clone());
+                    let mut langs = langs.clone();
+                    // Lumen on Windows always shows pt-BR (resolve_for): the other 12 languages would sit unused.
+                    if cfg!(all(windows, not(test))) {
+                        langs.retain(|lang, _| lang == "pt-BR" || lang == "en");
+                    }
+                    out.insert(key.clone(), langs);
                 }
             }
         }

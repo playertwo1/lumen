@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from "vite";
-import { existsSync, mkdirSync, readdirSync, copyFileSync, createReadStream } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, copyFileSync, createReadStream } from "node:fs";
 import { dirname, resolve, join, extname } from "node:path";
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -56,6 +56,16 @@ export default defineConfig({
         if (target === resolve(__dirname, "src/views/wardrobe")) return resolve(__dirname, "src/lumen/compass-details.ts");
         if (target === resolve(__dirname, "src/whats-new/whats-new.json")) return resolve(__dirname, "src/whats-new/lumen-whats-new.json");
         return null;
+      },
+      // Lumen on Windows always shows pt-BR (src/i18n/i18n.ts): every window would otherwise parse and keep
+      // the 14 languages. "en" stays for the English plural forms tn() falls back to.
+      load(id) {
+        if (process.platform !== "win32" || !/[\\/]src[\\/]i18n[\\/](strings|extra)\.json$/.test(id)) return null;
+        const json = JSON.parse(readFileSync(id, "utf8"));
+        for (const entry of Object.values(json.strings) as Record<string, unknown>[]) {
+          for (const lang of Object.keys(entry)) if (lang !== "pt-BR" && lang !== "en") delete entry[lang];
+        }
+        return JSON.stringify(json);
       },
       transformIndexHtml(html) {
         return process.platform === "win32" ? html.replace(/<title>.*?<\/title>/i, "<title>Lumen</title>") : html;

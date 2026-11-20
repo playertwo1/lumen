@@ -43,6 +43,11 @@ const agents = [
   ["agent_hermes", "hermes"],
   ["hermes-desktop", "hermes"],
   ["agent_hermes-desktop", "hermes"],
+  ["orca", "orca"],
+  ["agent_orca", "orca"],
+  ["integration_orca", "orca"],
+  ["orca-desktop", "orca"],
+  ["agent_orca-desktop", "orca"],
   ["integration_youtubemusic", "youtube-music"],
   ["youtubemusic", "youtube-music"],
   ["youtube-music", "youtube-music"],
@@ -81,7 +86,7 @@ test("desenha todos os estados para todos os personagens a 22/96 px e DPR 1/1,5/
   const canonicalIds = [
     "integration_claude", "agent_claude-desktop", "agent_codex", "ai_openai",
     "agent_antigravity", "agent_gemini", "agent_opencode", "grok", "agent_hermes",
-    "agent_hermes-desktop", "integration_youtubemusic", "integration_mail", "unknown-agent",
+    "agent_hermes-desktop", "agent_orca", "integration_youtubemusic", "integration_mail", "unknown-agent",
   ];
   for (const id of canonicalIds) {
     const engine = new BotEngine();
@@ -185,7 +190,7 @@ test("desenha cada emote nos dois tamanhos sem erro para todos os personagens", 
   for (const id of [
     "integration_claude", "agent_claude-desktop", "agent_codex", "ai_openai",
     "agent_antigravity", "agent_gemini", "agent_opencode", "grok", "agent_hermes",
-    "agent_hermes-desktop", "integration_youtubemusic", "integration_mail", "unknown-agent",
+    "agent_hermes-desktop", "agent_orca", "integration_youtubemusic", "integration_mail", "unknown-agent",
   ]) {
     const engine = new BotEngine();
     engine.setAgent(id);
@@ -509,7 +514,7 @@ test("particleOverhang centraliza verticalmente e versão mini/compacta desenha 
   // Em barra compacta/fechada e mini grid, eyes e accent compacto mantêm proporção legível sem chamar o monitor alto (y=4).
   for (const agent of [
     "agent_codex", "integration_claude", "agent_claude-desktop",
-    "grok", "agent_hermes", "agent_hermes-desktop",
+    "grok", "agent_hermes", "agent_hermes-desktop", "agent_orca",
     "integration_youtubemusic", "integration_mail",
   ]) {
     for (const state of ["idle", "working", "thinking", "searching", "approval", "question", "error", "finished", "ratelimit", "sleeping", "dizzy"]) {
@@ -570,8 +575,8 @@ test("animação P3 (triggerNoteWrite) desenha caderneta animada, respeita reduc
   }
 });
 
-test("Grok e Hermes Desktop desenham silhuetas distintas com inércia secundária, modo mini/DPR e gesto P3", () => {
-  for (const id of ["grok", "agent_hermes-desktop"]) {
+test("Grok, Hermes Desktop e Orca desenham silhuetas distintas com inércia secundária, modo mini/DPR e gesto P3", () => {
+  for (const id of ["grok", "agent_hermes-desktop", "agent_orca"]) {
     const mini = new BotEngine();
     mini.isMini = true;
     mini.setAgent(id);

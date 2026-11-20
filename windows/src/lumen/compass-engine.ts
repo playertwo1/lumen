@@ -31,6 +31,7 @@ export type LumenCharacter =
   | "opencode"
   | "grok"
   | "hermes"
+  | "orca"
   | "youtube-music"
   | "mail"
   | "generic";
@@ -51,6 +52,7 @@ const GLASS_TINT: RGB = [0.859, 0.925, 0.996];
 const OPENCODE_GREEN: RGB = [0.29, 0.871, 0.502];
 const GROK_SILVER: RGB = [0.722, 0.773, 0.839];
 const HERMES_PURPLE: RGB = [0.753, 0.518, 0.988];
+const ORCA_BLUE: RGB = [0.22, 0.439, 0.89];
 const YTM_CRIMSON: RGB = [1, 0, 0.2];
 const MAIL_BLUE: RGB = [0.184, 0.549, 1];
 const BLUSH: RGB = [0.91, 0.57, 0.63];
@@ -84,6 +86,11 @@ const AGENT_CHARACTER_MAP: Record<string, LumenCharacter> = {
   agent_hermes: "hermes",
   "hermes-desktop": "hermes",
   "agent_hermes-desktop": "hermes",
+  orca: "orca",
+  agent_orca: "orca",
+  integration_orca: "orca",
+  "orca-desktop": "orca",
+  "agent_orca-desktop": "orca",
   integration_youtubemusic: "youtube-music",
   youtubemusic: "youtube-music",
   "youtube-music": "youtube-music",
@@ -101,6 +108,7 @@ const CHARACTER_COLOR: Record<LumenCharacter, RGB> = {
   opencode: OPENCODE_GREEN,
   grok: GROK_SILVER,
   hermes: HERMES_PURPLE,
+  orca: ORCA_BLUE,
   "youtube-music": YTM_CRIMSON,
   mail: MAIL_BLUE,
   generic: SAND,
@@ -116,6 +124,7 @@ const CHARACTER_FACE: Record<LumenCharacter, FaceLayout> = {
   opencode: { eyeLeftX: 37, eyeRightX: 59, eyeY: 41, mouthX: 48, mouthY: 52 },
   grok: { eyeLeftX: 37, eyeRightX: 59, eyeY: 46, mouthX: 48, mouthY: 59 },
   hermes: { eyeLeftX: 37, eyeRightX: 59, eyeY: 46, mouthX: 48, mouthY: 59 },
+  orca: { eyeLeftX: 37, eyeRightX: 59, eyeY: 49, mouthX: 48, mouthY: 62 },
   "youtube-music": { eyeLeftX: 38, eyeRightX: 58, eyeY: 46, mouthX: 48, mouthY: 59 },
   mail: { eyeLeftX: 37, eyeRightX: 59, eyeY: 54, mouthX: 48, mouthY: 66 },
   generic: { eyeLeftX: 38, eyeRightX: 58, eyeY: 44, mouthX: 48, mouthY: 57 },
@@ -1389,6 +1398,9 @@ export class CompassEngine {
       case "hermes":
         this.drawHermes(ctx, fill, lagX, lagY);
         break;
+      case "orca":
+        this.drawOrca(ctx, fill, lagX, lagY);
+        break;
       case "youtube-music":
         this.drawYouTubeMusic(ctx, fill, lagX, lagY);
         break;
@@ -1634,6 +1646,83 @@ export class CompassEngine {
     ctx.quadraticCurveTo(48 + lagX * 0.5, 25 + lagY * 0.4, 35 + lagX * 0.6, 21 + lagY * 0.4);
     ctx.closePath();
     paintOutlinedShape(ctx, SAND);
+  }
+
+  private drawOrca(ctx: CanvasRenderingContext2D, fill: RGB, lagX = 0, lagY = 0) {
+    // Cauda de orca à esquerda com inércia secundária (remete à curva do ícone oficial do Orca)
+    const tailLagX = lagX * 1.4;
+    const tailLagY = lagY * 1.4;
+    ctx.beginPath();
+    ctx.moveTo(24, 62);
+    ctx.quadraticCurveTo(15 + tailLagX * 0.6, 56 + tailLagY * 0.6, 8 + tailLagX, 49 + tailLagY);
+    ctx.quadraticCurveTo(13 + tailLagX * 0.85, 58 + tailLagY * 0.85, 16 + tailLagX * 0.75, 62 + tailLagY * 0.75);
+    ctx.quadraticCurveTo(12 + tailLagX * 0.8, 67 + tailLagY * 0.8, 9 + tailLagX * 0.9, 74 + tailLagY * 0.9);
+    ctx.quadraticCurveTo(17 + tailLagX * 0.5, 73 + tailLagY * 0.5, 25, 72);
+    ctx.closePath();
+    paintOutlinedShape(ctx, fill);
+
+    // Nadadeira peitoral direita equilibrando a silhueta fora da zona de crachás
+    ctx.beginPath();
+    ctx.moveTo(73, 56);
+    ctx.quadraticCurveTo(84 + lagX * 1.1, 61 + lagY * 1.1, 82 + lagX * 1.1, 70 + lagY * 1.1);
+    ctx.quadraticCurveTo(77 + lagX * 0.6, 73 + lagY * 0.6, 71, 71);
+    ctx.closePath();
+    paintOutlinedShape(ctx, fill);
+
+    // Barbatana dorsal no topo centro-esquerda (mantém topo direito livre para monitor/crachás)
+    const finLagX = lagX * 1.1;
+    const finLagY = lagY * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(35, 23);
+    ctx.quadraticCurveTo(37 + finLagX * 0.4, 15 + finLagY * 0.4, 34 + finLagX, 8 + finLagY);
+    ctx.quadraticCurveTo(44 + finLagX * 0.7, 9 + finLagY * 0.5, 51, 21);
+    ctx.closePath();
+    paintOutlinedShape(ctx, fill);
+
+    // Corpo principal arredondado com máscara facial/ventre branco de orca e manchas ovais nos cantos superiores
+    roundedRect(ctx, 20, 19, 56, 64, 22);
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    shadowOf(ctx);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = rgbCss(fill);
+    ctx.fillRect(20, 19, 56, 64);
+
+    // Máscara branca de contraste no rosto/ventre mantém olhos e boca em INK sempre legíveis
+    ctx.beginPath();
+    ctx.moveTo(20, 49);
+    ctx.quadraticCurveTo(28, 36, 39, 36);
+    ctx.quadraticCurveTo(44.5, 36, 48, 41.5);
+    ctx.quadraticCurveTo(51.5, 36, 57, 36);
+    ctx.quadraticCurveTo(68, 36, 76, 49);
+    ctx.lineTo(76, 84);
+    ctx.lineTo(20, 84);
+    ctx.closePath();
+    ctx.fillStyle = rgbCss(CLAUDE_WHITE);
+    ctx.fill();
+    ctx.restore();
+
+    // Manchas ovais características da orca (evocam o oval branco característico do ícone do Orca)
+    for (const [cx, cy, rot] of [[32.5, 28.5, -0.38], [63.5, 28.5, 0.38]] as const) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 5.6, 2.7, 0, 0, Math.PI * 2);
+      ctx.fillStyle = rgbCss(CLAUDE_WHITE);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    roundedRect(ctx, 20, 19, 56, 64, 22);
+    ctx.strokeStyle = rgbCss(INK);
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.stroke();
   }
 
   private drawYouTubeMusic(ctx: CanvasRenderingContext2D, fill: RGB, lagX = 0, lagY = 0) {

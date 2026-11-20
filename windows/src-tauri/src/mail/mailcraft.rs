@@ -33,6 +33,8 @@ const ALLOWED_COMMANDS: &[&str] = &[
     "folder.list",
     "mail.list",
     "mail.get",
+    // "Abrir no MailCraft": só seleciona e mostra a mensagem na pasta dela.
+    "mail.select",
     "mail.markRead",
     "mail.markUnread",
     "mail.flag",
@@ -41,6 +43,9 @@ const ALLOWED_COMMANDS: &[&str] = &[
     // `mail.deletePermanently` continua bloqueado.
     "mail.delete",
     "mail.junk",
+    // "Desfazer" desses dois cliques: volta de Spam, ou de Excluídos para a Entrada (uma mensagem por vez).
+    "mail.notJunk",
+    "mail.move",
     "mail.new",
     "mail.reply",
     "compose.set",
@@ -355,6 +360,12 @@ pub fn ensure_allowed_command(command: &str, params: &Value) -> Result<(), Strin
         return Err(format!(
             "Operação bloqueada: comando `{command}` não é permitido. O Lumen nunca envia e-mails pelo MailCraft."
         ));
+    }
+    if command == "mail.move" {
+        let one_id = params.get("ids").and_then(Value::as_array).is_some_and(|ids| ids.len() == 1 && ids[0].is_u64());
+        if !one_id || !params.get("folder").is_some_and(Value::is_u64) {
+            return Err("`mail.move` só desfaz um Apagar: uma mensagem, de volta para a Entrada.".to_string());
+        }
     }
     if command == "ui.closeWindow" {
         let save = params.get("save").and_then(Value::as_bool) == Some(true);
@@ -1105,6 +1116,44 @@ pub async fn discard(cfg: &BackendConfig, id: &str, junk: bool) -> Result<(), St
     res.map(|_| ())
 }
 
+/// Desfaz `discard`: tira do Spam (`mail.notJunk`) ou devolve de Excluídos para a Entrada da conta
+/// `account` (a primeira, se não achar). O MailCraft mantém o id da mensagem quando ela muda de pasta.
+pub async fn restore(cfg: &BackendConfig, id: &str, account: &str, junk: bool) -> Result<(), String> {
+    let numeric_id: u64 = id
+        .trim()
+        .parse()
+        .map_err(|_| format!("ID de mensagem MailCraft inválido: `{id}`"))?;
+    let mut tr = Transport::connect(cfg, None).await?;
+    let res = if junk {
+        tr.execute("mail.notJunk", json!({ "ids": [numeric_id] })).await
+    } else {
+        match tr.execute("folder.list", json!({})).await {
+            Ok(folders) => {
+                let inboxes = extract_inbox_folders(&folders);
+                match inboxes.iter().find(|(_, email)| email.eq_ignore_ascii_case(account)).or(inboxes.first()) {
+                    Some((inbox, _)) => tr.execute("mail.move", json!({ "folder": inbox, "ids": [numeric_id] })).await,
+                    None => Err("Não encontrei a Entrada no MailCraft para devolver a mensagem.".to_string()),
+                }
+            }
+            Err(e) => Err(e),
+        }
+    };
+    tr.close().await;
+    res.map(|_| ())
+}
+
+/// "Abrir no MailCraft": mostra a mensagem na pasta dela (não muda nada na caixa).
+pub async fn reveal(cfg: &BackendConfig, id: &str) -> Result<(), String> {
+    let numeric_id: u64 = id
+        .trim()
+        .parse()
+        .map_err(|_| format!("ID de mensagem MailCraft inválido: `{id}`"))?;
+    let mut tr = Transport::connect(cfg, None).await?;
+    let res = tr.execute("mail.select", json!({ "id": numeric_id, "elsewhere": true })).await;
+    tr.close().await;
+    res.map(|_| ())
+}
+
 pub async fn clear_flag(cfg: &BackendConfig, id: &str) -> Result<(), String> {
     let numeric_id: u64 = id
         .trim()
@@ -1442,6 +1491,13 @@ mod tests {
         assert!(ensure_allowed_command("mail.deletePermanently", &json!({"id": 1})).is_err());
         assert!(ensure_allowed_command("mail.delete", &json!({"ids": [1]})).is_ok());
         assert!(ensure_allowed_command("mail.junk", &json!({"ids": [1]})).is_ok());
+        assert!(ensure_allowed_command("mail.notJunk", &json!({"ids": [1]})).is_ok());
+        assert!(ensure_allowed_command("mail.select", &json!({"id": 1, "elsewhere": true})).is_ok());
+        // Mover só desfaz um Apagar: uma mensagem, para uma pasta por id; nunca em lote.
+        assert!(ensure_allowed_command("mail.move", &json!({"folder": 2, "ids": [1]})).is_ok());
+        assert!(ensure_allowed_command("mail.move", &json!({"folder": 2, "ids": [1, 2]})).is_err());
+        assert!(ensure_allowed_command("mail.move", &json!({"folder": 2})).is_err());
+        assert!(ensure_allowed_command("mail.move", &json!({"folder": "junk", "ids": [1]})).is_err());
         assert!(ensure_allowed_command("folder.delete", &json!({})).is_err());
     }
 

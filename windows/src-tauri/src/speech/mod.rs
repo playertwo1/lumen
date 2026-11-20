@@ -357,6 +357,7 @@ fn threads() -> i32 {
 
 /// The loaded recognizer, loading it on first use (about 2 s).
 pub fn recognizer() -> Option<Arc<OfflineRecognizer>> {
+    touch();
     if let Some(r) = recognizer_slot().lock().unwrap().clone() {
         return Some(r);
     }
@@ -399,6 +400,7 @@ fn whisper_language() -> String {
 
 /// The loaded Whisper, loading it on first use.
 fn whisper_recognizer() -> Option<Arc<OfflineRecognizer>> {
+    touch();
     if let Some(r) = whisper_slot().lock().unwrap().clone() {
         return Some(r);
     }
@@ -432,6 +434,7 @@ fn whisper_recognizer() -> Option<Arc<OfflineRecognizer>> {
 
 /// Loads the dictation model in the background, so the first dictation is not slowed down.
 pub fn preload() {
+    touch();
     if whisper_chosen() {
         if whisper_slot().lock().unwrap().is_none() {
             std::thread::spawn(|| {
@@ -445,6 +448,38 @@ pub fn preload() {
     }
     std::thread::spawn(|| {
         let _ = recognizer();
+    });
+}
+
+/// A model nobody asked for in this long is freed (about 2 s to load again): the recognizers hold
+/// hundreds of MB, and dictation is used in bursts.
+const IDLE_UNLOAD: Duration = Duration::from_secs(120);
+
+fn last_use() -> &'static Mutex<Instant> {
+    static T: OnceLock<Mutex<Instant>> = OnceLock::new();
+    T.get_or_init(|| Mutex::new(Instant::now()))
+}
+
+/// Marks the models as in use, and starts (once) the thread that frees them when idle.
+fn touch() {
+    *last_use().lock().unwrap() = Instant::now();
+    static REAPER: OnceLock<()> = OnceLock::new();
+    REAPER.get_or_init(|| {
+        std::thread::Builder::new()
+            .name("coucou-speech-idle".into())
+            .spawn(|| loop {
+                std::thread::sleep(Duration::from_secs(20));
+                let loaded = recognizer_slot().lock().unwrap().is_some() || whisper_slot().lock().unwrap().is_some();
+                // strong_count 1: only the slot holds it, so no transcription is running.
+                let busy = [recognizer_slot(), whisper_slot()]
+                    .iter()
+                    .any(|s| s.lock().unwrap().as_ref().is_some_and(|r| Arc::strong_count(r) > 1));
+                if loaded && !busy && last_use().lock().unwrap().elapsed() >= IDLE_UNLOAD {
+                    unload();
+                    crate::log::line("speech models freed (idle)");
+                }
+            })
+            .ok();
     });
 }
 

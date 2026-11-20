@@ -206,6 +206,8 @@ struct Listening {
     take: Arc<Mutex<audio::Take>>,
     started: Instant,
     app: Option<(String, String)>,
+    /// The model was asked for during this listen.
+    preloaded: bool,
 }
 
 fn run(app: AppHandle, flow: Arc<Flow>, rx: mpsc::Receiver<(KeyEvent, Instant)>) {
@@ -317,7 +319,12 @@ fn run(app: AppHandle, flow: Arc<Flow>, rx: mpsc::Receiver<(KeyEvent, Instant)>)
             }
         }
         // The pill's dots, about 30 times a second while you speak.
-        if let Some(l) = &listening {
+        if let Some(l) = &mut listening {
+            // Held past a tap, it is a dictation and not Alt+Tab: load the model (freed when idle) while the user speaks.
+            if !l.preloaded && l.started.elapsed().as_secs_f64() >= logic::HOLD_THRESHOLD {
+                l.preloaded = true;
+                speech::preload();
+            }
             let levels = l.take.lock().unwrap().meter.levels;
             let _ = app.emit_to(pill::LABEL, "pill-bands", levels);
             // The Coucou window's bands breathe with the voice while it is on screen.
@@ -362,7 +369,7 @@ fn begin(app: &AppHandle, flow: &Arc<Flow>) -> Option<Listening> {
             let app_front = os::foreground_app().filter(|(id, _)| !is_shell(id));
             pill::update(app, |s| s.phase = "listening".into());
             let quiet = flow.store.lock().unwrap().prefs.mute_others;
-            Some(Listening { capture, _hush: hush::hush(quiet), take, started: Instant::now(), app: app_front })
+            Some(Listening { capture, _hush: hush::hush(quiet), take, started: Instant::now(), app: app_front, preloaded: false })
         }
         Err(err) => {
             crate::log::line(format!("flow: microphone: {err}"));

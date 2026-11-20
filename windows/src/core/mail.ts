@@ -89,7 +89,7 @@ export interface TriageView {
   classified?: ClassifiedMail[];
 }
 
-export type MailCategory = "conta" | "assinatura" | "importante" | "outros" | "promocao" | "spam";
+export type MailCategory = "conta" | "assinatura" | "importante" | "compra" | "notificacao" | "outros" | "promocao" | "spam";
 
 /** Uma mensagem da triagem do MailCraft. O Lumen só recomenda: nunca apaga. */
 export interface ClassifiedMail {
@@ -204,9 +204,14 @@ export const MailBridge = {
   act: (message: MailMessage, kind: "read" | "flag" | "unflag" | "junk" | "ignore" | "vip") =>
     call<void>("mail_act", { message, kind }),
   /** Como `act`, mas o erro do Rust chega à tela. */
-  actChecked: async (message: MailMessage, kind: "read" | "flag" | "delete" | "junk"): Promise<void> => {
+  actChecked: async (message: MailMessage, kind: "read" | "flag" | "delete" | "junk" | "undelete" | "unjunk"): Promise<void> => {
     if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
     await invoke<void>("mail_act", { message, kind });
+  },
+  /** Mostra a mensagem no MailCraft (ou no Outlook) e traz a janela para a frente; o erro chega à tela. */
+  openChecked: async (message: MailMessage): Promise<void> => {
+    if (!IS_TAURI) throw new Error("Disponível apenas no app desktop.");
+    await invoke<void>("mail_open", { message, reply: false });
   },
   configGet: () => call<MailCraftConfig>("mail_config_get"),
   configSet: (config: MailCraftConfig) => call<MailCraftConfig>("mail_config_set", { config }),
