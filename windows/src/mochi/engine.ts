@@ -6,6 +6,7 @@
 
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
+import { reducedMotion } from "../core/motion";
 import type { BotEmoteName, BotStateName } from "../core/layout";
 import {
   CALM, dropAt, dropGone, heatWave, hopAt, isCalm, nextHop, restingHop, throwDrop,
@@ -39,6 +40,8 @@ interface Tween {
   startMs: number;
   onComplete?: () => void;
 }
+
+const BODY_MOTION = new Set<string>(["roll", "tilt", "sx", "sy", "oy", "ox", "es"]);
 
 type PropKey =
   | "yaw" | "pitch" | "roll" | "tilt" | "open" | "sx" | "sy"
@@ -525,6 +528,7 @@ export class BotEngine {
   }
 
   emit(type: Particle["type"], count: number) {
+    if (reducedMotion()) return;
     for (let i = 0; i < count; i++) {
       const isZ = type === "z";
       this.particles.push({
@@ -578,6 +582,18 @@ export class BotEngine {
     }
   }
 
+  /** Reduced motion: a mood only keeps the loop alive until its tint and pose have caught up with it. */
+  private moodSettling(): boolean {
+    const t = this.moodTarget;
+    const calm = this.state === "idle" || this.state === "finished";
+    return (
+      Math.abs(this.moodBusy - (this.moodShows ? t.busy : 0)) > 0.01 ||
+      Math.abs(this.moodHot - (this.moodShows ? t.hot : 0)) > 0.01 ||
+      Math.abs(this.moodFull - (this.moodShows ? t.full : 0)) > 0.01 ||
+      Math.abs(this.moodTired - (calm ? t.tired : 0)) > 0.01
+    );
+  }
+
   /** Wearing something visible: the body then turns as one piece when it rolls. */
   private get rigidRoll(): boolean {
     return !this.isMini && this.outfit !== "none" && this.outfitPresence > 0.05;
@@ -588,12 +604,13 @@ export class BotEngine {
     return (
       this.tweens.size > 0 ||
       this.particles.length > 0 ||
-      this.cfg.bounces || this.cfg.scans || this.cfg.breathes || this.cfg.zz || this.cfg.sweat ||
-      this.isMini ||
+      (!reducedMotion() && (this.cfg.bounces || this.cfg.scans || this.cfg.breathes || this.cfg.zz || this.cfg.sweat ||
+        this.isMini)) ||
       this.isDancing || this.dancingLevel > 0.001 ||
       // A mood plays on its own (hops, drops, yawns), and fades out over frames.
-      (!this.isMini && (!isCalm(this.moodTarget) || this.moodDrops.length > 0 ||
-        this.moodBusy + this.moodHot + this.moodFull + this.moodTired > 0.01 || !this.hop.landed)) ||
+      (!this.isMini && ((!reducedMotion() && !isCalm(this.moodTarget)) || this.moodDrops.length > 0 ||
+        (reducedMotion() ? this.moodSettling() : this.moodBusy + this.moodHot + this.moodFull + this.moodTired > 0.01) ||
+        !this.hop.landed)) ||
       Math.abs(this.tgYaw - this.yaw) > 0.002 ||
       Math.abs(this.tgPitch - this.pitch) > 0.002 ||
       Math.abs(this.tgTilt - this.tilt) > 0.002 ||
@@ -611,6 +628,8 @@ export class BotEngine {
   // ── Tweens ──────────────────────────────────────────────────────────────────
 
   anim(prop: PropKey, keys: TweenKey[], onComplete?: () => void) {
+    // Reduced motion: the body does not hop, tilt or squash; it lands on the last pose at once.
+    if (reducedMotion() && BODY_MOTION.has(prop)) keys = [[keys[keys.length - 1][0], 1, Ease.lin]];
     this.tweens.set(prop, {
       prop, keys, index: 0, from: this[prop], startMs: performance.now(), onComplete,
     });
@@ -673,16 +692,19 @@ export class BotEngine {
     this.tgPitch = tp;
     this.tgTilt = this.cfg.tilt;
 
-    if (n > this.waveStart && n < this.waveUntil) {
+    if (!reducedMotion() && n > this.waveStart && n < this.waveUntil) {
       const wt = n - this.waveStart;
       this.tgTilt = -0.06 + Math.sin(2 * Math.PI * 1.2 * wt) * 0.07;
     }
 
-    const bounce = this.cfg.bounces ? -Math.abs(Math.sin(t * 5.2)) * 0.07 : 0;
+    const bounce = this.cfg.bounces && !reducedMotion() ? -Math.abs(Math.sin(t * 5.2)) * 0.07 : 0;
     const kGen = 1 - Math.pow(0.0008, dt);
     if (!this.locks.has("oy")) this.oy += (bounce - this.oy) * kGen;
 
-    if (this.cfg.breathes) {
+    if (reducedMotion()) {
+      this.tgSy = 1;
+      this.tgSx = 1;
+    } else if (this.cfg.breathes) {
       const amp = this.isMini ? 0.07 : 0.035;
       this.tgSy = 1 + Math.sin(t * 1.8) * amp;
       this.tgSx = 1 - Math.sin(t * 1.8) * amp * 0.57;
@@ -694,7 +716,7 @@ export class BotEngine {
       this.tgSx = 1;
     }
 
-    if (this.isMini && n > this.miniNextBehavior) this.doMiniBehaviorLoop();
+    if (this.isMini && !reducedMotion() && n > this.miniNextBehavior) this.doMiniBehaviorLoop();
 
     // The PC's mood (sweat, puffed up, tired) adjusts the targets above.
     this.updateMood(dt, n);
@@ -831,7 +853,7 @@ export class BotEngine {
     }
 
     // Sweat: drops thrown from his sides, in bursts at full load, now and then when only warm.
-    if (n > this.nextMoodDrop) {
+    if (!reducedMotion() && n > this.nextMoodDrop) {
       if (this.moodBusy > 0.4) {
         this.pushDrop(n);
         if (Math.random() < 0.35) this.pushDrop(n);
@@ -876,7 +898,7 @@ export class BotEngine {
    * eyes darting where he jumps.
    */
   private updateStress(n: number) {
-    const level = this.moodBusy;
+    const level = reducedMotion() ? 0 : this.moodBusy;
     let hop = this.hop;
     if (level <= 0.02 && Math.abs(hop.to) <= 0.005 && hop.landed) {
       this.stressTremble = { x: 0, y: 0 };
@@ -1010,7 +1032,7 @@ export class BotEngine {
   // ── Dancing ─────────────────────────────────────────────────────────────────
 
   setDancing(dancing: boolean) {
-    if (this.isDancing !== dancing) this.isDancing = dancing;
+    if (this.isDancing !== dancing) this.isDancing = dancing && !reducedMotion();
   }
 
   /**

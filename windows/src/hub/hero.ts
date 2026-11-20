@@ -10,6 +10,7 @@
 
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { onScreen, shouldAnimate } from "./frames";
+import { reducedMotion } from "../core/motion";
 import type { BotEmoteName, BotStateName } from "../core/layout";
 import type { Outfit } from "../mochi/wardrobe";
 
@@ -18,6 +19,8 @@ interface Animated {
   draw(dt: number, t: number): void;
   /** Pages are built before they are put in the window: dropped only once gone. */
   shown?: boolean;
+  /** Reduced motion: drawn once, still, and then left alone. */
+  drawn?: boolean;
   born?: number;
 }
 
@@ -49,6 +52,8 @@ function loop(now: number) {
   last = now;
   const t = (now - start) / 1000;
   stepVoice(dt, now);
+  // Reduced motion: each canvas gets one still frame; the voice bands still answer a live dictation.
+  const still = reducedMotion() && voice === 0;
   for (const a of live) {
     if (!a.el.isConnected) {
       // Built but not shown yet: wait for it (a few seconds at most).
@@ -56,9 +61,13 @@ function loop(now: number) {
       continue;
     }
     a.shown = true;
-    if (onScreen(a.el.getBoundingClientRect(), window.innerWidth, window.innerHeight)) a.draw(dt, t);
+    if (still && a.drawn) continue;
+    if (onScreen(a.el.getBoundingClientRect(), window.innerWidth, window.innerHeight)) {
+      a.draw(still ? 0 : dt, t);
+      a.drawn = true;
+    }
   }
-  if (running()) ask();
+  if (running() && (!still || [...live].some((a) => !a.drawn))) ask();
 }
 
 /**

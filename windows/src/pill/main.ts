@@ -10,6 +10,7 @@ import { Bridge, onEvent } from "../core/bridge";
 import { FlowBridge, clock, type PillState } from "../core/flow";
 import type { Settings } from "../core/state";
 import { BotEngine, hexToRGB } from "../mochi/engine";
+import { reducedMotion } from "../core/motion";
 import { resolveLanguage, setLanguage, systemLanguages, t } from "../i18n/i18n";
 import { HUB_ICONS, keyLabel } from "../hub/ui";
 
@@ -415,6 +416,13 @@ function animating(): boolean {
 
 /** Where dot `i` goes: the voice, a slow wave while thinking, a lively one while Coucou speaks. */
 function dotGoal(now: number, i: number): number {
+  // Reduced motion: the dots hold a level while Coucou thinks or speaks; only your own voice moves them.
+  if (reducedMotion() && state.phase !== "listening" && state.phase !== "locked") {
+    const v = state.voice?.phase;
+    if (state.phase === "thinking" || v === "thinking") return 0.3;
+    if (v === "speaking") return speaking ? 0.3 : 0.05;
+    if (v === "listening") return 0.1;
+  }
   if (state.phase === "thinking") return 0.25 + 0.25 * Math.sin(now / 160 - i * 0.7);
   if (state.phase === "listening" || state.phase === "locked") return target[i];
   switch (state.voice?.phase) {
@@ -445,8 +453,8 @@ function tick(now: number) {
   }
   // Mochi: his eyes wander while you speak; still while only a call shows.
   if (l !== "note" || hovered) {
-    mochi.lookX = Math.sin(now / 900) * 0.6;
-    mochi.lookY = Math.cos(now / 1300) * 0.3;
+    mochi.lookX = reducedMotion() ? 0 : Math.sin(now / 900) * 0.6;
+    mochi.lookY = reducedMotion() ? 0 : Math.cos(now / 1300) * 0.3;
     mochi.update(dt);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const size = 22 / 0.6;
@@ -465,7 +473,8 @@ function tick(now: number) {
   if (c && state.noteStartedAt) c.textContent = clock((Date.now() - state.noteStartedAt) / 1000);
   if (animating()) {
     // A call alone: one frame a second is enough for its clock.
-    if (l === "note" && !hovered) setTimeout(() => wake(), 1000);
+    const still = reducedMotion() && state.phase !== "listening" && state.phase !== "locked";
+    if ((l === "note" && !hovered) || still) setTimeout(() => wake(), 1000);
     else frame = requestAnimationFrame(tick);
   }
 }

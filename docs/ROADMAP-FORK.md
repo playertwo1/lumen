@@ -10,6 +10,7 @@ Em ordem de execução. Uma etapa por vez; etapas pausadas só voltam com decis�
 |---:|---|---|---|
 | 1 | [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) | **Da vez.** Implementada na `0.7.12`; validação real pendente | Corrige o que incomodou no uso das 0.7.8–0.7.10: ditado "segure uma tecla", mãos livres, Anotador → Tarefa, escolha do motor da limpeza, Orca em Agentes e Abas ativas, WhatsApp pela ponte do Orbit (só leitura). |
 | 2 | [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) | **Em andamento** (spec e plano), em paralelo à validação da L8 por decisão do dono (2026-11-17) | Volume, brilho, apps, janelas, mídia e energia por APIs nativas, sem PowerShell montado por texto. |
+| 2b | [M2b — Botões de comando](roadmap/m2b-botoes-de-comando.md) | Pendente; logo depois da M2 | Barra de botões próprios, no estilo do ditado mas com outra escolha, que dispara comandos do assistente com um clique, sem abrir o chat. |
 | 3 | [M3 — Obsidian](roadmap/m3-obsidian.md) | Pendente | Buscar, citar e capturar notas no cofre lendo os `.md` direto, sem plugin. |
 | 4 | [M4 — Voz ligada às ferramentas](roadmap/m4-voz.md) | Pendente | Pedido falado chega às ferramentas de M2/M3, reaproveitando a voz que já existe; confirmação continua sendo clique. |
 | 5 | [M5 — Computer use](roadmap/m5-computer-use.md) | Pendente | Operar a interface de apps pelo Agent Desktop (acessibilidade) quando não houver API nativa. |
