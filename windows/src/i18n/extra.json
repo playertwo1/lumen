@@ -8433,6 +8433,51 @@
       "tr": "Pencereleri yan yana diz",
       "ko": "창 나란히 배치",
       "ja": "ウィンドウを並べる"
+    },
+    "Command buttons": {
+      "zh-Hans": "命令按钮",
+      "hi": "कमांड बटन",
+      "es": "Botones de comando",
+      "ar": "أزرار الأوامر",
+      "fr": "Boutons de commande",
+      "bn": "কমান্ড বোতাম",
+      "pt-BR": "Botões de comando",
+      "ru": "Кнопки команд",
+      "id": "Tombol perintah",
+      "de": "Befehlsschaltflächen",
+      "tr": "Komut düğmeleri",
+      "ko": "명령 버튼",
+      "ja": "コマンドボタン"
+    },
+    "Move up": {
+      "zh-Hans": "上移",
+      "hi": "ऊपर ले जाएँ",
+      "es": "Subir",
+      "ar": "نقل لأعلى",
+      "fr": "Monter",
+      "bn": "উপরে সরান",
+      "pt-BR": "Subir",
+      "ru": "Вверх",
+      "id": "Naik",
+      "de": "Nach oben",
+      "tr": "Yukarı taşı",
+      "ko": "위로 이동",
+      "ja": "上へ"
+    },
+    "Move down": {
+      "zh-Hans": "下移",
+      "hi": "नीचे ले जाएँ",
+      "es": "Bajar",
+      "ar": "نقل لأسفل",
+      "fr": "Descendre",
+      "bn": "নিচে সরান",
+      "pt-BR": "Descer",
+      "ru": "Вниз",
+      "id": "Turun",
+      "de": "Nach unten",
+      "tr": "Aşağı taşı",
+      "ko": "아래로 이동",
+      "ja": "下へ"
     }
   }
 }

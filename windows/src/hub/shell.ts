@@ -84,7 +84,7 @@ const DEFAULT_STATUS: FlowStatus = {
   prefs: {
     enabled: false, key: "right_ctrl", keyCombo: [], edge: "bottom", pillOffset: 0.5, hidePill: false, mic: "", keepDays: 30, cleanup: false, cleanupEngine: "claude",
     defaultStyle: "natural", summaryEngine: "claude", openAtLaunch: true, voice: false, voiceOutput: "system", voiceGender: "female", muteOthers: true,
-    oneTapHandsFree: false, speechModel: "parakeet",
+    oneTapHandsFree: false, speechModel: "parakeet", commandButtons: null,
   },
   models: { parakeet: { state: "missing" }, downloadMb: 700, whisper: { state: "missing" }, whisperMb: 1036 },
   keys: "ok",

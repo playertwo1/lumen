@@ -132,6 +132,8 @@ pub struct Prefs {
     pub one_tap_hands_free: bool,
     /// The dictation model: "parakeet" or "whisper" (Whisper Large v3 Turbo).
     pub speech_model: String,
+    /// The pill's command buttons (mochi/buttons.rs), by id, in order. `None` shows them all; an empty list, none.
+    pub command_buttons: Option<Vec<String>>,
 }
 
 impl Default for Prefs {
@@ -156,6 +158,7 @@ impl Default for Prefs {
             voice_gender: "female".into(),
             one_tap_hands_free: false,
             speech_model: "parakeet".into(),
+            command_buttons: None,
         }
     }
 }

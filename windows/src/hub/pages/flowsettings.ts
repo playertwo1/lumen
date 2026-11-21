@@ -5,7 +5,7 @@
 import { h, clear } from "../../views/dom";
 import { t } from "../../i18n/i18n";
 import { onEvent } from "../../core/bridge";
-import { FlowBridge, flowKeyId, type Edge, type FlowKey, type ModelState, type ModelsStatus, type SpeechModel, type SummaryBackends, type SummaryEngine } from "../../core/flow";
+import { CommandButtons, FlowBridge, flowKeyId, type Edge, type FlowKey, type ModelState, type ModelsStatus, type SpeechModel, type SummaryBackends, type SummaryEngine } from "../../core/flow";
 import { comboFromKeys } from "../keys";
 import type { HubContext } from "../shell";
 import { pageSave } from "../save";
@@ -133,6 +133,41 @@ export async function flowSettingsPage(page: HTMLElement, ctx: HubContext) {
     keysCard.append(h("div", { class: "hub-warn", text: t("Coucou can't watch the keyboard here: use the pill's microphone to dictate.") }));
   }
   page.append(anchor("flow.keys", keysCard));
+
+  // ── Command buttons: which the pill shows when you pick Commands, and in what order ──
+  const catalog = await CommandButtons.catalog();
+  if (catalog.length) {
+    const byId = new Map(catalog.map((c) => [c.id, c]));
+    const shown = (prefs.commandButtons ?? catalog.map((c) => c.id)).filter((id) => byId.has(id));
+    const hidden = catalog.map((c) => c.id).filter((id) => !shown.includes(id));
+    const save = (next: string[] | null) => void ctx.setPrefs((p) => (p.commandButtons = next)).then(() => ctx.navigate("flowsettings"));
+    const move = (i: number, by: number) => {
+      const next = [...shown];
+      [next[i], next[i + by]] = [next[i + by], next[i]];
+      save(next);
+    };
+    const arrow = (text: string, title: string, off: boolean, fn: () => void) => {
+      const b = button(text, fn, "", true);
+      b.title = title;
+      b.disabled = off;
+      return b;
+    };
+    const rows: HTMLElement[] = [
+      ...shown.map((id, i) => row(t(byId.get(id)!.label), null,
+        arrow("↑", t("Move up"), i === 0, () => move(i, -1)),
+        arrow("↓", t("Move down"), i === shown.length - 1, () => move(i, 1)),
+        toggle(true, () => save(shown.filter((x) => x !== id))))),
+      ...hidden.map((id) => row(t(byId.get(id)!.label), null, toggle(false, () => save([...shown, id])))),
+    ];
+    const list = card();
+    rows.forEach((r, i) => {
+      if (i) list.append(divider());
+      list.append(r);
+    });
+    list.append(divider(), row(t("Reset to defaults"), null, button(t("Reset to defaults"), () => save(null), "", true)));
+    page.append(label(t("Command buttons")));
+    page.append(anchor("flow.commandButtons", list));
+  }
 
   // ── Microphone ──
   page.append(label(t("Microphone")));

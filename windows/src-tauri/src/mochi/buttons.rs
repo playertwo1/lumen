@@ -14,6 +14,8 @@ use tauri::AppHandle;
 use super::approval_bridge::TauriApprovalRequester;
 use super::registry::{ToolContext, ToolError};
 use super::{host, MochiRuntime};
+use crate::flow::Flow;
+use std::sync::Arc;
 use crate::i18n::n_;
 
 /// Como o pedido é montado: fixo, ou a partir de uma leitura feita antes pela mesma ferramenta.
@@ -126,8 +128,19 @@ fn info(runtime: &MochiRuntime, ctx: &ToolContext, spec: &Spec) -> ButtonInfo {
     ButtonInfo { id: spec.id, icon: spec.icon, label: spec.label, available: reason.is_none(), reason }
 }
 
-pub(crate) fn list_for(runtime: &MochiRuntime, ctx: &ToolContext) -> Vec<ButtonInfo> {
-    SPECS.iter().map(|s| info(runtime, ctx, s)).collect()
+/// The buttons to show: all, in declared order, when nothing was chosen; else the chosen ids in the order
+/// given. Unknown ids (a button a later version dropped) and repeats are skipped, never an error.
+fn choose(chosen: Option<&[String]>) -> Vec<&'static Spec> {
+    let Some(ids) = chosen else { return SPECS.iter().collect() };
+    let mut seen = HashSet::new();
+    ids.iter()
+        .filter(|id| seen.insert(id.as_str()))
+        .filter_map(|id| SPECS.iter().find(|s| s.id == id.as_str()))
+        .collect()
+}
+
+pub(crate) fn list_for(runtime: &MochiRuntime, ctx: &ToolContext, chosen: Option<&[String]>) -> Vec<ButtonInfo> {
+    choose(chosen).into_iter().map(|s| info(runtime, ctx, s)).collect()
 }
 
 /// Cliques em andamento: um segundo clique no mesmo botão não executa de novo.
@@ -152,9 +165,26 @@ impl Drop for Busy {
 }
 
 #[tauri::command]
-pub async fn mochi_buttons(runtime: tauri::State<'_, MochiRuntime>) -> Result<Vec<ButtonInfo>, String> {
+pub async fn mochi_buttons(
+    runtime: tauri::State<'_, MochiRuntime>,
+    flow: tauri::State<'_, Arc<Flow>>,
+) -> Result<Vec<ButtonInfo>, String> {
+    let chosen = flow.store.lock().unwrap_or_else(PoisonError::into_inner).prefs.command_buttons.clone();
     let ctx = host::context(crate::integrations::PAUSED.load(std::sync::atomic::Ordering::Relaxed)).await;
-    Ok(list_for(&runtime, &ctx))
+    Ok(list_for(&runtime, &ctx, chosen.as_deref()))
+}
+
+/// Every button there is, for the Settings list; which are shown and in what order is a preference.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct CatalogEntry {
+    pub id: &'static str,
+    pub icon: &'static str,
+    pub label: &'static str,
+}
+
+#[tauri::command]
+pub fn mochi_button_catalog() -> Vec<CatalogEntry> {
+    SPECS.iter().map(|s| CatalogEntry { id: s.id, icon: s.icon, label: s.label }).collect()
 }
 
 #[tauri::command]
@@ -288,11 +318,11 @@ mod tests {
     #[test]
     fn without_the_capability_the_button_is_off_with_a_reason() {
         let rt = runtime();
-        let off = list_for(&rt, &ToolContext::new());
+        let off = list_for(&rt, &ToolContext::new(), None);
         let media = off.iter().find(|b| b.id == "media_next").unwrap();
         assert!(!media.available);
         assert!(media.reason.is_some());
-        let on = list_for(&rt, &all_caps());
+        let on = list_for(&rt, &all_caps(), None);
         assert!(on.iter().find(|b| b.id == "media_next").unwrap().available);
     }
 
@@ -300,7 +330,7 @@ mod tests {
     fn paused_turns_every_button_off() {
         let rt = runtime();
         let ctx = ToolContext::new().with_capability("media_session").with_paused(true);
-        assert!(list_for(&rt, &ctx).iter().all(|b| !b.available));
+        assert!(list_for(&rt, &ctx, None).iter().all(|b| !b.available));
     }
 
     #[test]
@@ -309,5 +339,16 @@ mod tests {
         assert!(Busy::take("teste").is_none());
         drop(first);
         assert!(Busy::take("teste").is_some());
+    }
+
+    #[test]
+    fn the_choice_orders_filters_and_forgives() {
+        let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let all: Vec<_> = choose(None).iter().map(|s| s.id).collect();
+        assert_eq!(all.len(), SPECS.len(), "nothing chosen: every button");
+        assert!(choose(Some(&[])).is_empty(), "an empty choice: none");
+        let picked = ids(&["lock", "media_next", "lock", "gone", "mute"]);
+        let got: Vec<_> = choose(Some(&picked)).iter().map(|s| s.id).collect();
+        assert_eq!(got, ["lock", "media_next", "mute"], "order kept, repeat and unknown id dropped");
     }
 }

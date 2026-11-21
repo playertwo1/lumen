@@ -36,11 +36,11 @@ Regras desta fase:
 
 ### M2b.4 — Escolha dos botões (se decidida em M2b.1)
 
-- [ ] Nos Ajustes, o dono escolhe e ordena os botões; a escolha fica no armazenamento local, sem segredo.
-- [ ] Testar: lista vazia, botão de ferramenta que deixou de existir e restauração do padrão.
-- Checkpoint M2b.4: a escolha sobrevive a reiniciar o Lumen.
+- [x] Em Ditado → Ajustes ("Botões de comando"), o dono liga, desliga e reordena os botões; a escolha é a preferência `commandButtons` do Flow (`null` = todos), sem segredo. O Rust ignora id desconhecido e repetido.
+- [x] Testar: lista vazia, id que deixou de existir, repetido e ordem. *(Sintético, `buttons.rs`. A restauração do padrão grava `null`.)*
+- Checkpoint M2b.4: a escolha sobrevive a reiniciar o Lumen. *(Implementado em 2026-11-21; a preferência é gravada como as outras do Flow. **Real, reiniciando o Lumen: NOT_RUN**.)*
 
 ### M2b.5 — Fechamento
 
-- [ ] Atualizar `windows/README.md` e o Estado no índice.
-- Checkpoint M2b: comandos de uso frequente saem com um clique, sem abrir o chat, com as mesmas proteções.
+- [x] Atualizar `windows/README.md` e o Estado no índice.
+- Checkpoint M2b: comandos de uso frequente saem com um clique, sem abrir o chat, com as mesmas proteções. *(Implementada em 2026-11-21; o teste real do dono está em `STATE-FORK.md`: **NOT_RUN**. A etapa só é arquivada depois dele.)*

@@ -11,6 +11,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 | L0–L7, M0, M1 | Concluídas e arquivadas (M1 fechada em 2026-11-17 por decisão do dono, com parte do teste real dispensada) |
 | L8 | Todas as subetapas implementadas e publicadas na `0.7.12`; validação real pendente, uma por vez |
 | M2 | M2.1–M2.6 implementadas e publicadas na `0.7.14` (2026-11-18); a `0.7.15` corrige o ping pelo chat e a `0.7.16` as falhas do 1º relato da M2.7. No 2º relato os 10 comandos funcionaram; a `0.7.17` ajusta "organizar para programar" (Codex, Claude Code e Antigravity lado a lado), confirmado no 3º relato. Faltam os casos de borda da M2.7 |
+| M2b | M2b.1–M2b.4 implementadas na `main` em 2026-11-21 (botões de comando na pílula, escolha e ordem nos Ajustes); fecha a M2b.5 com o teste real do dono. Ainda não publicada em release |
 | L6.5 | A fazer depois do contrato v1.1 da Segunda Mente |
 | 0, 1, 2, 2B, 2C | Pausadas (D-053) |
 
@@ -20,6 +21,8 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 2. M2.7: os 10 comandos estão fechados (3º relato, `0.7.17`). Falta o dono testar retomar da suspensão (pedir "volume 20%" depois de acordar o notebook), app ausente ("abre o xyzzy" deve dizer que não encontrou) e troca de dispositivo de áudio (trocar a saída e pedir "volume 20%"). Depois disso: atualizar o `windows/README.md` e arquivar a M2. O relato fecha ou reabre os checkpoints em [m2-windows-nativo.md](roadmap/m2-windows-nativo.md).
 
 ## Pendências do dono (validação real)
+
+- **M2b — botões de comando** (`main`, sem release): passar o mouse na pílula, clicar o raio e testar os 12 botões (mídia, volume, brilho, janelas lado a lado, bloquear tela); conferir se a barra cabe na pílula, inclusive nas bordas esquerda e direita; esconder e reordenar em Ditado → Ajustes e reiniciar o Lumen para ver se a escolha fica.
 
 - **L8.1–L8.6** e o Apagar/Spam da triagem do MailCraft (`0.7.12`): roteiros nos checkpoints da L8.
 - **Cristal na abertura** (`0.7.10`, `0.7.11` e `0.7.13`): conferir, depois de atualizar, o ícone no Menu Iniciar, a janela de abertura e a saudação da ilha.

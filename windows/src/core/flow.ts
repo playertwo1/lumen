@@ -70,6 +70,8 @@ export interface FlowPrefs {
   muteOthers: boolean;
   /** One short press of the key starts hands-free dictation, instead of two. */
   oneTapHandsFree: boolean;
+  /** The pill's command buttons, by id and in order; null shows them all. */
+  commandButtons: string[] | null;
   /** The dictation model. */
   speechModel: SpeechModel;
 }
@@ -289,7 +291,14 @@ export interface CommandButton {
   reason: string | null;
 }
 
+export interface CommandCatalogEntry {
+  id: string;
+  icon: string;
+  label: string;
+}
+
 export const CommandButtons = {
+  catalog: async () => (await call<CommandCatalogEntry[]>("mochi_button_catalog")) ?? [],
   list: async () => (await call<CommandButton[]>("mochi_buttons")) ?? [],
   run: (id: string) => call<{ ok: boolean; text: string }>("mochi_button_run", { id }),
 };
