@@ -32,6 +32,7 @@ Regras desta fase:
 - [x] Doze botões: mídia (anterior, tocar, pausar, próxima), volume (−10, +10, mudo), brilho (30% e 100%; a ferramenta não lê o nível, então não há passo), janelas (lado a lado de Codex, Claude Code e Antigravity já abertos; desfazer) e bloquear tela, que abre o cartão de confirmação.
 - [ ] Teclado e leitor de tela: todo botão alcançável por Tab, com nome e dica. *(Botões têm `aria-label` e `aria-disabled`; falta conferir o Tab com a pílula real.)*
 - [x] Testar a montagem de cada pedido (volume nos limites, mudo, janelas com menos de duas abertas) e o schema de todos. *(Sintético, `mochi/buttons.rs`. Um teste achou e corrigiu um deadlock no bloqueio de duplo clique.)*
+- [x] Caber na pílula: com os 12 botões a barra tem 450 px. A janela da pílula nas bordas esquerda e direita tinha 320 px de altura e a margem dos cantos era 130 px, então a barra seria cortada; agora a janela lateral tem 480 px e a margem é 235 px (`flow/pill.rs`). Efeito colateral: arrastar a pílula para perto de um canto para 235 px antes dele, em vez de 130 px.
 - Checkpoint M2b.3: nenhuma ação de risco roda sem clique de confirmação. *(Implementado em 2026-11-21. **Real, com a pílula: NOT_RUN**.)*
 
 ### M2b.4 — Escolha dos botões (se decidida em M2b.1)

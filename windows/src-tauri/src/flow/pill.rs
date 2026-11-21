@@ -21,7 +21,10 @@ pub const LABEL: &str = "pill";
 
 /// Window size (logical) along the bottom, and on the sides.
 const BOTTOM: (f64, f64) = (520.0, 170.0);
-const SIDE: (f64, f64) = (480.0, 320.0);
+/// Tall enough for the command bar with all its buttons (450 px, see `MARGIN`).
+const SIDE: (f64, f64) = (480.0, 480.0);
+/// How far the pill's middle stays from a corner: half the longest command bar, so it never leaves the screen.
+const MARGIN: f64 = 235.0;
 /// Off-screen spot on Windows while hidden: the webview keeps running, ready.
 const PARKED: (i32, i32) = (-32000, -32000);
 
@@ -369,7 +372,7 @@ fn place(app: &AppHandle, pill: &Pill, edge: &str, offset: f64, on_cursor: bool)
             let (pw, ph) = ((lw * scale).round() as i32, (lh * scale).round() as i32);
             let (ax, ay, aw, ah) = (wa.position.x, wa.position.y, wa.size.width as i32, wa.size.height as i32);
             let gap = (4.0 * scale).round() as i32;
-            let margin = (130.0 * scale).round() as i32;
+            let margin = (MARGIN * scale).round() as i32;
             // The window may reach past the screen's edge: only the pill and its bubble show.
             let (x, y) = match edge {
                 "left" => (ax + gap, along(ay, ah, offset, margin) - ph / 2),
