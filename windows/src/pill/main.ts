@@ -7,7 +7,7 @@
 
 import "./pill.css";
 import { Bridge, onEvent } from "../core/bridge";
-import { FlowBridge, clock, type PillState } from "../core/flow";
+import { CommandButtons, FlowBridge, clock, type CommandButton, type PillState } from "../core/flow";
 import type { Settings } from "../core/state";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { reducedMotion } from "../core/motion";
@@ -22,6 +22,9 @@ const BANDS = 9;
 let state: PillState = { phase: "idle", edge: "bottom", key: "right_ctrl", noteStartedAt: null, announcement: null, enabled: false, voice: null };
 let platform: "windows" | "linux" = navigator.userAgent.includes("Windows") ? "windows" : "linux";
 let hovered = false;
+/** The toolbar shows the command buttons instead of the dictation ones (M2b). */
+let commandsOpen = false;
+let commandButtons: CommandButton[] = [];
 let tooltip: string | null = null;
 let unhover: number | null = null;
 let visible = false;
@@ -62,7 +65,7 @@ function mochiSlot(): HTMLElement {
 
 // ── Looks ─────────────────────────────────────────────────────────────────────
 
-type Look = "resting" | "toolbar" | "note" | "live" | "handsFree" | "message" | "voice";
+type Look = "resting" | "toolbar" | "commands" | "note" | "live" | "handsFree" | "message" | "voice";
 
 function look(): Look {
   switch (state.phase) {
@@ -78,7 +81,8 @@ function look(): Look {
     default:
       if (state.voice) return "voice";
       if (state.noteStartedAt) return "note";
-      return hovered ? "toolbar" : "resting";
+      if (!hovered) return "resting";
+      return commandsOpen ? "commands" : "toolbar";
   }
 }
 
@@ -106,8 +110,11 @@ function measure(text: string): number {
 function openLength(l: Look): number {
   const hours = state.noteStartedAt ? Date.now() - state.noteStartedAt >= 3_600_000 : false;
   switch (l) {
+    // Mochi and `n` buttons: 60 + 30 each (the dictation toolbar is Mochi and 3: 150).
     case "toolbar":
-      return 150;
+      return 180;
+    case "commands":
+      return 60 + 30 * (commandButtons.length + 1);
     case "note":
       return vertical() ? 128 : hours ? 152 : 136;
     case "handsFree":
@@ -142,6 +149,47 @@ function pillButton(icon: string, tip: string, action: () => void, opts: { small
   return b;
 }
 
+/** A command button: still hoverable when off, so its tip can say why. */
+function commandButton(b: CommandButton): HTMLElement {
+  const btn = pillButton(b.icon, b.available ? t(b.label) : `${t(b.label)} · ${b.reason ?? ""}`, () => {
+    if (!b.available || btn.classList.contains("busy")) return;
+    btn.classList.add("busy");
+    void CommandButtons.run(b.id).then((r) => {
+      btn.classList.remove("busy");
+      flash(r ? r.text : t("Commands"));
+    });
+  });
+  btn.classList.toggle("off", !b.available);
+  btn.setAttribute("aria-disabled", String(!b.available));
+  btn.setAttribute("aria-label", t(b.label));
+  return btn;
+}
+
+let flashTimer: number | null = null;
+/** The result of a command, in the pill's bubble for a moment. */
+function flash(text: string) {
+  tooltip = text;
+  render();
+  if (flashTimer !== null) clearTimeout(flashTimer);
+  flashTimer = window.setTimeout(() => {
+    flashTimer = null;
+    if (tooltip === text) tooltip = null;
+    render();
+  }, 2200);
+}
+
+function setCommands(on: boolean) {
+  commandsOpen = on;
+  tooltip = null;
+  render();
+}
+
+/** Opens the command buttons with the list as Rust sees it now (a tool may be off, or paused). */
+async function openCommands() {
+  commandButtons = await CommandButtons.list();
+  setCommands(true);
+}
+
 const barsEl = el("span", "bars");
 for (let i = 0; i < BANDS; i++) barsEl.append(el("i"));
 
@@ -165,7 +213,16 @@ function content(l: Look): HTMLElement {
         pillButton("mic", t("Dictate · {0}", { 0: key }), () => void FlowBridge.pillAction("dictate")),
         pillButton("record", t("Record a call"), () => void FlowBridge.pillAction("note")),
         pillButton("window", t("Open Coucou"), () => void FlowBridge.pillAction("hub")),
+        pillButton("bolt", t("Commands"), () => void openCommands()),
       );
+      break;
+    }
+    case "commands": {
+      c.style.gap = "4px";
+      const m = mochiSlot();
+      m.style.margin = vertical() ? "0 0 5px" : "0 5px 0 0";
+      c.append(m, pillButton("chevronLeft", t("Back"), () => setCommands(false)));
+      for (const b of commandButtons) c.append(commandButton(b));
       break;
     }
     case "handsFree":
@@ -254,7 +311,7 @@ function render() {
   const length = open ? openLength(l) : RESTING_LENGTH;
   const thickness = open ? OPEN_THICKNESS : RESTING_THICKNESS;
   root.className = `${state.edge}${vertical() ? " vertical" : ""}`;
-  const key = `${l}|${state.edge}|${state.phase}|${state.key}|${state.noteStartedAt}|${platform}|${state.voice?.phase ?? ""}`;
+  const key = `${l}|${commandButtons.map((b) => b.id + b.available).join(",")}|${state.edge}|${state.phase}|${state.key}|${state.noteStartedAt}|${platform}|${state.voice?.phase ?? ""}`;
   if (!capsule || key !== lastKey) {
     lastKey = key;
     const next = el("div", "capsule");
@@ -343,6 +400,7 @@ function setHovered(inside: boolean) {
     unhover = window.setTimeout(() => {
       unhover = null;
       hovered = false;
+      commandsOpen = false;
       tooltip = null;
       void FlowBridge.pillHover(false);
       render();
@@ -587,6 +645,7 @@ async function main() {
     visible = v;
     if (!v) {
       hovered = false;
+      commandsOpen = false;
       tooltip = null;
     }
     render();

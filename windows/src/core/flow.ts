@@ -280,6 +280,20 @@ export interface VoiceView {
 
 export type VoiceOutput = "system" | "elevenlabs" | "off";
 
+/** A command button of the pill (mochi/buttons.rs): the page only names it; Rust owns the tool and its arguments. */
+export interface CommandButton {
+  id: string;
+  icon: string;
+  label: string;
+  available: boolean;
+  reason: string | null;
+}
+
+export const CommandButtons = {
+  list: async () => (await call<CommandButton[]>("mochi_buttons")) ?? [],
+  run: (id: string) => call<{ ok: boolean; text: string }>("mochi_button_run", { id }),
+};
+
 export const FlowBridge = {
   status: () => call<FlowStatus>("flow_status"),
   /** The Coucou window is on screen (shown, not minimised); `hub-visible` tells when it changes. */

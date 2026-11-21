@@ -399,3 +399,14 @@ body {
 
   .bubble { animation: none; }
 }
+
+/* A command button that cannot run now: kept hoverable, so its tip says why. */
+.pbtn.off {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pbtn.busy {
+  opacity: 0.6;
+  pointer-events: none;
+}

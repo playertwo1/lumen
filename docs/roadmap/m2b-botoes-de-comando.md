@@ -15,24 +15,24 @@ Regras desta fase:
 
 ### M2b.1 — Decisões do dono (antes de codar)
 
-- [ ] Onde a barra aparece: na própria pílula (ao passar o mouse, como no ditado), na ilha, em atalho global, ou mais de um.
-- [ ] Quais botões entram na primeira versão (candidatos das ferramentas de M2: volume, brilho, bloquear tela, abrir app, janelas, mídia).
-- [ ] Se a escolha dos botões é fixa ou o dono monta a sua nos Ajustes (ordem, quais mostrar).
-- Checkpoint M2b.1: lista final de botões e do lugar da barra, escrita neste arquivo.
+- [x] Onde a barra aparece: **na própria pílula**, ao passar o mouse. Um botão novo na barra do ditado (raio) troca para a barra de comandos; "voltar" retorna ao ditado.
+- [x] Botões da primeira versão: **volume e mudo, mídia, brilho, organizar janelas e bloquear tela** (as ferramentas `audio`, `midia`, `brilho`, `janelas` e `bloquear_tela` da M2).
+- [x] A escolha é **do dono, nos Ajustes** (escolher e ordenar); entra a M2b.4.
+- Checkpoint M2b.1: decisões do dono em 2026-11-21, registradas aqui.
 
 ### M2b.2 — Barra e um botão de ponta a ponta
 
-- [ ] Barra de botões a partir de uma lista declarada (ícone, nome, ferramenta, argumentos), sem código por botão.
-- [ ] Ligar um botão de risco baixo à ferramenta pelo registro da M1 e mostrar o resultado.
-- [ ] Testar: ferramenta ausente ou pausada (pausa rápida) deixa o botão desligado, com a razão na dica; duplo clique não executa duas vezes.
-- Checkpoint M2b.2: um clique faz o que o mesmo pedido no chat faria, e aparece no registro local.
+- [x] Barra de botões a partir de uma lista declarada em Rust (`mochi/buttons.rs`: ícone, nome, ferramenta, argumentos); a página só envia o `id` do botão, nunca ferramenta nem argumentos.
+- [x] Primeiro botão, "próxima faixa" (`midia`, risco baixo), pelo `invoke_tool` da M1; o resultado aparece no balão da pílula.
+- [x] Testar: ferramenta ausente ou pausada deixa o botão desligado, com a razão na dica; duplo clique não executa duas vezes. *(Sintético: testes Rust em `buttons.rs`.)*
+- Checkpoint M2b.2: um clique faz o que o mesmo pedido no chat faria, e aparece no registro local. *(Implementado em 2026-11-21. **Real, com a pílula e um player tocando: NOT_RUN**.)*
 
 ### M2b.3 — Os botões da primeira versão
 
-- [ ] Um botão por ferramenta escolhida na M2b.1; os de risco médio ou alto abrem o cartão de confirmação.
-- [ ] Teclado e leitor de tela: todo botão alcançável por Tab, com nome e dica.
-- [ ] Testar cada botão com a ferramenta funcionando e com ela falhando (erro claro, sem travar a barra).
-- Checkpoint M2b.3: nenhuma ação de risco roda sem clique de confirmação.
+- [x] Doze botões: mídia (anterior, tocar, pausar, próxima), volume (−10, +10, mudo), brilho (30% e 100%; a ferramenta não lê o nível, então não há passo), janelas (lado a lado de Codex, Claude Code e Antigravity já abertos; desfazer) e bloquear tela, que abre o cartão de confirmação.
+- [ ] Teclado e leitor de tela: todo botão alcançável por Tab, com nome e dica. *(Botões têm `aria-label` e `aria-disabled`; falta conferir o Tab com a pílula real.)*
+- [x] Testar a montagem de cada pedido (volume nos limites, mudo, janelas com menos de duas abertas) e o schema de todos. *(Sintético, `mochi/buttons.rs`. Um teste achou e corrigiu um deadlock no bloqueio de duplo clique.)*
+- Checkpoint M2b.3: nenhuma ação de risco roda sem clique de confirmação. *(Implementado em 2026-11-21. **Real, com a pílula: NOT_RUN**.)*
 
 ### M2b.4 — Escolha dos botões (se decidida em M2b.1)
 

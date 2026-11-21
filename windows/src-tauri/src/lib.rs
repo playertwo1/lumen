@@ -1431,6 +1431,8 @@ pub fn run() {
             mochi::mochi_permissions_revoke,
             mochi::mochi_permissions_reset_default,
             mochi::mochi_audit_list,
+            mochi::buttons::mochi_buttons,
+            mochi::buttons::mochi_button_run,
             mochi::mochi_audit_clear,
             mochi::mochi_cancel_execution,
             mochi_mcp_status,

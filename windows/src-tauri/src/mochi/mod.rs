@@ -9,6 +9,7 @@
 
 pub mod approval_bridge;
 pub mod audit;
+pub mod buttons;
 pub mod chat_bridge;
 pub mod host;
 pub mod mcp_config;
