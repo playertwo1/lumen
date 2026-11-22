@@ -2,6 +2,28 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.20 — interface sem GPU (versão de teste)
+
+- [x] Pedido do dono em 2026-11-22: criar a release com `--disable-gpu` para testar. A flag foi trocada nos três pontos que precisam ser idênticos (`tauri.conf.json`, `tauri.windows.conf.json`, `BROWSER_ARGS`); o Linux não muda.
+- [x] Validações locais: `npx tsc --noEmit`, `npm test` (764/764), `cargo test --lib` (950 passaram, 10 ignorados), `python scripts/test-whats-new.py windows`.
+- [x] Medição local (build de release, app parado 1 min): WebView2 do Lumen 429 MB sem a flag, 310 MB com `--disable-gpu` (processo de GPU de 169 para 21 MB).
+- [x] Workflow [`45074726181`](https://github.com/playertwo1/lumen/actions/runs/45074726181) (tag `windows-v0.7.20`) passou e publicou [Windows 0.7.20](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.20).
+  - Digests do GitHub: setup `Lumen-Windows-0.7.20-setup.exe` `1e748180ca6249d7ccdd42e29b89f3258e6af02a9eb0cc2c9eaa13618daa273d`; MSI `Lumen-Windows-0.7.20.msi` `3c71ea57c54be6d66c188a603fd8a46e491b747f49ea566e9bed940c8111912f`.
+- [ ] **NOT_RUN:** download dos instaladores finais, conferência do SHA-256 local e varredura do Defender.
+- [ ] **NOT_RUN:** com a flag, Mochi, ilha e pílula (janelas transparentes) continuam fluidos e sem falha de transparência; uso de CPU com animação. Se falhar, a `0.7.21` remove a flag.
+
+### Windows 0.7.19 — Whisper não carrega mais na abertura; botões de comando (M2b)
+
+- [x] Causa: o ditado ligado chamava `speech::preload()` a cada início e o Whisper (~1 GB) ficava na memória. Agora carrega ao segurar a tecla e sai após 2 min parado (a liberação por ociosidade já estava na `main`, fora da 0.7.18).
+- [x] Medição local: processo do Lumen de ~1.060 MB para 18 MB em repouso.
+- [x] Também entram a M2b.1–M2b.4 (botões de comando na pílula) e o movimento reduzido.
+- [x] Validações locais: `npx tsc --noEmit`, `npm test` (764/764), `npm run build`, `cargo test --lib` (950 passaram, 10 ignorados), `python scripts/test-whats-new.py windows`.
+- [x] A 1ª execução do workflow (commit `6f5fde5`) falhou no passo de teste do Rust: o Cargo do runner gravou o executável de teste fora de `target/debug/deps`. Corrigido em `windows.yml` (commit `aeba98e`) e a tag foi reenviada antes de qualquer release.
+- [x] Workflow [`45071723115`](https://github.com/playertwo1/lumen/actions/runs/45071723115) (commit `aeba98e`) passou e publicou [Windows 0.7.19](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.19).
+  - Digests do GitHub: setup `Lumen-Windows-0.7.19-setup.exe` `59b5d4e91466dd039024aa1687c944598e5bad07340ce2f2d70fb62fecd66363`; MSI `Lumen-Windows-0.7.19.msi` `d4e2eaf3a5729560d82ad788c6037f9a7b79d033cdba4532b013213cb65f0c75`.
+- [ ] **NOT_RUN:** download dos instaladores finais, conferência do SHA-256 local e varredura do Defender.
+- [ ] Validação real no app instalado: pendente (RAM no Gerenciador de Tarefas; ditado 2–4 s mais lento no 1º uso depois de parado; botões de comando da M2b.5).
+
 ### Windows 0.7.18 — ferramenta principal: Claude Desktop, Orca, Antigravity e Codex
 
 - [x] Validações locais: `python scripts/test-whats-new.py windows` (ok), `npx tsc --noEmit`, `npm run build`, `cargo test --lib` (`941` passaram, `10` ignorados). Testes JS: `761/761` (ajustados ao novo padrão, Claude Desktop).

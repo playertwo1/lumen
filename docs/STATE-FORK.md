@@ -11,7 +11,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 | L0–L7, M0, M1 | Concluídas e arquivadas (M1 fechada em 2026-11-17 por decisão do dono, com parte do teste real dispensada) |
 | L8 | Todas as subetapas implementadas e publicadas na `0.7.12`; validação real pendente, uma por vez |
 | M2 | M2.1–M2.6 implementadas e publicadas na `0.7.14` (2026-11-18); a `0.7.15` corrige o ping pelo chat e a `0.7.16` as falhas do 1º relato da M2.7. No 2º relato os 10 comandos funcionaram; a `0.7.17` ajusta "organizar para programar" (Codex, Claude Code e Antigravity lado a lado), confirmado no 3º relato. Faltam os casos de borda da M2.7 |
-| M2b | M2b.1–M2b.4 implementadas na `main` em 2026-11-21 (botões de comando na pílula, escolha e ordem nos Ajustes); fecha a M2b.5 com o teste real do dono. Ainda não publicada em release |
+| M2b | M2b.1–M2b.4 implementadas na `main` em 2026-11-21 (botões de comando na pílula, escolha e ordem nos Ajustes); fecha a M2b.5 com o teste real do dono. Publicada na `0.7.19` (2026-11-22); teste real pendente |
 | L6.5 | A fazer depois do contrato v1.1 da Segunda Mente |
 | 0, 1, 2, 2B, 2C | Pausadas (D-053) |
 
