@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.7.19",
+      "items": [
+        {
+          "icon": "bolt",
+          "title": { "pt-BR": "Cerca de 1 GB a menos de memória" },
+          "detail": { "pt-BR": "O modelo de ditado só carrega quando você dita e sai da memória após 2 min parado." }
+        },
+        {
+          "icon": "keyboard",
+          "title": { "pt-BR": "Botões de comando na pílula" },
+          "detail": { "pt-BR": "Clique no raio da pílula para mídia, volume, brilho, janelas e bloquear a tela." }
+        }
+      ]
+    },
+    {
       "version": "0.7.18",
       "items": [
         {

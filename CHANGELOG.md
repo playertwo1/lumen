@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows 0.7.19 — 22 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **~1 GB a menos de memória** — o Lumen carregava o modelo de ditado (Whisper, cerca de 1 GB) toda vez que abria. Agora ele só carrega quando você segura a tecla do ditado e é liberado depois de 2 min sem uso. Medido: o processo do Lumen caiu de ~1.060 MB para 18 MB com o app aberto e parado. O primeiro ditado depois de um tempo parado leva 2 a 4 s a mais.
+- **Botões de comando na pílula (M2b)** — passe o mouse na pílula e clique no raio: mídia, volume, brilho, janelas lado a lado e bloquear a tela, com um clique e sem abrir o chat. Esconda e reordene os botões em Ditado → Ajustes.
+- **Movimento reduzido** — com "Efeitos de animação" desligado no Windows, o Mochi, a ilha, a pílula e as telas do Lumen animam menos.
+
 ## Windows 0.7.18 — 18 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Ferramenta principal** — a lista agora oferece Claude Desktop, Orca, Antigravity e Codex. Claude Code e Cursor saíram da lista e continuam nas abas ativas.
