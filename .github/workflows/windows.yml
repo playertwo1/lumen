@@ -65,7 +65,8 @@ jobs:
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $testExe = Get-ChildItem target/debug/deps/coucou_lib-*.exe |
+          # Newer Cargo puts test binaries under target/debug/build/<pkg>/<hash>/out, older ones in target/debug/deps.
+          $testExe = Get-ChildItem target/debug -Recurse -Filter 'coucou_lib-*.exe' |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
           $mt = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/mt.exe" |
             Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
