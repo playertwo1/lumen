@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.20",
+      "items": [
+        {
+          "icon": "bolt",
+          "title": { "pt-BR": "Interface sem GPU (teste)" },
+          "detail": { "pt-BR": "O Lumen desenha pelo processador e usa cerca de 120 MB a menos de memória." }
+        }
+      ]
+    },
+    {
       "version": "0.7.19",
       "items": [
         {

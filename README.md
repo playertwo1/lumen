@@ -7,7 +7,7 @@
 **Ilha flutuante inteligente para Windows que acompanha seus agentes de IA, permissões, ditado offline, anotações e integrações sem tirar você do foco.**
 
 <p>
-  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.19"><img src="https://img.shields.io/badge/release-windows--v0.7.19-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.19"></a>
+  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.20"><img src="https://img.shields.io/badge/release-windows--v0.7.20-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.20"></a>
   <a href="https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 e 11"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=black" alt="Tauri 2">
   <img src="https://img.shields.io/badge/Rust-TypeScript-F74C00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust e TypeScript">
@@ -67,10 +67,11 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 > Os instaladores ainda não possuem certificado Authenticode, então o SmartScreen pode exibir aviso de editor desconhecido; clique em **Mais informações → Executar mesmo assim**. Após instalar, novas versões podem ser verificadas em **Ajustes → Geral → Atualizações** com conferência de SHA-256.
 
 <details>
-<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.19</code></summary>
+<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.20</code></summary>
 
 | Versão | Data | Destaques |
 |---|---|---|
+| [`windows-v0.7.20`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.20) | 22 nov. 2026 | Teste: interface sem GPU, ~120 MB a menos de RAM |
 | [`windows-v0.7.19`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.19) | 22 nov. 2026 | ~1 GB a menos de RAM; botões de comando na pílula |
 | [`windows-v0.7.18`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.18) | 18 nov. 2026 | Ferramenta principal: Claude Desktop, Orca, Antigravity e Codex |
 | [`windows-v0.7.17`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.17) | 18 nov. 2026 | "Organizar as janelas para programar" abre Codex, Claude Code e Antigravity lado a lado; apps da Store pelo chat |

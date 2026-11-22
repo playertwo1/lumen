@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.20 — 22 de novembro de 2026 *(Lumen; versão de teste, validação real pendente)*
+
+- **Interface sem GPU (teste)** — o WebView2 do Lumen passa a desenhar pelo processador (`--disable-gpu`). Medido em repouso: o WebView2 foi de 429 MB para 310 MB (o processo de GPU, de 169 MB para 21 MB). Ainda não foi conferido no uso real se Mochi, ilha e pílula (janelas transparentes) continuam fluidos; se não, a 0.7.21 desfaz a flag.
+
 ## Windows 0.7.19 — 22 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **~1 GB a menos de memória** — o Lumen carregava o modelo de ditado (Whisper, cerca de 1 GB) toda vez que abria. Agora ele só carrega quando você segura a tecla do ditado e é liberado depois de 2 min sem uso. Medido: o processo do Lumen caiu de ~1.060 MB para 18 MB com o app aberto e parado. O primeiro ditado depois de um tempo parado leva 2 a 4 s a mais.
