@@ -178,7 +178,7 @@ fn enable(app: &AppHandle, flow: &Arc<Flow>) {
         .ok();
     *running = Some(Running { tx, _listener: listener });
     drop(running);
-    speech::preload();
+    // No preload here: this runs at every start, and Whisper holds ~1 GB. Holding the key loads it (run()).
     pill::update(app, |s| s.enabled = true);
     crate::log::line(format!("flow dictation on ({})", prefs.key.label(&prefs.key_combo)));
 }
