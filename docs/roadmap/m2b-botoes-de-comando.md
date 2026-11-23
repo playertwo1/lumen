@@ -41,6 +41,14 @@ Regras desta fase:
 - [x] Testar: lista vazia, id que deixou de existir, repetido e ordem. *(Sintético, `buttons.rs`. A restauração do padrão grava `null`.)*
 - Checkpoint M2b.4: a escolha sobrevive a reiniciar o Lumen. *(Implementado em 2026-11-21; a preferência é gravada como as outras do Flow. **Real, reiniciando o Lumen: NOT_RUN**.)*
 
+### M2b.6 — Comando de voz por atalho (pedido do dono, 2026-11-23)
+
+Spec: [2026-11-23-m2b-comando-de-voz](../superpowers/specs/2026-11-23-m2b-comando-de-voz.md) · Plano: [2026-11-23-m2b-comando-de-voz](../superpowers/plans/2026-11-23-m2b-comando-de-voz.md)
+
+- [x] Atalho global `voiceCommand`, padrão **Ctrl+Alt+V**, trocável em Notch → Atalhos. Escuta uma frase, transcreve com o modelo de ditado local e interpreta sem IA: "brilho a 20%" → `brilho`; "tirar som" → `audio` silenciar; "volta o som" → reativar. Passa por `invoke_tool`. *(Testes Rust em `voice/command.rs`.)*
+- [x] Modo dev: tecla → escuta → modelo → ferramenta → efeito no sistema, com a fala sintética no lugar do microfone (brilho 50 → 20%; mudo conferido pelo Core Audio).
+- [ ] Real: apertar Ctrl+Alt+V e **falar** "brilho a 20%" e "tirar som" no microfone. *(NOT_RUN.)*
+
 ### M2b.5 — Fechamento
 
 - [x] Atualizar `windows/README.md` e o Estado no índice.

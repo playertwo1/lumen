@@ -23,6 +23,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 ## Pendências do dono (validação real)
 
 - **WhatsApp e MailCraft na ilha** (`0.7.21`): conferir faixa e mascote do WhatsApp, leitura e abertura da mensagem no MailCraft e o foco ao navegar pelo teclado e com NVDA, usando a versão instalada.
+- **M2b.6 — comando de voz** (`main`, sem release): apertar Ctrl+Alt+V e falar "brilho a 20%" e depois "tirar som" no microfone; a pílula mostra o resultado. A tecla muda em Notch → Atalhos.
 - **M2b — botões de comando** (`main`, sem release): passar o mouse na pílula, clicar o raio e testar os 12 botões (mídia, volume, brilho, janelas lado a lado, bloquear tela); conferir se a barra cabe na pílula, inclusive nas bordas esquerda e direita; esconder e reordenar em Ditado → Ajustes e reiniciar o Lumen para ver se a escolha fica.
 
 - **L8.1–L8.6** e o Apagar/Spam da triagem do MailCraft (`0.7.12`): roteiros nos checkpoints da L8.

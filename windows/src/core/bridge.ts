@@ -607,6 +607,7 @@ export const Bridge = {
   spotifyOpen: () => call<boolean>("spotify_open"),
   /** The "Note an idea" shortcut: starts the one-voice note, or stops it. */
   noteIdea: () => call<void>("notes_idea"),
+  voiceCommand: () => call<void>("voice_command"),
   /** Whether there is a Spotify to launch (Settings). */
   spotifyInstalled: () => call<boolean>("spotify_installed"),
 

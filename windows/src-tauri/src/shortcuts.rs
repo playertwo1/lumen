@@ -74,6 +74,8 @@ pub const ACTIONS: &[ActionDef] = &[
     action("captureTask", "Ctrl+Alt+K", true, true),
     // Off until a person turns it on. P is not an AltGr character on the checked layouts.
     action("captureScreen", "Ctrl+Alt+P", false, true),
+    // Comando de voz (M2b): "brilho a 20%", "tirar som". V de voz, livre nos layouts AltGr verificados.
+    action("voiceCommand", "Ctrl+Alt+V", true, true),
 ];
 
 pub fn find(id: &str) -> Option<&'static ActionDef> {
@@ -101,6 +103,7 @@ pub fn description(id: &str) -> &'static str {
         "noteIdea" => n_("Note an idea"),
         "captureTask" => n_("Capture a task"),
         "captureScreen" => n_("Capture part of the screen"),
+        "voiceCommand" => n_("Voice command"),
         _ => "Coucou",
     }
 }
@@ -703,10 +706,10 @@ mod wayland {
 mod tests {
     use super::*;
 
-    const MAC_IDS: [&str; 14] = [
+    const MAC_IDS: [&str; 15] = [
         "toggleIsland", "openChat", "goToAlert", "jumpToTerminal", "attachFrontWindow",
         "nextPill", "prevPill", "muteToggle", "desktopToggle", "wardrobeToggle", "newSession", "noteIdea",
-        "captureTask", "captureScreen",
+        "captureTask", "captureScreen", "voiceCommand",
     ];
 
     fn never(_: &Shortcut) -> Option<String> {

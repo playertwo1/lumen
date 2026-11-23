@@ -69,6 +69,10 @@ export function runGlobalShortcut(host: ShortcutHost, action: string, resume: ()
       void Bridge.noteIdea();
       break;
 
+    case "voiceCommand":
+      void Bridge.voiceCommand();
+      break;
+
     case "captureTask":
       resume();
       host.alert("taskCapture");

@@ -13,6 +13,7 @@
 // speaks itself.
 
 pub mod brain;
+pub mod command;
 pub mod wake;
 
 use std::collections::HashMap;

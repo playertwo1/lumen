@@ -112,6 +112,21 @@
       "ko": "아이디어 메모",
       "ja": "アイデアをメモ"
     },
+    "Voice command": {
+      "zh-Hans": "语音命令",
+      "hi": "आवाज़ से आदेश",
+      "es": "Comando de voz",
+      "ar": "أمر صوتي",
+      "fr": "Commande vocale",
+      "bn": "ভয়েস কমান্ড",
+      "pt-BR": "Comando de voz",
+      "ru": "Голосовая команда",
+      "id": "Perintah suara",
+      "de": "Sprachbefehl",
+      "tr": "Sesli komut",
+      "ko": "음성 명령",
+      "ja": "音声コマンド"
+    },
     "Capture a task": {
       "zh-Hans": "记录一个任务",
       "hi": "एक कार्य दर्ज करें",

@@ -33,6 +33,7 @@ export const SHORTCUT_TEXT = {
   noteIdea: N_("Note an idea"),
   captureTask: N_("Capture a task"),
   captureScreen: N_("Capture part of the screen"),
+  voiceCommand: N_("Voice command"),
   island: {
     nextPrev: N_("Next or previous pill"),
     byNumber: N_("Go to pill 1 to 9"),
@@ -64,7 +65,8 @@ export type ShortcutId =
   | "newSession"
   | "noteIdea"
   | "captureTask"
-  | "captureScreen";
+  | "captureScreen"
+  | "voiceCommand";
 
 export interface ShortcutDef {
   id: ShortcutId;
@@ -97,6 +99,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   def("captureTask", "Ctrl+Alt+K", true, true),
   // Off until a person turns it on. Ctrl+Alt+P is free of the AltGr letters above.
   def("captureScreen", "Ctrl+Alt+P", false, true),
+  // Comando de voz (M2b): "brilho a 20%", "tirar som". V de voz, livre nos layouts AltGr verificados.
+  def("voiceCommand", "Ctrl+Alt+V", true, true),
 ];
 
 export interface Binding {

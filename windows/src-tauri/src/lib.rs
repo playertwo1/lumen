@@ -1427,6 +1427,7 @@ pub fn run() {
             tasks::tasks_sync_now,
             tasks::tasks_resolve_conflict,
             voice::voice_done,
+            voice::command::voice_command,
             voice::voice_say_native,
             update::update_status,
             update::update_set_consent,

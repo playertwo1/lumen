@@ -17,7 +17,7 @@ import { DEFAULT_SETTINGS, State } from "../src/core/state.ts";
 const MAC_IDS = [
   "toggleIsland", "openChat", "goToAlert", "jumpToTerminal", "attachFrontWindow",
   "nextPill", "prevPill", "muteToggle", "desktopToggle", "wardrobeToggle", "newSession", "noteIdea",
-  "captureTask", "captureScreen",
+  "captureTask", "captureScreen", "voiceCommand",
 ];
 
 // ── Defaults (testDefaultsExhaustive, testAllDefaultsHaveModifier, testNoDefaultDuplicates) ──
@@ -81,7 +81,7 @@ test("only the island toggle is off by default, and every action is ported", () 
   }
   assert.deepEqual(activeKeys({}).map(([id]) => id), [
     "openChat", "goToAlert", "jumpToTerminal", "attachFrontWindow", "nextPill", "prevPill", "muteToggle", "desktopToggle",
-    "wardrobeToggle", "newSession", "noteIdea", "captureTask",
+    "wardrobeToggle", "newSession", "noteIdea", "captureTask", "voiceCommand",
   ]);
   // The Mac's ⌃⌥D, on the same letter.
   assert.equal(SHORTCUTS.find((d) => d.id === "desktopToggle").defaultKeys, "Ctrl+Alt+D");
