@@ -18,6 +18,7 @@ mod chat;
 mod claude;
 mod claude_code;
 mod cli_relay;
+mod agy_plan;
 mod codex_plan;
 mod config_file;
 mod desktop;
@@ -674,6 +675,13 @@ async fn codex_plan_usage() -> Option<serde_json::Value> {
     tauri::async_runtime::spawn_blocking(codex_plan::read).await.ok().flatten()
 }
 
+/// Antigravity plan usage, asked of the Antigravity CLI (`agy /usage`) when its
+/// pill shows. Off the main thread: it can take a few seconds.
+#[tauri::command]
+async fn agy_plan_usage() -> Option<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(agy_plan::read).await.ok().flatten()
+}
+
 /// Read-only token totals from the local Codex rollout history.
 #[tauri::command]
 async fn agent_usage_read() -> agent_usage::Snapshot {
@@ -1233,6 +1241,7 @@ pub fn run() {
             status_line_preview,
             status_line_apply,
             codex_plan_usage,
+            agy_plan_usage,
             agent_usage_read,
             approval_decision,
             #[cfg(windows)]

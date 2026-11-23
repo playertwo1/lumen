@@ -425,6 +425,11 @@ export const Bridge = {
    * is missing, not signed in or slow (15 s).
    */
   codexPlanUsage: () => call<unknown>("codex_plan_usage"),
+  /**
+   * Asks the Antigravity CLI (`agy /usage`) for its 5-hour and weekly limits.
+   * The groups of buckets, or null when agy is missing, too old, signed out or slow (30 s).
+   */
+  agyPlanUsage: () => call<unknown>("agy_plan_usage"),
   /** Local Codex token counts only; no prompt text or estimated cost. */
   agentUsageRead: async (): Promise<AgentUsageSnapshot | null> => {
     if (IS_SYNTHETIC) return syntheticAgentUsage();

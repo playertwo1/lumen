@@ -321,8 +321,9 @@ test("the end of a session puts a kept pill back as it was, and removes any othe
   assert.equal(State.focusId, "agent_claude-desktop");
 });
 
-test("a Claude Code session gets its pill even when it is not loaded", () => {
+test("a declared Claude Code pill takes the session's name and folder", () => {
   State.settings.mainPill = "agent_codex";
+  State.settings.activeIntegrations = ["integration_claude"];
   State.loadIntegrationTasks();
   const t = State.upsertWorkspacePill("integration_claude", "proj", "/p");
   assert.equal(ids()[1], "integration_claude");
@@ -332,7 +333,7 @@ test("a Claude Code session gets its pill even when it is not loaded", () => {
 });
 
 test("the Git pill follows the last focused workspace project across service focus", () => {
-  State.settings.activeIntegrations = ["integration_git", "integration_github"];
+  State.settings.activeIntegrations = ["integration_git", "integration_github", "integration_claude"];
   State.loadIntegrationTasks();
 
   State.upsertWorkspacePill("integration_claude", "project one", "C:/projects/one");
@@ -373,6 +374,7 @@ test("Claude Desktop and Orca are main-tool choices on both platforms; Claude Co
 });
 
 test("the Claude Code idle card keeps the agent title when the task has a project name", () => {
+  State.settings.activeIntegrations = ["integration_claude"];
   State.loadIntegrationTasks();
   const task = State.upsertWorkspacePill("integration_claude", "my-project", "/p");
   const card = renderIntegrationCard(task, { openSettings() {} });

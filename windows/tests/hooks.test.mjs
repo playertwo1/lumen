@@ -556,16 +556,27 @@ test("Claude Code in Cursor's terminal works on the Cursor pill, made for the se
   assert.equal(task("agent_cursor"), undefined);
 });
 
-test("with another main tool, Claude Code's pill comes for the session and goes after", () => {
+test("with another main tool, an undeclared Claude Code pill stays off while its hooks fire", () => {
   State.settings.mainPill = "agent_codex";
   State.settings.activeIntegrations = DEFAULT_SETTINGS.activeIntegrations;
   State.loadIntegrationTasks();
   assert.equal(task(), undefined);
   hook({ hook_event_name: "SessionStart", cwd: "/p/proj" });
-  assert.equal(task().name, "proj");
+  assert.equal(task(), undefined);
   assert.equal(State.tasks[0].id, "agent_codex");
   hook({ hook_event_name: "SessionEnd" });
   assert.equal(task(), undefined);
+});
+
+test("with another main tool, a declared Claude Code pill takes the session and idles after", () => {
+  State.settings.mainPill = "agent_codex";
+  State.settings.activeIntegrations = ["integration_claude"];
+  State.loadIntegrationTasks();
+  hook({ hook_event_name: "SessionStart", cwd: "/p/proj" });
+  assert.equal(task().name, "proj");
+  assert.equal(State.tasks[0].id, "agent_codex");
+  hook({ hook_event_name: "SessionEnd" });
+  assert.equal(task().state, "idle");
 });
 
 test("the main tool's agent sessions put it back as it was, never take it away", () => {

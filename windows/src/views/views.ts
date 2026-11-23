@@ -14,7 +14,8 @@ import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations
 import { highlightRow, listRows, openRow } from "./github";
 import { pillDefinition, sessionSubtitle } from "../core/pills";
 import {
-  PlanCard, buildPlanPill, claudePillVisible, codexPillVisible, planCardOpen, refreshCodexPlanUsage,
+  PlanCard, agyPillVisible, buildPlanPill, claudePillVisible, codexPillVisible, planCardOpen, refreshAgyPlanUsage,
+  refreshCodexPlanUsage,
 } from "./usage";
 import { buildDiffCard } from "./diff";
 import { lastTextStep } from "../core/diff";
@@ -175,10 +176,12 @@ export function buildHeader(actions: ViewActions): ViewHost {
   // Mac's ✕). A card waiting for an answer keeps the island open: no ✕ then.
   const closeBtn = h("button", { class: "close", title: tl("Close"), onclick: () => actions.collapse() }, svg(ICONS.xmark, 17));
   // Plan usage pills (off by default): before the gear, Claude first, as on the Mac.
-  const claudePill = buildPlanPill(false);
-  const codexPill = buildPlanPill(true);
-  const planPills = h("div", { class: "plan-pills" }, claudePill.el, codexPill.el);
+  const claudePill = buildPlanPill("claude");
+  const codexPill = buildPlanPill("codex");
+  const agyPill = buildPlanPill("agy");
+  const planPills = h("div", { class: "plan-pills" }, claudePill.el, codexPill.el, agyPill.el);
   let codexShown = false;
+  let agyShown = false;
 
   function go(v: IslandViewName) {
     actions.blip();
@@ -221,17 +224,24 @@ export function buildHeader(actions: ViewActions): ViewHost {
   function syncPlanPills() {
     const claudeOn = claudePillVisible();
     const codexOn = codexPillVisible();
+    const agyOn = agyPillVisible();
     claudePill.el.style.display = claudeOn ? "" : "none";
     codexPill.el.style.display = codexOn ? "" : "none";
-    planPills.classList.toggle("on", claudeOn || codexOn);
-    // Both pills: the right side tightens so it still clears the screen edge.
-    headerActions.classList.toggle("both-plans", claudeOn && codexOn);
+    agyPill.el.style.display = agyOn ? "" : "none";
+    planPills.classList.toggle("on", claudeOn || codexOn || agyOn);
+    // Two or more pills: the right side tightens so it still clears the screen edge.
+    headerActions.classList.toggle("both-plans", [claudeOn, codexOn, agyOn].filter(Boolean).length > 1);
     if (claudeOn) claudePill.sync();
     if (codexOn) codexPill.sync();
+    if (agyOn) agyPill.sync();
     // Codex is asked when its pill comes into view (stale answers only).
     const shown = codexOn && State.mode === "expanded";
     if (shown && !codexShown) refreshCodexPlanUsage();
     codexShown = shown;
+    // Antigravity too, on its own.
+    const agyShownNow = agyOn && State.mode === "expanded";
+    if (agyShownNow && !agyShown) refreshAgyPlanUsage();
+    agyShown = agyShownNow;
   }
 }
 

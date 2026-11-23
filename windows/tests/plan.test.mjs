@@ -6,12 +6,12 @@ import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   claudeSubtitle, codexIsStale, codexResetsLabel, codexSubtitle, dominantPct, effectivePct,
-  parseClaudePlan, parseCodexPlan, pillLabel, planColor, resetLabel, restorePlanUsage,
+  parseAgyPlan, parseClaudePlan, parseCodexPlan, pillLabel, planColor, resetLabel, restorePlanUsage,
 } from "../src/core/plan.ts";
 import { emit } from "./tauri.mjs";
 import { registerHookHandlers } from "../src/island/hooks.ts";
 import {
-  claudeCompactPillVisible, claudePillVisible, codexPillVisible, openPlanColor, planCardOpen,
+  agyPillVisible, claudeCompactPillVisible, claudePillVisible, codexPillVisible, openPlanColor, planCardOpen,
 } from "../src/views/usage.ts";
 import { DEFAULT_SETTINGS, State } from "../src/core/state.ts";
 
@@ -200,6 +200,8 @@ beforeEach(() => {
   State.codexPlanUsage = null;
   State.showingPlanDetail = false;
   State.planDetailIsCodex = false;
+  State.agyPlanUsage = null;
+  State.planDetailIsAgy = false;
 });
 
 test("both pills are off by default, so the header is as it shipped", () => {
@@ -278,4 +280,56 @@ test("a status line call updates the numbers and nothing else, even when paused"
   // Without limits (API-key users) the last numbers stay.
   emit("hook", { hook_event_name: "StatusLine", session_id: "s1" });
   assert.equal(State.planUsage.fiveHour.usedPct, 42);
+});
+
+// ── Antigravity (`agy /usage`) ────────────────────────────────────────────────
+
+const agyBucket = (window, remaining, reset = "2026-10-08T12:00:00Z", extra = {}) =>
+  ({ window, remaining_fraction: remaining, reset_time: reset, ...extra });
+
+test("each Antigravity window shows the group closest to its limit", () => {
+  const u = parseAgyPlan({
+    groups: [
+      { buckets: [agyBucket("weekly", 0.4), agyBucket("5h", 0.9, "2026-10-07T15:00:00Z")] },
+      { buckets: [agyBucket("weekly", 0.1, "2026-10-09T00:00:00Z"), agyBucket("5h", 1, "2026-10-07T14:00:00Z")] },
+    ],
+  }, NOW);
+  assert.equal(u.sevenDay.usedPct, 90);
+  assert.equal(u.sevenDay.resetsAt, Date.parse("2026-10-09T00:00:00Z"));
+  assert.equal(u.fiveHour.usedPct, 10);
+  assert.equal(u.updatedAt, NOW);
+});
+
+test("a disabled Antigravity bucket is left out, and junk is nothing", () => {
+  const u = parseAgyPlan({ groups: [{ buckets: [agyBucket("5h", 1, undefined, { disabled: true }), agyBucket("weekly", 0.25)] }] }, NOW);
+  assert.equal(u.fiveHour, undefined);
+  assert.equal(u.sevenDay.usedPct, 75);
+  assert.equal(parseAgyPlan(null, NOW), null);
+  assert.equal(parseAgyPlan({ groups: [{ buckets: [agyBucket("monthly", 0.5), agyBucket("5h", "x"), agyBucket("5h", 0.5, "no date")] }] }, NOW), null);
+});
+
+test("Antigravity fractions are clamped to 0-100 % used", () => {
+  const u = parseAgyPlan({ groups: [{ buckets: [agyBucket("5h", -0.5), agyBucket("weekly", 2)] }] }, NOW);
+  assert.equal(u.fiveHour.usedPct, 100);
+  assert.equal(u.sevenDay.usedPct, 0);
+});
+
+test("the Antigravity pill needs only its switch, on the overview, and reads like the others", () => {
+  assert.equal(agyPillVisible(), false);
+  State.settings.showAntigravityPlanInNotch = true;
+  assert.equal(agyPillVisible(), true);
+  State.view = "settings";
+  assert.equal(agyPillVisible(), false);
+  assert.equal(pillLabel("Antigravity", null, NOW), "Antigravity —");
+  assert.equal(pillLabel("Antigravity", { updatedAt: NOW, sevenDay: { usedPct: 43, resetsAt: NOW + 1e6 } }, NOW), "Antigravity 43%");
+});
+
+test("the Antigravity card follows its pill, and Mochi wears its colour", () => {
+  State.showingPlanDetail = true;
+  State.planDetailIsAgy = true;
+  assert.equal(planCardOpen(), false);
+  State.settings.showAntigravityPlanInNotch = true;
+  assert.equal(planCardOpen(), true);
+  State.agyPlanUsage = { sevenDay: { usedPct: 85, resetsAt: Date.now() + 3600_000 }, updatedAt: Date.now() };
+  assert.equal(openPlanColor(), "#F4505E");
 });

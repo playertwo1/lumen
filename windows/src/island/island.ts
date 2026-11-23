@@ -602,6 +602,7 @@ export class Island {
     State.notify();
   }
 
+    State.planDetailIsAgy = false;
   expand(view: IslandViewName) {
     this.stopSequenceIfLeaving(view);
     if (view !== "overview") closePlanCard();

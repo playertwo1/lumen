@@ -8,6 +8,7 @@
 // `account/rateLimits/read`, the source of Codex's /status), asked by the app
 // when the pill shows. Nothing is read from any credentials, nothing is fetched
 // by Coucou itself.
+// Antigravity: the numbers come from its CLI (`agy -p /usage`), asked the same way.
 
 export interface PlanWindow {
   /** 0–100, clamped. */
@@ -41,6 +42,9 @@ export const PLAN_TEXT = {
   get codexTitle() { return t("Codex plan"); },
   get claudePillTitle() { return t("Claude plan usage"); },
   get codexPillTitle() { return t("Codex plan usage"); },
+  get agyTitle() { return t("Antigravity plan"); },
+  get agyPillTitle() { return t("Antigravity plan usage"); },
+  get askingAgy() { return t("Asking Antigravity…"); },
   get waiting() { return t("Waiting for a response from Claude Code"); },
   get askingCodex() { return t("Asking Codex…"); },
   get justNow() { return t("just now"); },
@@ -125,6 +129,32 @@ export function parseCodexPlan(result: unknown, now = Date.now()): CodexPlanUsag
   return usage.fiveHour || usage.sevenDay ? usage : null;
 }
 
+// ── Antigravity ───────────────────────────────────────────────────────────────
+
+/**
+ * The result of `agy /usage` (see agy_plan.rs): groups of models, each with 5-hour and
+ * weekly buckets. Each window shows the group closest to its limit; a disabled bucket
+ * (the 5-hour limit does not apply once the week is spent) is left out.
+ */
+export function parseAgyPlan(result: unknown, now = Date.now()): PlanUsage | null {
+  const groups = asObj(result)?.groups;
+  if (!Array.isArray(groups)) return null;
+  const usage: PlanUsage = { updatedAt: now };
+  for (const g of groups) {
+    const buckets = asObj(g)?.buckets;
+    if (!Array.isArray(buckets)) continue;
+    for (const raw of buckets) {
+      const b = asObj(raw);
+      const key = b?.window === "5h" ? "fiveHour" : b?.window === "weekly" ? "sevenDay" : null;
+      const resetsAt = typeof b?.reset_time === "string" ? Date.parse(b.reset_time) : NaN;
+      if (!b || !key || b.disabled === true || !isNum(b.remaining_fraction) || !Number.isFinite(resetsAt)) continue;
+      const usedPct = Math.min(100, Math.max(0, Math.round((1 - b.remaining_fraction) * 100)));
+      if (!usage[key] || usedPct > usage[key]!.usedPct) usage[key] = { usedPct, resetsAt };
+    }
+  }
+  return usage.fiveHour || usage.sevenDay ? usage : null;
+}
+
 // ── Shared ────────────────────────────────────────────────────────────────────
 
 /** What to show for a window: 0 once its reset time has passed. */
@@ -145,7 +175,7 @@ export function planColor(pct: number | null): string {
 }
 
 /** "Claude 73%" / "Codex 12%" on the pill; "Claude —" while there are no numbers. */
-export function pillLabel(name: "Claude" | "Codex", u: PlanUsage | null | undefined, now = Date.now()): string {
+export function pillLabel(name: "Claude" | "Codex" | "Antigravity", u: PlanUsage | null | undefined, now = Date.now()): string {
   const pct = dominantPct(u, now);
   return pct == null ? `${name} ${PLAN_TEXT.none}` : `${name} ${Math.round(pct)}%`;
 }
@@ -182,6 +212,11 @@ export function codexSubtitle(u: CodexPlanUsage | null, now = Date.now()): strin
   return (u.planType ? `${u.planType} · ` : "") + ageLabel(u.updatedAt, now);
 }
 
+/** The Antigravity card's subtitle. */
+export function agySubtitle(u: PlanUsage | null, now = Date.now()): string {
+  return u ? ageLabel(u.updatedAt, now) : PLAN_TEXT.askingAgy;
+}
+
 /** "2 available · until Oct 9", or "—" when Codex said nothing about resets. */
 export function codexResetsLabel(u: CodexPlanUsage | null): string {
   if (u?.resetCredits == null) return PLAN_TEXT.none;
@@ -197,7 +232,7 @@ export function codexResetsLabel(u: CodexPlanUsage | null): string {
 export const CODEX_STALE_MS = 60_000;
 
 /** True when the Codex numbers are missing or older than a minute. */
-export const codexIsStale = (u: CodexPlanUsage | null, now = Date.now()): boolean =>
+export const codexIsStale = (u: PlanUsage | null, now = Date.now()): boolean =>
   !u || now - u.updatedAt >= CODEX_STALE_MS;
 
 /** A stored Claude usage, if it still looks like one (the last numbers survive a restart). */

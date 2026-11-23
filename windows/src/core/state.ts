@@ -170,6 +170,8 @@ export interface Settings {
   planRelayInstalled: boolean;
   /** Show the Codex plan pill in the island's header. */
   showCodexPlanInNotch: boolean;
+  /** Show the Antigravity plan pill in the island's header. */
+  showAntigravityPlanInNotch: boolean;
   /** Who the chat talks to (see core/providers.ts); picked in the chat view. */
   chatProvider: ProviderId;
   /** The model picked for each provider other than Anthropic, by provider id. */
@@ -241,6 +243,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showPlanInCompactIsland: false,
   planRelayInstalled: false,
   showCodexPlanInNotch: false,
+  showAntigravityPlanInNotch: false,
   chatProvider: "anthropic",
   chatModels: {},
   chatSubscriptions: {},
@@ -309,10 +312,14 @@ class AppState {
   planUsage: PlanUsage | null = null;
   /** Codex's limits, from `codex app-server` (null until it has answered). */
   codexPlanUsage: CodexPlanUsage | null = null;
+  /** Antigravity's limits, from `agy /usage` (null until it has answered). */
+  agyPlanUsage: PlanUsage | null = null;
   /** A plan card is open in place of the overview's left card. */
   showingPlanDetail = false;
   /** Which one: the Codex card rather than Claude's. */
   planDetailIsCodex = false;
+  /** Or the Antigravity card (takes precedence over the Codex flag). */
+  planDetailIsAgy = false;
   /** Per-pill file diffs, in order of reception. Steps carry their ids. */
   sessionDiffs = new Map<string, FileDiff[]>();
   private sessionDiffTimers = new Map<string, number>();

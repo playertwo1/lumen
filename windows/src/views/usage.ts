@@ -11,14 +11,14 @@
 
 import { Bridge } from "../core/bridge";
 import {
-  PLAN_TEXT, claudeSubtitle, codexIsStale, codexResetsLabel, codexSubtitle, dominantPct,
-  effectivePct, parseCodexPlan, pillLabel, planColor, resetLabel,
+  PLAN_TEXT, agySubtitle, claudeSubtitle, codexIsStale, codexResetsLabel, codexSubtitle, dominantPct,
+  effectivePct, parseAgyPlan, parseCodexPlan, pillLabel, planColor, resetLabel,
   type CodexPlanUsage, type PlanUsage, type PlanWindow,
 } from "../core/plan";
 import { State } from "../core/state";
 import { clear, dot, h, svg } from "./dom";
 import { ICONS } from "./icons";
-import { language, tl } from "../i18n/i18n";
+import { language } from "../i18n/i18n";
 
 /** The Claude pill is in the header: overview, turned on, relay in. */
 export function claudePillVisible(): boolean {
@@ -37,9 +37,15 @@ export function codexPillVisible(): boolean {
   return State.view === "overview" && State.settings.showCodexPlanInNotch;
 }
 
+/** The Antigravity pill is in the header: overview, turned on (nothing to install). */
+export function agyPillVisible(): boolean {
+  return State.view === "overview" && State.settings.showAntigravityPlanInNotch;
+}
+
 /** A plan card is open and either of its pills (header or compact) is enabled. */
 export function planCardOpen(): boolean {
   if (!State.showingPlanDetail) return false;
+  if (State.planDetailIsAgy) return agyPillVisible();
   if (State.planDetailIsCodex) return codexPillVisible();
   const s = State.settings;
   return State.view === "overview" && (s.showPlanInNotch || s.showPlanInCompactIsland) && s.planRelayInstalled;
@@ -47,9 +53,11 @@ export function planCardOpen(): boolean {
 
 const claudeColor = (now = Date.now()) => planColor(dominantPct(State.planUsage, now));
 const codexColor = (now = Date.now()) => planColor(dominantPct(State.codexPlanUsage, now));
+const agyColor = (now = Date.now()) => planColor(dominantPct(State.agyPlanUsage, now));
 
 /** The colour of the open card's plan, which Mochi wears while it is open. */
 export function openPlanColor(): string {
+  if (State.planDetailIsAgy) return agyColor();
   return State.planDetailIsCodex ? codexColor() : claudeColor();
 }
 
@@ -113,6 +121,27 @@ export function refreshCodexPlanUsage(): void {
     });
 }
 
+// ── Antigravity numbers ───────────────────────────────────────────────────────
+
+let agyInFlight = false;
+
+/** Same rules as Codex's: only from the pill, stale answers only, never while paused. */
+export function refreshAgyPlanUsage(): void {
+  if (agyInFlight || State.paused || !codexIsStale(State.agyPlanUsage)) return;
+  agyInFlight = true;
+  void Bridge.agyPlanUsage()
+    .then((result) => {
+      const usage = parseAgyPlan(result);
+      if (usage) {
+        State.agyPlanUsage = usage;
+        State.notify();
+      }
+    })
+    .finally(() => {
+      agyInFlight = false;
+    });
+}
+
 // ── Pill ──────────────────────────────────────────────────────────────────────
 
 export interface PlanPill {
@@ -120,32 +149,39 @@ export interface PlanPill {
   sync(): void;
 }
 
+export type PlanKind = "claude" | "codex" | "agy";
+
 /** One pill: colour dot and label, lit while hovered or while its card is open. */
-export function buildPlanPill(codex: boolean): PlanPill {
+export function buildPlanPill(kind: PlanKind): PlanPill {
   const label = h("span", { class: "plan-pill-label" });
   const dotEl = h("i", { class: "plan-pill-dot" });
-  const isOpen = () => State.showingPlanDetail && State.planDetailIsCodex === codex;
+  const openKind = (): PlanKind => (State.planDetailIsAgy ? "agy" : State.planDetailIsCodex ? "codex" : "claude");
+  const isOpen = () => State.showingPlanDetail && openKind() === kind;
   const el = h("button", {
     class: "plan-pill",
-    title: codex ? tl("Codex plan usage") : tl("Claude plan usage"),
+    title: kind === "agy" ? PLAN_TEXT.agyPillTitle : kind === "codex" ? PLAN_TEXT.codexPillTitle : PLAN_TEXT.claudePillTitle,
     onclick: () => {
       const open = isOpen();
-      State.planDetailIsCodex = codex;
+      State.planDetailIsCodex = kind === "codex";
+      State.planDetailIsAgy = kind === "agy";
       State.showingPlanDetail = !open;
-      if (codex) refreshCodexPlanUsage();
+      if (kind === "codex") refreshCodexPlanUsage();
+      if (kind === "agy") refreshAgyPlanUsage();
       State.notify();
     },
   }, dotEl, label);
   return {
     el,
     sync() {
-      const color = codex ? codexColor() : claudeColor();
+      const color = kind === "agy" ? agyColor() : kind === "codex" ? codexColor() : claudeColor();
       el.style.setProperty("--plan", color);
       el.classList.toggle("active", isOpen());
       dotEl.style.background = color;
-      label.textContent = codex
-        ? pillLabel("Codex", State.codexPlanUsage)
-        : pillLabel("Claude", State.planUsage);
+      label.textContent = kind === "agy"
+        ? pillLabel("Antigravity", State.agyPlanUsage)
+        : kind === "codex"
+          ? pillLabel("Codex", State.codexPlanUsage)
+          : pillLabel("Claude", State.planUsage);
     },
   };
 }
@@ -186,19 +222,31 @@ export class PlanCard {
 
   /** Re-renders when the numbers change, or every 30 s for the countdowns. */
   sync(now = Date.now()) {
+    const agy = State.planDetailIsAgy;
     const codex = State.planDetailIsCodex;
-    const u = codex ? State.codexPlanUsage : State.planUsage;
-    const key = `${language()}|${codex}|${JSON.stringify(u)}|${Math.floor(now / 30_000)}`;
+    const u = agy ? State.agyPlanUsage : codex ? State.codexPlanUsage : State.planUsage;
+    const key = `${language()}|${agy ? "agy" : codex}|${JSON.stringify(u)}|${Math.floor(now / 30_000)}`;
     if (key === this.key) return;
     this.key = key;
     clear(this.el);
-    if (codex) this.drawCodex(State.codexPlanUsage, now);
+    if (agy) this.drawAgy(State.agyPlanUsage, now);
+    else if (codex) this.drawCodex(State.codexPlanUsage, now);
     else this.drawClaude(State.planUsage, now);
   }
 
   private drawClaude(u: PlanUsage | null, now: number) {
     this.el.append(
       head(claudeColor(now), PLAN_TEXT.claudeTitle, claudeSubtitle(u, now)),
+      h("div", { class: "plan-rows" },
+        gaugeRow(PLAN_TEXT.fiveHours, u?.fiveHour, false, now),
+        gaugeRow(PLAN_TEXT.week, u?.sevenDay, true, now),
+      ),
+    );
+  }
+
+  private drawAgy(u: PlanUsage | null, now: number) {
+    this.el.append(
+      head(agyColor(now), PLAN_TEXT.agyTitle, agySubtitle(u, now)),
       h("div", { class: "plan-rows" },
         gaugeRow(PLAN_TEXT.fiveHours, u?.fiveHour, false, now),
         gaugeRow(PLAN_TEXT.week, u?.sevenDay, true, now),
