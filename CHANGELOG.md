@@ -1,5 +1,12 @@
 # Changelog
 
+## Windows 0.7.21 — 23 de novembro de 2026
+
+- WhatsApp ganhou personagem próprio e uma faixa que abre a lista de conversas. A faixa exige conexão ativa, e o cartão permite marcar mensagens como lidas no Lumen.
+- MailCraft mostra remetente e assunto em linhas separadas, com lista e prévia roláveis. Abra a mensagem completa no MailCraft pelo cartão.
+- Os cartões ganharam foco de teclado mais previsível, melhor leitura e transições curtas que respeitam movimento reduzido. Busca e prévia de e-mail permitem nova tentativa, e o WhatsApp preserva o texto digitado quando a conexão cai.
+- A ilha acompanha os limites de cinco horas e semanal do Antigravity. A pílula desativada do Claude Code permanece oculta quando chegam eventos de hook.
+
 ## Windows 0.7.20 — 22 de novembro de 2026 *(Lumen; versão de teste, validação real pendente)*
 
 - **Interface sem GPU (teste)** — o WebView2 do Lumen passa a desenhar pelo processador (`--disable-gpu`). Medido em repouso: o WebView2 foi de 429 MB para 310 MB (o processo de GPU, de 169 MB para 21 MB). Ainda não foi conferido no uso real se Mochi, ilha e pílula (janelas transparentes) continuam fluidos; se não, a 0.7.21 desfaz a flag.

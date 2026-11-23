@@ -1,6 +1,31 @@
 {
   "releases": [
     {
+      "version": "0.7.21",
+      "items": [
+        {
+          "icon": "chat",
+          "title": { "pt-BR": "WhatsApp na ilha" },
+          "detail": { "pt-BR": "Novo personagem, faixa clicável e opção de marcar todas como lidas no Lumen." }
+        },
+        {
+          "icon": "eye",
+          "title": { "pt-BR": "E-mail mais fácil de ler" },
+          "detail": { "pt-BR": "Lista rolável, prévia maior e abertura da mensagem completa no MailCraft." }
+        },
+        {
+          "icon": "keyboard",
+          "title": { "pt-BR": "Teclado e recuperação" },
+          "detail": { "pt-BR": "O foco volta à mensagem original, e falhas de busca e prévia permitem nova tentativa." }
+        },
+        {
+          "icon": "clock",
+          "title": { "pt-BR": "Limites do Antigravity" },
+          "detail": { "pt-BR": "A ilha mostra os limites de uso de cinco horas e da semana." }
+        }
+      ]
+    },
+    {
       "version": "0.7.20",
       "items": [
         {
