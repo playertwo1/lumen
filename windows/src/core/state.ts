@@ -625,6 +625,8 @@ class AppState {
     if (!t) {
       const def = pillDefinition(id);
       if (!def) return null;
+      // A pill the user did not declare stays off, even while its hooks fire.
+      if (id === "integration_claude" && !this.isKept(id)) return null;
       t = taskFor(def, this.settings.pillColors, name);
       this.insertAfterMain(t);
     }
