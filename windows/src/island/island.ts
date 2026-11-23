@@ -24,7 +24,7 @@ import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import { MUSIC_IDS, Spotify, islandDances } from "../core/spotify";
 import { MAIL_ID, type MailCardData } from "../core/mail";
-import { WhatsApp } from "../core/whatsapp";
+import { WHATSAPP_ID, WhatsApp } from "../core/whatsapp";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { CALM, type MochiMood } from "../mochi/mood";
 import { describeVitals, isVitalsHover, moodFromVitals, pluggedInWhileLow, shouldReadVitals } from "../mochi/vitals";
@@ -507,6 +507,8 @@ export class Island {
   private wireFsm() {
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
     this.fsm.openOnHover = State.settings.openOnHover;
+    // Keep the WhatsApp button under the pointer until the user can click it.
+    this.fsm.canOpenOnHover = () => this.getCompactCenterItem()?.kind !== "whatsapp";
     this.fsm.onTransition = (from, to) => {
       // The greeting is over, however it ended: back to his desktop spot.
       if (from === "coucou" && to !== "coucou") this.desktop.launch();
@@ -1109,11 +1111,11 @@ export class Island {
           questions: State.pendingApproval.questions,
         }
       : null;
-    const wa = WhatsApp.view.unread > 0
-      ? {
-          unread: WhatsApp.view.unread,
-          conversations: WhatsApp.view.conversations.map((c) => ({ name: c.name, unread: c.unread })),
-        }
+    const wa = WhatsApp.view.on
+      && WhatsApp.view.link.state === "connected"
+      && State.settings.activeIntegrations.includes(WHATSAPP_ID)
+      && State.tasks.some((t) => t.id === WHATSAPP_ID)
+      ? WhatsApp.view
       : null;
     return compactCenter({
       now,

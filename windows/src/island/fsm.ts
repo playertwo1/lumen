@@ -34,6 +34,7 @@ export class IslandStateMachine {
    * General → Open on hover, off by default), as IslandStateMachine.openOnHover.
    */
   openOnHover = false;
+  canOpenOnHover: (() => boolean) | null = null;
   /** Grace period after the pointer leaves a hover-opened island, seconds. */
   hoverCloseDelay = 0.6;
   /** How long the pointer rests on the compact island before Open on hover opens it, seconds. */
@@ -190,7 +191,7 @@ export class IslandStateMachine {
     this.clear("hoverOpen");
     this.hoverOpen = window.setTimeout(() => {
       this.hoverOpen = null;
-      if (this.state !== "petit" || this.pinned || !this.openOnHover) return;
+      if (this.state !== "petit" || this.pinned || !this.openOnHover || this.canOpenOnHover?.() === false) return;
       this.cancelTimers();
       this.byHover = true;
       this.transition("home");

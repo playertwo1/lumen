@@ -74,6 +74,8 @@ function resetRuntimeState() {
   State.pendingApproval = null;
   State.integrations = {};
   State.settings.showClock = false;
+  State.settings.openOnHover = false;
+  State.settings.activeIntegrations = [];
   State.settings.showPlanInCompactIsland = false;
   State.settings.mochiReactsToPc = false;
   WhatsApp.view = {
@@ -303,14 +305,17 @@ test("view taskCapture mostra cabeçalho rápido, botão Criar proposta e aviso 
   );
 });
 
-test("Island no modo compacto alterna entre 2A enxuto e Centro Contextual quando chega mensagem", () => {
+test("faixa do WhatsApp exige integração ativa e conectada e abre o cartão pelo foco", ({ mock }) => {
   const root = initialDom.root();
   const prevRaf = globalThis.requestAnimationFrame;
+  let island;
   // Evita laço infinito síncrono de frames em fake DOM
   globalThis.requestAnimationFrame = () => 1;
+  mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    const island = new Island(root);
-    State.mode = "compact";
+    State.settings.openOnHover = true;
+    island = new Island(root);
+    island.fsm.forcePetit();
     State.notify();
 
     // Simula 1 passo de frame para sincronizar o DOM sem aguardar RAF infinito
@@ -343,7 +348,7 @@ test("Island no modo compacto alterna entre 2A enxuto e Centro Contextual quando
     ];
     WhatsApp.view = {
       on: true,
-      link: { state: "open" },
+      link: { state: "needsQr" },
       conversations: [{ id: "c1", name: "Maria", unread: 1, messages: [] }],
       unread: 1,
       sending: false,
@@ -351,18 +356,47 @@ test("Island no modo compacto alterna entre 2A enxuto e Centro Contextual quando
       down: false,
     };
 
+    State.settings.activeIntegrations = ["integration_whatsapp"];
+    island.syncDom();
+    assert.equal(centerBtn.classList.contains("on"), false, "link desconectado");
+
+    WhatsApp.view.link = { state: "connected" };
+    WhatsApp.view.on = false;
+    island.syncDom();
+    assert.equal(centerBtn.classList.contains("on"), false, "integração desligada");
+
+    WhatsApp.view.on = true;
+    const whatsappTask = State.tasks.pop();
+    island.syncDom();
+    assert.equal(centerBtn.classList.contains("on"), false, "pílula ausente");
+    State.tasks.push(whatsappTask);
+
+    State.settings.activeIntegrations = [];
+    island.syncDom();
+    assert.equal(centerBtn.classList.contains("on"), false, "pílula residual após desativar");
+    State.settings.activeIntegrations = ["integration_whatsapp"];
+
+    WhatsApp.view.unread = 2;
+    WhatsApp.view.conversations = [];
     island.syncDom();
     assert.equal(centerBtn.classList.contains("on"), true);
-    assert.match(centerBtn.textContent, /Nova msg · Maria/);
+    assert.match(centerBtn.textContent, /WhatsApp · 2 novas/);
     assert.equal(island.targetSize().w, COMPACT_W);
+
+    island.onCursor(window.innerWidth / 2, 1);
+    assert.equal(island.wasInIsland, true);
+    mock.timers.tick(500);
+    assert.equal(State.mode, "compact", "a abertura automática não deve tirar a faixa antes do clique");
 
     // Clique no Centro Contextual abre o Notch expandido focado no WhatsApp
     centerBtn.fire("click");
     assert.equal(State.mode, "expanded");
     assert.equal(State.view, "overview");
     assert.equal(State.focusId, "integration_whatsapp");
-    island.fsm.cancelTimers();
+    island.syncDom();
+    assert.equal(root.find(".wa-card").length, 1);
   } finally {
+    island?.fsm.cancelTimers();
     globalThis.requestAnimationFrame = prevRaf;
   }
 });

@@ -250,6 +250,23 @@ test("linked: one row per conversation, the unread count, or nothing new", () =>
   assert.match(rows[1].textContent, /Paul: <b>@33612345678<\/b> tu viens \?/);
 });
 
+test("limpa os não lidos por clique mesmo com o link desconectado", () => {
+  const c = card();
+  const before = sent("whatsapp_mark_all_read").length;
+  const sendCount = sent("whatsapp_send").length;
+  WhatsApp.view = connected({ link: { state: "needsQr" }, unread: 2 });
+  c.sync();
+  assert.equal(sent("whatsapp_mark_all_read").length, before);
+  c.el.find(".wa-mark-read")[0].fire("click");
+  assert.equal(sent("whatsapp_mark_all_read").length, before + 1);
+  assert.equal(sent("whatsapp_send").length, sendCount);
+
+  emit("whatsapp", { ...WhatsApp.view, unread: 0 });
+  c.sync();
+  assert.equal(c.el.find(".wa-mark-read").length, 0);
+  assert.equal(c.el.find(".wa-unread")[0].textContent, "");
+});
+
 test("a right-click offers to ignore the chat, and only a click does it", () => {
   const c = card();
   WhatsApp.view = connected({ unread: 1, conversations: [conversation()] });

@@ -1339,6 +1339,7 @@ pub fn run() {
             spotify::spotify_installed,
             whatsapp::whatsapp_island,
             whatsapp::whatsapp_open,
+            whatsapp::whatsapp_mark_all_read,
             whatsapp::whatsapp_close,
             whatsapp::whatsapp_open_app,
             whatsapp::whatsapp_send,

@@ -207,6 +207,13 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
     } else {
       listBody.append(h("div", { class: "int-rows wa-rows" }, ...v.conversations.map(row)));
     }
+    if (v.unread > 0) {
+      listBody.append(h("div", { class: "int-actions" }, h("button", {
+        class: "link-btn wa-mark-read",
+        text: "Marcar todas como lidas no Lumen",
+        onclick: () => void Bridge.whatsappMarkAllRead(),
+      })));
+    }
   }
 
   function syncConversation(c: WaConversation) {

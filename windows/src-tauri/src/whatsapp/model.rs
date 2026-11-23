@@ -287,6 +287,12 @@ impl Inbox {
         }
     }
 
+    pub fn mark_all_read(&mut self) {
+        for conversation in self.conversations.values_mut() {
+            conversation.unread = 0;
+        }
+    }
+
     pub fn rename(&mut self, chat: &str, name: &str) {
         if name.is_empty() {
             return;

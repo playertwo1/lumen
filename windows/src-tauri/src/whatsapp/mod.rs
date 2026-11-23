@@ -256,7 +256,7 @@ impl Ctl {
     fn island_view(&self) -> IslandView {
         let filters = self.filters();
         IslandView {
-            on: self.provider.is_some(),
+            on: self.should_run() && self.provider.is_some(),
             link: self.link.clone(),
             conversations: self.inbox.visible(&filters).into_iter().cloned().collect(),
             unread: self.inbox.visible_unread(&filters),
@@ -1129,6 +1129,15 @@ pub fn whatsapp_close(window: WebviewWindow, chat: String) -> Result<(), String>
     Ok(())
 }
 
+#[tauri::command]
+pub fn whatsapp_mark_all_read(window: WebviewWindow) -> Result<(), String> {
+    only(&window, crate::island::WINDOW_LABEL)?;
+    ctl().inbox.mark_all_read();
+    pill(PillEvent::Read);
+    changed();
+    Ok(())
+}
+
 /// The card's ↗: WhatsApp at the conversation open in the card (`open_in_whatsapp`). True when it
 /// went to WhatsApp Desktop rather than WhatsApp Web.
 #[tauri::command]
@@ -1318,6 +1327,36 @@ mod tests {
         let (fresh, _) = ingest(&mut c, vec![msg("5", "33612345678@s.whatsapp.net", "x")]);
         assert_eq!(fresh, None);
         assert!(c.island_view().conversations.is_empty());
+    }
+
+    #[test]
+    fn island_keeps_unread_available_to_clear_after_disconnect() {
+        let mut c = fresh_ctl();
+        c.prefs.enabled = true;
+        c.provider = Some(Arc::new(Provider::new(
+            Kind::Gowa,
+            "http://127.0.0.1:47823".parse().unwrap(),
+            None,
+        ).unwrap()));
+        c.link = LinkState::NeedsQr;
+        ingest(&mut c, vec![
+            msg("1", "5500000000001@s.whatsapp.net", "hello"),
+            msg("2", "120363@g.us", "muted"),
+        ]);
+        let view = c.island_view();
+        assert!(view.on);
+        assert_eq!(view.link, LinkState::NeedsQr);
+        assert_eq!(view.unread, 1);
+
+        c.inbox.mark_all_read();
+        c.prefs.mute_groups = false;
+        let view = c.island_view();
+        assert_eq!(view.unread, 0);
+        assert_eq!(view.conversations.len(), 2);
+        assert!(view.conversations.iter().all(|chat| chat.messages.len() == 1));
+
+        c.pill_active = false;
+        assert!(!c.island_view().on);
     }
 
     #[test]
