@@ -507,8 +507,11 @@ export class Island {
   private wireFsm() {
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
     this.fsm.openOnHover = State.settings.openOnHover;
-    // Keep the WhatsApp button under the pointer until the user can click it.
-    this.fsm.canOpenOnHover = () => this.getCompactCenterItem()?.kind !== "whatsapp";
+    // Keep inbox shortcuts under the pointer until the user can click them.
+    this.fsm.canOpenOnHover = () => {
+      const kind = this.getCompactCenterItem()?.kind;
+      return kind !== "whatsapp" && kind !== "mail";
+    };
     this.fsm.onTransition = (from, to) => {
       // The greeting is over, however it ended: back to his desktop spot.
       if (from === "coucou" && to !== "coucou") this.desktop.launch();
@@ -1099,7 +1102,9 @@ export class Island {
 
   private getCompactCenterItem(now = new Date()): CompactCenterItem | null {
     const track = Spotify.state.track;
-    const mail = State.integrations["integration_mail"]?.data as Partial<MailCardData> | undefined;
+    const mail = State.tasks.some((t) => t.id === MAIL_ID) && State.isKept(MAIL_ID)
+      ? State.integrations[MAIL_ID]?.data as Partial<MailCardData> | undefined
+      : undefined;
     const rawMailUnread = typeof mail?.unread === "number" ? mail.unread : 0;
     const mailUnread = effectiveMailUnread(rawMailUnread, State.mailUnreadDismissedAt);
     const pending = State.pendingApproval
@@ -1189,6 +1194,9 @@ export class Island {
     let { w, h } = islandSize(State.mode, State.view, State.chatHistory.length);
     if (State.mode === "expanded" && State.view === "question" && State.pendingApproval?.questions) {
       h = QUESTION_PICKER_H;
+    }
+    if (State.mode === "expanded" && State.view === "overview" && State.focusTask?.id === MAIL_ID && !planCardOpen()) {
+      h = 260;
     }
     const r = State.mode === "expanded" ? EXPANDED_CORNER : ROUNDED_CORNER;
     return { w, h, r };

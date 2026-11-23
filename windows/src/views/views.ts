@@ -237,7 +237,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
 
 // ── Overview ──────────────────────────────────────────────────────────────────
 
-function buildOverview(actions: ViewActions): ViewHost {
+function buildOverview(actions: ViewActions, onHeightChange: () => void): ViewHost {
   /** The diff open in the left card (a FileDiff id), as activeDiffId on macOS. */
   let activeDiffId: number | null = null;
   const closeDiff = () => {
@@ -487,6 +487,11 @@ function buildOverview(actions: ViewActions): ViewHost {
         }
       }
 
+      const mailFocused = mode === "mail";
+      if (el.classList.contains("mail-focused") !== mailFocused) {
+        el.classList.toggle("mail-focused", mailFocused);
+        onHeightChange();
+      }
       jump.style.display = detailOpen || mode === "plan" || mode === "diff" ? "none" : "";
       const mailBackend = (State.integrations[MAIL_ID]?.data as Partial<MailCardData> | undefined)?.backend ?? null;
       const jumpTitle = focusTargetLabel(task?.id, task?.name, mailBackend);
@@ -1038,10 +1043,10 @@ function buildPlaceholder(title: Msg, sub: string): ViewHost {
 
 export function buildViews(
   actions: ViewActions,
-  onChatHeightChange: () => void,
+  onHeightChange: () => void,
 ): Map<IslandViewName, ViewHost> {
   const map = new Map<IslandViewName, ViewHost>();
-  map.set("overview", buildOverview(actions));
+  map.set("overview", buildOverview(actions, onHeightChange));
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions));
   map.set("question", buildQuestion(actions));
@@ -1051,7 +1056,7 @@ export function buildViews(
   map.set("note", buildNote());
   map.set("capture", buildCapture(actions));
   map.set("settings", buildSettings(actions));
-  map.set("prompt", buildPrompt(onChatHeightChange));
+  map.set("prompt", buildPrompt(onHeightChange));
   map.set("upload", buildUpload());
   map.set("uploading", buildUploading());
   map.set("choose", buildChoose(actions));

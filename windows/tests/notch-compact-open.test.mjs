@@ -72,6 +72,7 @@ function resetRuntimeState() {
   State.mode = "hidden";
   State.view = "overview";
   State.pendingApproval = null;
+  State.mailUnreadDismissedAt = null;
   State.integrations = {};
   State.settings.showClock = false;
   State.settings.openOnHover = false;
@@ -409,8 +410,67 @@ test("effectiveMailUnread silencia os 357 avisos ao limpar e só volta a notific
   assert.equal(effectiveMailUnread(0, 357), 0);
 });
 
+test("faixa de e-mail mantém o clique disponível, abre a lista maior e permite ler a mensagem", async ({ mock }) => {
+  const root = initialDom.root();
+  const prevRaf = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = () => 1;
+  mock.timers.enable({ apis: ["setTimeout"] });
+  let island;
+  try {
+    const message = {
+      storeId: "mailcraft", entryId: "synthetic-mail", senderName: "Remetente de teste",
+      subject: "Assunto para abrir", date: Date.now(), unread: true, flagged: false,
+    };
+    const opened = [];
+    internals.invoke = async (cmd, args) => {
+      if (cmd === "mail_detail") {
+        assert.equal(args.message.entryId, message.entryId);
+        return { text: "Corpo da mensagem de teste", attachments: [] };
+      }
+      if (cmd === "mail_open") opened.push(args);
+    };
+    State.settings.openOnHover = true;
+    State.settings.activeIntegrations = ["integration_mail"];
+    State.loadIntegrationTasks();
+    State.integrations.integration_mail = {
+      data: { running: true, windows: true, backend: "mailcraft", unread: 1, messages: [message], shown: 12, maxShown: 60 },
+    };
+    island = new Island(root);
+    island.fsm.forcePetit();
+    island.syncDom();
+    const center = [...root.walk()].find((e) => e.attributes.get("id") === "compact-center");
+    assert.match(center.textContent, /Mail · 1 não lido/);
+    island.onCursor(window.innerWidth / 2, 1);
+    mock.timers.tick(500);
+    assert.equal(State.mode, "compact");
+    center.fire("click");
+    island.syncDom();
+    assert.equal(State.focusId, "integration_mail");
+    assert.equal(island.targetSize().h, 260);
+    assert.equal(root.find(".mail-focused").length, 1);
+    assert.equal(root.find(".mail-toolbar")[0].textContent, "ResumirRascunho");
+
+    root.find(".mail-row")[0].fire("click");
+    assert.equal(root.find(".mail-detail-subject")[0].textContent, message.subject);
+    await new Promise(setImmediate);
+    assert.equal(root.find(".mail-detail-text")[0].textContent, "Corpo da mensagem de teste");
+    assert.deepEqual(opened, []);
+    const openInApp = root.find(".link-btn").find((button) => button.textContent === "Abrir no MailCraft");
+    openInApp.fire("click");
+    assert.deepEqual(opened, [{ message, reply: false }]);
+    root.find(".mail-back")[0].fire("click");
+    assert.equal(root.find(".detail-open").length, 0);
+    State.setFocus(State.mainPillId);
+    island.syncDom();
+    assert.equal(island.targetSize().h, 160);
+    assert.equal(root.find(".mail-focused").length, 0);
+  } finally {
+    island?.fsm.cancelTimers();
+    globalThis.requestAnimationFrame = prevRaf;
+  }
+});
+
 test("botão Limpar no card do Mail remove o aviso de 357 não lidos tanto na lista quanto no detalhe e no notch compacto", () => {
-  State.mailUnreadDismissedAt = null;
   State.integrations.integration_mail = {
     configured: true,
     loaded: true,

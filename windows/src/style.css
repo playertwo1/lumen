@@ -601,6 +601,19 @@ body {
   flex: 1 1 auto;
 }
 
+.overview.mail-focused > .left {
+  flex: 0 0 430px;
+  width: 430px;
+}
+
+.overview.mail-focused > .right {
+  min-width: 0;
+}
+
+.overview.mail-focused .pills {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .card-body {
   position: relative;
   z-index: 1;
@@ -3460,7 +3473,31 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
 }
 
 .mail-head {
-  padding-right: 36px;
+  padding-right: 26px;
+  flex: 0 0 auto;
+}
+
+.mail-inbox-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mail-toolbar {
+  display: flex;
+  gap: 10px;
+  padding: 5px 0;
+  flex: 0 0 auto;
+}
+
+.mail-toolbar:empty {
+  display: none;
+}
+
+.mail-toolbar .link-btn {
+  padding: 0;
+  color: var(--ink);
+  cursor: pointer;
 }
 
 .mail-unread {
@@ -3541,6 +3578,7 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   /* One line whatever the language: a longer set scrolls sideways, never wraps. */
   overflow-x: auto;
   scrollbar-width: none;
+  flex: 0 0 auto;
 }
 
 .mail-filters::-webkit-scrollbar {
@@ -3616,10 +3654,10 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 5px 12px 6px 0;
+  padding: 5px 6px 6px 0;
   overflow-y: auto;
   min-height: 0;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
 .mail-row {
@@ -3627,7 +3665,7 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   background: transparent;
   text-align: start;
   width: 100%;
-  cursor: default;
+  cursor: pointer;
   flex: 0 0 auto;
 }
 
@@ -3652,9 +3690,16 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   color: #8e939c;
 }
 
-.mail-name {
-  max-width: 82px;
-  flex: 0 1 auto;
+.mail-row-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mail-row .mail-subject {
+  color: #a6abb4;
 }
 
 .mail-dot {
@@ -3739,12 +3784,18 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   scrollbar-width: none;
 }
 
+.mail-detail > .mail-detail-text {
+  max-height: none;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+}
+
 .mail-actions {
   display: flex;
   align-items: center;
   gap: 10px;
   flex: 0 0 auto;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   white-space: nowrap;
 }
 

@@ -51,9 +51,10 @@ export function buildMailCard(host: MailCardHost): MailCard {
   const closeSearch = h("button", { class: "mail-icon", title: tl("Close") }, svg(ICONS.xmark, 9));
   const searchBtn = h("button", { class: "mail-icon", title: tl("Search") }, svg(ICONS.magnifier, 10));
   const head = h("div", { class: "int-head mail-head" }, dot(MAIL_BLUE, 7), h("b", { text: "Outlook" }));
+  const toolbar = h("div", { class: "mail-toolbar" });
   const filters = h("div", { class: "mail-filters" });
   const listBody = h("div", { class: "mail-rows" });
-  const listView = h("div", { class: "mail-list" }, head, filters, listBody);
+  const listView = h("div", { class: "mail-list" }, head, toolbar, filters, listBody);
   const detailView = h("div", { class: "mail-detail" });
   const el = h("div", { class: "int-card mail-card" }, listView, detailView);
 
@@ -127,8 +128,9 @@ export function buildMailCard(host: MailCardHost): MailCard {
     if (!previews.has(id)) {
       previews.set(id, null);
       void MailBridge.detail(m).then((d) => {
-        previews.set(id, d ?? { text: "", attachments: [] });
-        drawDetail();
+        if (d) previews.set(id, d);
+        else previews.delete(id);
+        if (open && messageId(open) === id) drawDetail();
       });
     }
     drawDetail();
@@ -160,15 +162,15 @@ export function buildMailCard(host: MailCardHost): MailCard {
   }
 
   function row(m: MailMessage): HTMLElement {
-    const r = h("button", { class: m.unread ? "int-row mail-row unread" : "int-row mail-row" },
+    const r = h("button", { class: m.unread ? "int-row mail-row unread" : "int-row mail-row", title: m.subject },
       h("i", { class: m.unread ? "mail-dot on" : "mail-dot" }),
-      h("span", { class: "int-name mail-name", text: senderName(m) }),
+      h("span", { class: "mail-row-copy" },
+        h("span", { class: "int-name mail-name", text: senderName(m) }),
+        h("span", { class: "int-sub mail-subject", text: m.subject }),
+      ),
     );
     if (m.flagged) r.append(h("span", { class: "mail-flag", text: "⚑" }));
-    r.append(
-      h("span", { class: "int-ago", text: timeAgo(m.date) }),
-      h("span", { class: "int-sub mail-subject", text: m.subject }),
-    );
+    r.append(h("span", { class: "int-ago", text: timeAgo(m.date) }));
     r.addEventListener("click", () => openMessage(m));
     return r;
   }
@@ -189,13 +191,14 @@ export function buildMailCard(host: MailCardHost): MailCard {
 
     // The head: the unread count and the magnifier, or the search field.
     clear(head);
+    clear(toolbar);
     head.append(dot(MAIL_BLUE, 7), h("b", { text: isMailCraft ? "MailCraft" : "Outlook (secundário)" }));
     if (searchOpen) {
       head.append(field);
       if (searching) head.append(h("span", { class: "mail-spinner" }));
       head.append(closeSearch);
     } else {
-      head.append(h("span", { text: t("Inbox") }));
+      head.append(h("span", { class: "mail-inbox-label", text: t("Inbox") }));
       // Mostra a contagem de avisos pendentes no notch + botão Limpar para silenciar o acumulado sem alterar a caixa.
       unreadTag.textContent = badgeUnread > 9999 ? "9999+" : String(badgeUnread);
       unreadTag.title = `${badgeUnread} não lidos no notch (caixa: ${d.unread})`;
@@ -284,7 +287,8 @@ export function buildMailCard(host: MailCardHost): MailCard {
       }) as HTMLButtonElement;
       head.append(unreadTag);
       if (clearBtn) head.append(clearBtn);
-      head.append(h("span", { class: "mail-spacer" }), summarizeBtn, draftBtn);
+      toolbar.append(summarizeBtn, draftBtn);
+      head.append(h("span", { class: "mail-spacer" }));
       if (searching) head.append(h("span", { class: "mail-spinner" }));
       head.append(searchBtn);
     }
@@ -336,12 +340,23 @@ export function buildMailCard(host: MailCardHost): MailCard {
     const back = h("button", { class: "int-back mail-back", title: tl("Back") }, svg(ICONS.chevronLeft, 10, { stroke: 2.4 }));
     back.addEventListener("click", closeMessage);
     const preview = previews.get(messageId(m));
-    const text = preview === undefined || preview === null ? t("Loading…") : preview.text.trim() || " ";
+    const text = preview === null ? t("Loading…")
+      : preview === undefined ? "Não foi possível carregar o e-mail. Volte à lista e tente de novo."
+      : preview.text.trim() || " ";
     const isMc = m.storeId === "mailcraft";
     const actions = h("div", { class: "mail-actions" });
-    if (!isMc) {
-      actions.append(h("button", { class: "link-btn accent", text: t("Open in Outlook"), onclick: () => void MailBridge.open(m, false) }));
-    }
+    const openError = h("span", { class: "mail-empty", role: "status" });
+    actions.append(h("button", {
+      class: "link-btn accent",
+      text: isMc ? "Abrir no MailCraft" : t("Open in Outlook"),
+      onclick: () => {
+        openError.remove();
+        void MailBridge.openChecked(m).catch(() => {
+          openError.textContent = "Não foi possível abrir a mensagem no aplicativo.";
+          actions.append(openError);
+        });
+      },
+    }));
     actions.append(
       h("button", {
         class: isMc ? "link-btn accent" : "link-btn",
