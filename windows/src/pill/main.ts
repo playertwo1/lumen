@@ -489,7 +489,8 @@ function dotGoal(now: number, i: number): number {
     case "speaking":
       return speaking ? 0.2 + 0.35 * Math.abs(Math.sin(now / 110 + i * 1.3) * Math.sin(now / 270 - i * 0.6)) : 0.05;
     case "listening":
-      return 0.08 + 0.08 * Math.sin(now / 400 - i * 0.5);
+      // The voice command sends the microphone's bands: the dots follow the voice over a slow wave.
+      return Math.max(target[i], 0.08 + 0.08 * Math.sin(now / 400 - i * 0.5));
     default:
       return 0;
   }
@@ -632,9 +633,10 @@ async function main() {
   visible = shows(state);
   render();
   void onEvent<PillState>("pill-state", (s) => {
+    const wasHearing = state.voice?.phase === "listening";
     state = s;
     visible = shows(s);
-    if (s.phase === "listening") target.fill(0);
+    if (s.phase === "listening" || (s.voice?.phase === "listening" && !wasHearing)) target.fill(0);
     render();
   });
   void onEvent<number[]>("pill-bands", (bands) => {

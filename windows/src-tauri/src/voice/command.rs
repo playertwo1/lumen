@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::{show, wake, VoiceView};
 use crate::mochi::{approval_bridge::TauriApprovalRequester, host, MochiRuntime};
@@ -154,9 +154,13 @@ fn listen(app: &AppHandle) -> Option<Vec<f32>> {
     let until = Instant::now() + LISTEN_FOR;
     let mut heard = None;
     let mut all = Vec::new();
+    // Os pontinhos da pílula seguem a voz, como no ditado: dá para ver que o Lumen está ouvindo.
+    let mut meter = audio::BandMeter::default();
     while heard.is_none() && Instant::now() < until {
         if let Ok(chunk) = rx.recv_timeout(Duration::from_millis(200)) {
             all.extend_from_slice(&chunk);
+            meter.feed(&chunk);
+            let _ = app.emit_to(crate::flow::pill::LABEL, "pill-bands", meter.levels);
             heard = vad.feed(&chunk).into_iter().find(|s| s.len() >= speech::SAMPLE_RATE as usize * 3 / 10);
         }
     }
