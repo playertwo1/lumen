@@ -2,6 +2,17 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.21 — WhatsApp e MailCraft na ilha
+
+- [x] Pedido do dono em 2026-11-23: integrar, publicar o instalador Windows versionado e explicar as mudanças. Inclui mascote do WhatsApp, faixas clicáveis, leitura e recuperação nos cartões e consulta aos limites do Antigravity.
+- [x] Validações locais: `npm test` (774/774), `npm run build` (inclui TypeScript), `cargo test --lib --locked` (954 passaram, 10 ignorados), `python scripts/test-whats-new.py windows` e empacotamento x64 local.
+- [x] Pré-flight [`45244013325`](https://github.com/playertwo1/lumen/actions/runs/45244013325): upgrades sintéticos MSI e NSIS passaram. Executável e MSI conferidos no Microsoft Defender, sem detecção.
+- [x] Publicação pelo workflow [`45248624238`](https://github.com/playertwo1/lumen/actions/runs/45248624238), alteração `3d8032c4`, tag [`windows-v0.7.21`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.21). Upgrades sintéticos passaram, `windows-latest` foi atualizado e a release recebeu as notas em português.
+- [x] Instaladores públicos baixados, conferidos com os digests do GitHub e examinados no Microsoft Defender, sem detecção.
+  - EXE: `2403ffab7b8ead43215cec0fbf0f246800067b771950149146bdfe5e277b1541`.
+  - MSI: `e676628dec1420ad5f7c85fed759683695536d8da4c848affc0261b6f3a56fa7`.
+- [ ] **NOT_RUN:** teste pelo dono do Lumen instalado com conta real, incluindo abertura das faixas, leitura no MailCraft e navegação pelo teclado e com NVDA.
+
 ### Windows 0.7.20 — interface sem GPU (versão de teste)
 
 - [x] Pedido do dono em 2026-11-22: criar a release com `--disable-gpu` para testar. A flag foi trocada nos três pontos que precisam ser idênticos (`tauri.conf.json`, `tauri.windows.conf.json`, `BROWSER_ARGS`); o Linux não muda.
