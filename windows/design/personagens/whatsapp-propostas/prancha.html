@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>WhatsApp · propostas de mascote</title>
+<style>
+  body { margin: 0; background: #0B0B10; color: #F3E7C7; font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  main { width: 1180px; margin: 0 auto; padding: 36px 0 40px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  p.sub { margin: 0 0 32px; color: #A7A3B8; }
+  .row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+  .opt { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .num { font-size: 22px; font-weight: 700; color: #25D366; margin-bottom: 10px; }
+  .art { width: 192px; height: 192px; }
+  .name { font-weight: 600; margin-top: 10px; }
+  .idea { color: #A7A3B8; font-size: 12.5px; min-height: 54px; max-width: 200px; }
+  .mini { margin-top: 14px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .chip { background: #000; border-radius: 14px; padding: 5px 12px; display: flex; gap: 10px; align-items: center; }
+  .mini small { color: #6F6A85; font-size: 11px; }
+  h2 { font-size: 13px; font-weight: 600; color: #A7A3B8; margin: 48px 0 14px; text-transform: uppercase; letter-spacing: .06em; }
+  .refs { display: flex; gap: 40px; align-items: flex-end; }
+  .ref { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #A7A3B8; font-size: 12px; }
+  .ref .chip { margin-top: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>WhatsApp · cinco propostas de mascote</h1>
+  <p class="sub">Verde #25D366, detalhes creme #F3E7C7, contorno #282344. Em cima, 192 px; embaixo, a mesma arte em 22 px reais, na ilha preta.</p>
+  <div class="row" id="row"></div>
+  <h2>Referência do lineup (mesmo código de rosto)</h2>
+  <div class="refs" id="refs"></div>
+</main>
+<script>
+const INK = "#282344", CREAM = "#F3E7C7", GREEN = "#25D366";
+// Same rules as windows/src/lumen/compass-engine.ts: 96-unit box, 3-unit contour, min 1 CSS px, eyes x1.24 when compact.
+let minW = 0;
+const lw = (w) => Math.max(w, minW);
+
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+// Rounded rectangle with a tail on its bottom edge: [x1, tipX, tipY, x2], x1 < x2.
+function bubble(ctx, x, y, w, h, r, t) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.lineTo(t[3], y + h);
+  ctx.lineTo(t[1], t[2]);
+  ctx.lineTo(t[0], y + h);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function paint(ctx, fill) {
+  ctx.fillStyle = fill; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = lw(3); ctx.lineJoin = "round"; ctx.stroke();
+}
+function curve(ctx, x1, y1, cx, cy, x2, y2, w) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(cx, cy, x2, y2);
+  ctx.lineWidth = lw(w); ctx.lineCap = "round"; ctx.strokeStyle = INK; ctx.stroke();
+}
+// A thick cream stroke with an ink contour (all ink first, then all cream, so touching strokes merge).
+function outlinedStrokes(ctx, lines, inner) {
+  for (const [color, w] of [[INK, inner + 6], [CREAM, inner]]) {
+    for (const pts of lines) {
+      ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke();
+    }
+  }
+}
+function face(ctx, f, compact) {
+  const s = compact ? 1.24 : 1;
+  for (const x of [f.l, f.r]) {
+    ctx.save(); ctx.translate(x, f.ey); ctx.scale(s, s);
+    ctx.beginPath(); ctx.ellipse(0, 0, 5.5, 7.5, 0, 0, Math.PI * 2); ctx.fillStyle = INK; ctx.fill();
+    ctx.beginPath(); ctx.arc(-2, -2.2, 1.9, 0, Math.PI * 2); ctx.fillStyle = CREAM; ctx.fill();
+    ctx.restore();
+  }
+  curve(ctx, f.mx - 7, f.my - 1, f.mx, f.my + 7, f.mx + 7, f.my - 1, 3.2 * s);
+}
+
+const PROPOSALS = [
+  {
+    name: "Papo", idea: "Dois balões: um verde com o rosto, um creme atrás respondendo.",
+    face: { l: 30, r: 52, ey: 51, mx: 41, my: 64 },
+    body(ctx) {
+      bubble(ctx, 44, 10, 42, 32, 14, [68, 82, 50, 78]); paint(ctx, CREAM);
+      bubble(ctx, 9, 28, 64, 50, 20, [20, 14, 90, 36]); paint(ctx, GREEN);
+    },
+  },
+  {
+    name: "Fone", idea: "Telefone de mesa: base em trapézio e o fone creme apoiado em cima.",
+    face: { l: 37, r: 59, ey: 57, mx: 48, my: 70 },
+    body(ctx) {
+      ctx.beginPath();
+      ctx.moveTo(30, 32); ctx.lineTo(66, 32); ctx.quadraticCurveTo(72, 32, 74, 38);
+      ctx.lineTo(83, 74); ctx.quadraticCurveTo(85, 85, 74, 85); ctx.lineTo(22, 85);
+      ctx.quadraticCurveTo(11, 85, 13, 74); ctx.lineTo(22, 38); ctx.quadraticCurveTo(24, 32, 30, 32);
+      ctx.closePath(); paint(ctx, GREEN);
+      ctx.beginPath();
+      ctx.moveTo(8, 26); ctx.quadraticCurveTo(8, 15, 20, 15); ctx.lineTo(76, 15); ctx.quadraticCurveTo(88, 15, 88, 26);
+      ctx.lineTo(88, 35); ctx.quadraticCurveTo(88, 41, 82, 41); ctx.lineTo(70, 41); ctx.quadraticCurveTo(64, 41, 64, 35);
+      ctx.lineTo(64, 29); ctx.lineTo(32, 29); ctx.lineTo(32, 35); ctx.quadraticCurveTo(32, 41, 26, 41);
+      ctx.lineTo(14, 41); ctx.quadraticCurveTo(8, 41, 8, 35); ctx.closePath(); paint(ctx, CREAM);
+    },
+  },
+  {
+    name: "Áudio", idea: "Mensagem de voz: cápsula larga com três barras de onda saindo por cima.",
+    face: { l: 37, r: 59, ey: 57, mx: 48, my: 70 },
+    body(ctx) {
+      for (const [x, y] of [[28, 17], [43.5, 6], [59, 21]]) { rr(ctx, x, y, 9.5, 30, 4.75); paint(ctx, CREAM); }
+      rr(ctx, 9, 36, 78, 48, 24); paint(ctx, GREEN);
+    },
+  },
+  {
+    name: "Rádio", idea: "Rádio de bolso: corpo alto, antena inclinada e botão de sintonia creme.",
+    face: { l: 37, r: 59, ey: 52, mx: 48, my: 65 },
+    body(ctx) {
+      ctx.save(); ctx.translate(32, 30); ctx.rotate(-0.32); rr(ctx, -4.5, -27, 9, 32, 4.5); paint(ctx, CREAM); ctx.restore();
+      rr(ctx, 61, 17, 13, 12, 4); paint(ctx, CREAM);
+      rr(ctx, 20, 24, 56, 62, 13); paint(ctx, GREEN);
+    },
+  },
+  {
+    name: "Lido", idea: "Ideia nova: corpo de mochi baixo com o tique duplo de “lido” como topete.",
+    face: { l: 37, r: 59, ey: 56, mx: 48, my: 69 },
+    body(ctx) {
+      ctx.beginPath();
+      ctx.moveTo(48, 32); ctx.bezierCurveTo(71, 32, 85, 50, 85, 67); ctx.bezierCurveTo(85, 80, 76, 86, 62, 86);
+      ctx.lineTo(34, 86); ctx.bezierCurveTo(20, 86, 11, 80, 11, 67); ctx.bezierCurveTo(11, 50, 25, 32, 48, 32);
+      ctx.closePath(); paint(ctx, GREEN);
+      outlinedStrokes(ctx, [[[30, 19], [37, 26], [50, 10]], [[46, 23], [49, 26], [62, 10]]], 5.5);
+    },
+  },
+];
+
+const REFS = [
+  { name: "Email", color: "#2F8CFF", face: { l: 37, r: 59, ey: 54, mx: 48, my: 66 }, body(ctx, c) {
+    rr(ctx, 14, 18, 68, 61, 13); paint(ctx, c);
+    ctx.beginPath(); ctx.moveTo(14, 31); ctx.arcTo(14, 18, 27, 18, 13); ctx.lineTo(69, 18); ctx.arcTo(82, 18, 82, 31, 13);
+    ctx.lineTo(50, 41); ctx.quadraticCurveTo(48, 42.4, 46, 41); ctx.closePath(); paint(ctx, CREAM);
+  } },
+  { name: "Codex", color: "#2DD4BF", face: { l: 34, r: 56, ey: 43, mx: 48, my: 62 }, body(ctx, c) {
+    rr(ctx, 18, 16, 59, 69, 20); paint(ctx, c); rr(ctx, 74, 55, 14, 27, 7); paint(ctx, CREAM);
+  } },
+  { name: "ChatGPT", color: "#10A37F", face: { l: 36, r: 58, ey: 44, mx: 47, my: 57 }, body(ctx, c) {
+    ctx.beginPath(); ctx.arc(47, 48, 32, 1.18, 0.72, false); ctx.bezierCurveTo(74.5, 76, 73, 82, 68.5, 82);
+    ctx.bezierCurveTo(64.5, 82, 61.5, 79.5, 59.19, 77.59); ctx.closePath(); paint(ctx, c);
+  } },
+  { name: "OpenCode", color: "#4ADE80", face: { l: 37, r: 59, ey: 41, mx: 48, my: 52 }, body(ctx, c) {
+    ctx.beginPath(); ctx.moveTo(20, 39); ctx.arc(48, 39, 28, Math.PI, 0, false); ctx.lineTo(76, 71); ctx.arcTo(76, 85, 62, 85, 14);
+    ctx.lineTo(34, 85); ctx.arcTo(20, 85, 20, 71, 14); ctx.closePath();
+    ctx.moveTo(61.5, 31); ctx.arc(48, 31, 13.5, 0, Math.PI, true); ctx.closePath();
+    ctx.fillStyle = c; ctx.fill("evenodd"); ctx.strokeStyle = INK; ctx.lineWidth = lw(3); ctx.lineJoin = "round"; ctx.stroke();
+    rr(ctx, 29, 61, 38, 16, 8); paint(ctx, CREAM);
+  } },
+];
+
+function canvasFor(size, ch) {
+  const cv = document.createElement("canvas");
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(size * dpr); cv.height = Math.round(size * dpr);
+  cv.style.width = cv.style.height = size + "px";
+  const ctx = cv.getContext("2d");
+  ctx.scale((size * dpr) / 96, (size * dpr) / 96);
+  const compact = size <= 42;
+  minW = 96 / size; // 1 CSS px floor, in shape units
+  ch.body(ctx, ch.color);
+  face(ctx, ch.face, compact);
+  minW = 0;
+  return cv;
+}
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+
+const row = document.getElementById("row");
+PROPOSALS.forEach((p, i) => {
+  const opt = el("div", "opt");
+  opt.append(el("div", "num", String(i + 1)));
+  const big = canvasFor(192, p); big.className = "art"; opt.append(big);
+  opt.append(el("div", "name", p.name), el("div", "idea", p.idea));
+  const mini = el("div", "mini"), chip = el("div", "chip");
+  chip.append(canvasFor(22, p));
+  mini.append(chip, el("small", "", "22 px reais"));
+  opt.append(mini);
+  row.append(opt);
+});
+
+const refs = document.getElementById("refs");
+for (const r of REFS) {
+  const box = el("div", "ref");
+  box.append(canvasFor(72, r));
+  const chip = el("div", "chip"); chip.append(canvasFor(22, r));
+  box.append(chip, el("span", "", r.name));
+  refs.append(box);
+}
+// Strip of all five at 22 px next to each other, as they'd sit in the compact island.
+const strip = el("div", "ref"), chip = el("div", "chip");
+PROPOSALS.forEach((p) => chip.append(canvasFor(22, p)));
+strip.append(chip, el("span", "", "1 a 5 lado a lado, 22 px"));
+refs.append(strip);
+</script>
+</body>
+</html>

@@ -19,6 +19,7 @@ Todos compartilham contorno índigo `#26224B`, dois olhos ovais grandes com pupi
 | Hermes | `agent_hermes-desktop` | Corpo arredondado com asinhas e crista | roxo `#C084FC` |
 | YouTube Music | `integration_youtubemusic` | Corpo com fones de ouvido | vermelho `#FF0033` |
 | Email | `integration_mail` | Envelope | azul `#2F8CFF` |
+| WhatsApp | `integration_whatsapp` | Dois balões de conversa escalonados | verde `#25D366` |
 | Genérico | qualquer outro | Folha A4 com linhas de texto | areia `#F4E8C9` |
 
 ## Estados

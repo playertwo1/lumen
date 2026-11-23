@@ -125,6 +125,7 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
     );
   }
   const hookPill = def?.connect.kind === "hooks";
+  const quiet = def?.connect.kind === "none" && def.source === "agent" && !isComingSoon(task.id);
   if (isComingSoon(task.id) || def?.connect.kind === "none") {
     // Nothing to set up, and nothing to refresh.
   } else if (configured && (hookPill || def?.category !== "ai")) {
@@ -151,7 +152,8 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
       task.id === "integration_claude" ? def!.name : task.name,
       t(def?.subtitle ?? N_("Integration")),
     ),
-    h("div", { class: "int-status" }, dot(status.color, 5), h("span", { text: status.label })),
+    // An agent with nothing to set up has nothing to say here: "Ready · no setup needed" was noise.
+    quiet ? null : h("div", { class: "int-status" }, dot(status.color, 5), h("span", { text: status.label })),
     actions,
   );
 }

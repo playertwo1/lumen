@@ -47,14 +47,15 @@ function data(): MailCardData {
 
 export function buildMailCard(host: MailCardHost): MailCard {
   const unreadTag = h("span", { class: "mail-unread" });
-  const field = h("input", { class: "mail-search", type: "text", spellcheck: "false", placeholder: t("from:anne invoice") }) as HTMLInputElement;
+  const field = h("input", { class: "mail-search", type: "text", spellcheck: "false", "aria-label": "Buscar e-mails", placeholder: t("from:anne invoice") }) as HTMLInputElement;
   const closeSearch = h("button", { class: "mail-icon", title: tl("Close") }, svg(ICONS.xmark, 9));
   const searchBtn = h("button", { class: "mail-icon", title: tl("Search") }, svg(ICONS.magnifier, 10));
   const head = h("div", { class: "int-head mail-head" }, dot(MAIL_BLUE, 7), h("b", { text: "Outlook" }));
   const toolbar = h("div", { class: "mail-toolbar" });
+  const tools = h("details", { class: "mail-tools" }, h("summary", { text: "Ações da caixa" }), toolbar);
   const filters = h("div", { class: "mail-filters" });
   const listBody = h("div", { class: "mail-rows" });
-  const listView = h("div", { class: "mail-list" }, head, toolbar, filters, listBody);
+  const listView = h("div", { class: "mail-list" }, head, filters, listBody, tools);
   const detailView = h("div", { class: "mail-detail" });
   const el = h("div", { class: "int-card mail-card" }, listView, detailView);
 
@@ -62,6 +63,7 @@ export function buildMailCard(host: MailCardHost): MailCard {
   let filter: MailFilter = "all";
   let results: MailMessage[] | null = null;
   let searching = false;
+  let searchFailed = false;
   let token = 0;
   let open: MailMessage | null = null;
   const previews = new Map<string, { text: string; attachments: string[] } | null>();
@@ -72,6 +74,8 @@ export function buildMailCard(host: MailCardHost): MailCard {
 
   async function runSearch() {
     const q = field.value.trim();
+    const mine = ++token;
+    searchFailed = false;
     if (!q && filter === "all") {
       results = null;
       searching = false;
@@ -79,14 +83,14 @@ export function buildMailCard(host: MailCardHost): MailCard {
       sync();
       return;
     }
-    const mine = ++token;
     searching = true;
     listKey = "";
     sync();
     const found = await MailBridge.search(q, filter);
     if (mine !== token) return;
     searching = false;
-    results = found ?? [];
+    searchFailed = found === null;
+    results = found;
     listKey = "";
     sync();
   }
@@ -95,13 +99,14 @@ export function buildMailCard(host: MailCardHost): MailCard {
     searchOpen = on;
     if (on) {
       host.keyboard(true);
-      window.setTimeout(() => field.focus(), 80);
+      window.setTimeout(() => { if (searchOpen) field.focus(); }, 80);
     } else {
       field.value = "";
       filter = "all";
       results = null;
       token++;
       searching = false;
+      searchFailed = false;
       host.keyboard(false);
     }
     listKey = "";
@@ -124,6 +129,12 @@ export function buildMailCard(host: MailCardHost): MailCard {
 
   function openMessage(m: MailMessage) {
     open = m;
+    loadPreview(m);
+    sync();
+    detailView.querySelector<HTMLElement>(".mail-detail-subject")?.focus();
+  }
+
+  function loadPreview(m: MailMessage) {
     const id = messageId(m);
     if (!previews.has(id)) {
       previews.set(id, null);
@@ -134,13 +145,15 @@ export function buildMailCard(host: MailCardHost): MailCard {
       });
     }
     drawDetail();
-    sync();
   }
 
   function closeMessage() {
+    const id = open && messageId(open);
     open = null;
     listKey = "";
     sync();
+    const row = Array.from(listBody.children).find((el) => (el as HTMLElement).dataset.messageId === id) as HTMLElement | undefined;
+    (row ?? listBody.querySelector<HTMLElement>(".mail-row") ?? (searchOpen ? field : searchBtn)).focus();
   }
 
   async function act(m: MailMessage, kind: "read" | "flag" | "unflag" | "junk" | "ignore" | "vip") {
@@ -169,6 +182,7 @@ export function buildMailCard(host: MailCardHost): MailCard {
         h("span", { class: "int-sub mail-subject", text: m.subject }),
       ),
     );
+    r.dataset.messageId = messageId(m);
     if (m.flagged) r.append(h("span", { class: "mail-flag", text: "⚑" }));
     r.append(h("span", { class: "int-ago", text: timeAgo(m.date) }));
     r.addEventListener("click", () => openMessage(m));
@@ -182,7 +196,7 @@ export function buildMailCard(host: MailCardHost): MailCard {
     const list = displayed();
     const key = [
       language(), d.running, d.windows, d.backend, d.unread, badgeUnread, State.mailUnreadDismissedAt ?? "",
-      d.error ?? "", searchOpen, filter, searching, results === null, d.shown,
+      d.error ?? "", searchOpen, filter, searching, searchFailed, results === null, d.shown,
       Math.floor(Date.now() / 60_000),
       ...list.map((m) => `${messageId(m)}|${m.unread}|${m.flagged}`),
     ].join("~");
@@ -190,13 +204,16 @@ export function buildMailCard(host: MailCardHost): MailCard {
     listKey = key;
 
     // The head: the unread count and the magnifier, or the search field.
+    const restoreSearchFocus = searchOpen && document.activeElement === field;
     clear(head);
     clear(toolbar);
+    tools.hidden = searchOpen;
     head.append(dot(MAIL_BLUE, 7), h("b", { text: isMailCraft ? "MailCraft" : "Outlook (secundário)" }));
     if (searchOpen) {
       head.append(field);
       if (searching) head.append(h("span", { class: "mail-spinner" }));
       head.append(closeSearch);
+      if (restoreSearchFocus) field.focus();
     } else {
       head.append(h("span", { class: "mail-inbox-label", text: t("Inbox") }));
       // Mostra a contagem de avisos pendentes no notch + botão Limpar para silenciar o acumulado sem alterar a caixa.
@@ -318,6 +335,13 @@ export function buildMailCard(host: MailCardHost): MailCard {
       listBody.append(h("div", { class: "mail-empty", text: msg }));
       return;
     }
+    if (searchFailed) {
+      listBody.append(
+        h("div", { class: "mail-empty", role: "status", text: "Não foi possível buscar os e-mails." }),
+        h("button", { class: "link-btn mail-retry", text: "Tentar novamente", onclick: () => void runSearch() }),
+      );
+      return;
+    }
     if (list.length === 0) {
       listBody.append(h("div", { class: "mail-empty", text: results !== null ? t("Nothing found") : t("No messages") }));
       return;
@@ -331,22 +355,27 @@ export function buildMailCard(host: MailCardHost): MailCard {
   let detailDismissedKey: number | null = State.mailUnreadDismissedAt;
 
   function drawDetail() {
+    const focused = document.activeElement;
+    const restoreFocus = focused && detailView.contains(focused);
+    const focusedId = restoreFocus ? focused.id : "";
+    const menuOpen = detailView.querySelector(".mail-more-menu.on") !== null;
     clear(detailView);
     const m = open;
     if (!m) return;
     const d = data();
     const badgeUnread = effectiveMailUnread(d.unread, State.mailUnreadDismissedAt);
     detailDismissedKey = State.mailUnreadDismissedAt;
-    const back = h("button", { class: "int-back mail-back", title: tl("Back") }, svg(ICONS.chevronLeft, 10, { stroke: 2.4 }));
+    const back = h("button", { id: "mail-detail-back", class: "int-back mail-back", title: tl("Back") }, svg(ICONS.chevronLeft, 10, { stroke: 2.4 }));
     back.addEventListener("click", closeMessage);
     const preview = previews.get(messageId(m));
     const text = preview === null ? t("Loading…")
-      : preview === undefined ? "Não foi possível carregar o e-mail. Volte à lista e tente de novo."
+      : preview === undefined ? "Não foi possível carregar o e-mail."
       : preview.text.trim() || " ";
     const isMc = m.storeId === "mailcraft";
     const actions = h("div", { class: "mail-actions" });
     const openError = h("span", { class: "mail-empty", role: "status" });
     actions.append(h("button", {
+      id: "mail-detail-open",
       class: "link-btn accent",
       text: isMc ? "Abrir no MailCraft" : t("Open in Outlook"),
       onclick: () => {
@@ -359,29 +388,31 @@ export function buildMailCard(host: MailCardHost): MailCard {
     }));
     actions.append(
       h("button", {
-        class: isMc ? "link-btn accent" : "link-btn",
+        id: "mail-detail-reply",
+        class: "link-btn",
         text: isMc ? "Rascunho (sem enviar)" : t("Reply"),
         title: isMc ? "Preparar rascunho de resposta (sem enviar)" : t("Reply"),
         onclick: () => void MailBridge.open(m, true),
       }),
     );
-    if (m.unread) actions.append(h("button", { class: "link-btn dim", text: t("Mark as read"), onclick: () => void act(m, "read") }));
+    if (m.unread) actions.append(h("button", { id: "mail-detail-read", class: "link-btn dim", text: t("Mark as read"), onclick: () => void act(m, "read") }));
     actions.append(
       h("button", {
+        id: "mail-detail-important",
         class: "link-btn amber",
         text: m.flagged ? t("Not important") : t("Important"),
         onclick: () => void act(m, m.flagged ? "unflag" : "flag"),
       }),
     );
     if (!isMc) {
-      actions.append(h("button", { class: "link-btn dim", text: t("Junk"), onclick: () => void act(m, "junk") }));
+      actions.append(h("button", { id: "mail-detail-junk", class: "link-btn dim", text: t("Junk"), onclick: () => void act(m, "junk") }));
       // ⋯: Always important (VIP), Always ignore this sender.
-      const more = h("div", { class: "mail-more-menu" });
-      const dots = h("button", { class: "link-btn dim mail-dots", text: "⋯" });
+      const more = h("div", { class: menuOpen ? "mail-more-menu on" : "mail-more-menu" });
+      const dots = h("button", { id: "mail-detail-more", class: "link-btn dim mail-dots", text: "⋯" });
       dots.addEventListener("click", () => more.classList.toggle("on"));
       more.append(
-        h("button", { text: t("Always important (VIP)"), onclick: () => void act(m, "vip") }),
-        h("button", { text: t("Always ignore this sender"), onclick: () => void act(m, "ignore") }),
+        h("button", { id: "mail-detail-vip", text: t("Always important (VIP)"), onclick: () => void act(m, "vip") }),
+        h("button", { id: "mail-detail-ignore", text: t("Always ignore this sender"), onclick: () => void act(m, "ignore") }),
       );
       actions.append(h("span", { class: "mail-dots-wrap" }, dots, more));
     }
@@ -389,6 +420,7 @@ export function buildMailCard(host: MailCardHost): MailCard {
       ? h(
           "button",
           {
+            id: "mail-detail-clear",
             class: "mail-clear-btn detail",
             title: "Limpar notificação de não lidos do notch",
             "aria-label": "Limpar notificação de não lidos do notch",
@@ -409,12 +441,21 @@ export function buildMailCard(host: MailCardHost): MailCard {
     ];
     if (clearDetailBtn) headChildren.push(clearDetailBtn);
     headChildren.push(h("span", { class: "int-ago", text: timeAgo(m.date) }));
+    const subject = h("div", { class: "mail-detail-subject", tabindex: "-1", role: "heading", "aria-level": "2", text: m.subject || "Sem assunto" });
+    const body = h("div", { class: "mail-detail-text" }, h("div", { ...(preview ? {} : { role: "status" }), text }));
+    if (preview === undefined) {
+      body.append(h("button", { id: "mail-detail-retry", class: "link-btn mail-retry", text: "Tentar novamente", onclick: () => loadPreview(m) }));
+    }
     detailView.append(
       h("div", { class: "mail-detail-head" }, ...headChildren),
-      h("div", { class: "mail-detail-subject", text: m.subject || " " }),
-      h("div", { class: "mail-detail-text", text }),
+      subject,
+      body,
       actions,
     );
+    if (restoreFocus) {
+      const replacement = focusedId ? detailView.querySelector<HTMLElement>(`#${focusedId}`) : null;
+      (replacement ?? subject).focus();
+    }
   }
 
   function sync() {

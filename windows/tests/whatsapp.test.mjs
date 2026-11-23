@@ -4,7 +4,7 @@
 
 import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { emit, sent } from "./tauri.mjs";
+import { emit, internals, sent } from "./tauri.mjs";
 import { installFakeDom } from "./fakedom.mjs";
 import {
   DEFAULT_URLS, IDLE_WHATSAPP, WHATSAPP_ID, WhatsApp, canSend, duration, initials, installError, installFailure, installStepLabel,
@@ -250,7 +250,7 @@ test("linked: one row per conversation, the unread count, or nothing new", () =>
   assert.match(rows[1].textContent, /Paul: <b>@33612345678<\/b> tu viens \?/);
 });
 
-test("limpa os não lidos por clique mesmo com o link desconectado", () => {
+test("limpa os não lidos por clique mesmo com o link desconectado", async () => {
   const c = card();
   const before = sent("whatsapp_mark_all_read").length;
   const sendCount = sent("whatsapp_send").length;
@@ -260,6 +260,8 @@ test("limpa os não lidos por clique mesmo com o link desconectado", () => {
   c.el.find(".wa-mark-read")[0].fire("click");
   assert.equal(sent("whatsapp_mark_all_read").length, before + 1);
   assert.equal(sent("whatsapp_send").length, sendCount);
+  await new Promise(setImmediate);
+  assert.match(c.el.find(".wa-read-status")[0].textContent, /marcadas como lidas no Lumen/);
 
   emit("whatsapp", { ...WhatsApp.view, unread: 0 });
   c.sync();
@@ -275,6 +277,23 @@ test("a right-click offers to ignore the chat, and only a click does it", () => 
   assert.equal(sent("whatsapp_ignore").length, 0);
   c.el.find(".wa-ignore")[0].fire("click");
   assert.deepEqual(sent("whatsapp_ignore").at(-1), { chat: "33612345678@s.whatsapp.net" });
+});
+
+test("permite tentar de novo quando a limpeza dos não lidos falha", async ({ mock }) => {
+  const c = card();
+  const invoke = internals.invoke;
+  mock.method(internals, "invoke", async (cmd, args) => {
+    if (cmd === "whatsapp_mark_all_read") throw new Error("falha sintética");
+    return invoke(cmd, args);
+  });
+  WhatsApp.view = connected({ unread: 1, conversations: [conversation()] });
+  c.sync();
+  const button = c.el.find(".wa-mark-read")[0];
+  button.fire("click");
+  await new Promise(setImmediate);
+  assert.match(c.el.find(".wa-read-status")[0].textContent, /Tente novamente/);
+  assert.equal(button.getAttribute("aria-disabled"), "false");
+  assert.equal(WhatsApp.view.unread, 1);
 });
 
 test("a conversation: its messages, a reply sent on Enter only, Escape back to the list", async () => {
@@ -308,6 +327,14 @@ test("a conversation: its messages, a reply sent on Enter only, Escape back to t
   const shifted = key(field, "Enter", true);
   assert.equal(shifted.defaultPrevented, false);
   assert.equal(sends(), start);
+  WhatsApp.view = { ...WhatsApp.view, link: { state: "unreachable" } };
+  c.sync();
+  assert.equal(c.el.find(".wa-send")[0].disabled, true);
+  key(field, "Enter");
+  assert.equal(sends(), start);
+  assert.equal(field.value, "On arrive");
+  WhatsApp.view = { ...WhatsApp.view, link: { state: "connected" } };
+  c.sync();
   const enter = key(field, "Enter");
   assert.equal(enter.defaultPrevented, true);
   await Promise.resolve();
@@ -325,6 +352,7 @@ test("a conversation: its messages, a reply sent on Enter only, Escape back to t
   assert.deepEqual(c.calls.keyboard, [true, false]);
   assert.equal(c.calls.hold.at(-1), false);
   assert.equal(c.el.find(".wa-row").length, 1);
+  assert.equal(document.activeElement, c.el.find(".wa-row")[0]);
 });
 
 test("the conversation closes when WhatsApp is turned off or the island folds", () => {

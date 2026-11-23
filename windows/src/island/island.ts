@@ -38,7 +38,8 @@ import { dominantPct, planColor } from "../core/plan";
 import { language, t, tl } from "../i18n/i18n";
 import { claudeCompactPillVisible, closePlanCard, openPlanColor, planCardOpen } from "../views/usage";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
-import { h } from "../views/dom";
+import { h, svg } from "../views/dom";
+import { ICONS } from "../views/icons";
 import { buildSessionDropList, type SessionDropList } from "../views/session-drop";
 import { DROP_TEXT_RIGHT_WITH_LIST, dropTargetAt, dropTargets } from "../core/launch";
 import { IslandStateMachine } from "./fsm";
@@ -126,6 +127,7 @@ export class Island {
   private compactCenterDot!: HTMLElement;
   private compactCenterNote!: HTMLElement;
   private compactCenterText!: HTMLElement;
+  private compactCenterChevron!: SVGElement;
   private compactCenterAction: CompactCenterAction | null = null;
   private compactTodos: TodoItem[] = [];
   private compactNotice: CompactNotice | null = null;
@@ -430,6 +432,9 @@ export class Island {
     this.compactCenterDot = h("span", { class: "compact-center-dot" });
     this.compactCenterNote = h("span", { class: "compact-center-note", text: "♪" });
     this.compactCenterText = h("span", { class: "compact-center-text" });
+    this.compactCenterChevron = svg(ICONS.chevronRight, 9, { stroke: 2.4 });
+    this.compactCenterChevron.classList.add("compact-center-chevron");
+    this.compactCenterChevron.setAttribute("aria-hidden", "true");
     this.compactCenterEl = h(
       "button",
       {
@@ -446,6 +451,7 @@ export class Island {
       this.compactCenterDot,
       this.compactCenterNote,
       this.compactCenterText,
+      this.compactCenterChevron,
     );
 
     this.header = buildHeader(actions);
@@ -596,13 +602,13 @@ export class Island {
     State.lastActivity = performance.now();
     this.fsm.userInteracted();
     State.planDetailIsCodex = false;
+    State.planDetailIsAgy = false;
     State.showingPlanDetail = true;
     this.fsm.forceHome();
     this.expand("overview");
     State.notify();
   }
 
-    State.planDetailIsAgy = false;
   expand(view: IslandViewName) {
     this.stopSequenceIfLeaving(view);
     if (view !== "overview") closePlanCard();
@@ -2000,18 +2006,25 @@ export class Island {
     this.compactCenterEl.classList.toggle("on", centerItem != null);
     this.compactCenterEl.classList.toggle("urgent", Boolean(centerItem?.urgent));
     this.compactCenterEl.style.pointerEvents = centerItem ? "auto" : "none";
+    this.compactCenterEl.tabIndex = centerItem ? 0 : -1;
+    const opensInbox = centerItem?.kind === "whatsapp" || centerItem?.kind === "mail";
+    this.compactCenterChevron.style.display = opensInbox ? "" : "none";
+    this.compactCenterEl.classList.toggle("opens-inbox", opensInbox);
     if (centerItem) {
       this.compactCenterEl.style.right = otherCount > 0
         ? (hasPlanGauge ? "112px" : "62px")
         : (hasPlanGauge ? "74px" : "20px");
       this.compactCenterText.textContent = centerItem.text;
-      this.compactCenterEl.title = centerItem.text;
+      const inbox = centerItem.kind === "whatsapp" ? "Abrir conversas" : "Abrir caixa de entrada";
+      this.compactCenterEl.title = opensInbox ? `${inbox} · ${centerItem.text}` : centerItem.text;
+      this.compactCenterEl.setAttribute("aria-label", this.compactCenterEl.title);
       this.compactCenterDot.style.display = centerItem.dot ? "" : "none";
       if (centerItem.dot) this.compactCenterDot.style.background = centerItem.dot;
       this.compactCenterNote.style.display = centerItem.note ? "" : "none";
     } else {
       this.compactCenterText.textContent = "";
       this.compactCenterEl.removeAttribute("title");
+      this.compactCenterEl.removeAttribute("aria-label");
     }
 
     if (State.mode === "compact") {

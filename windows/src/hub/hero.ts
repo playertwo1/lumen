@@ -305,6 +305,7 @@ const LUMEN_CAST_AGENTS = [
   "orca",
   "youtube-music",
   "mail",
+  "whatsapp",
   "generic",
 ] as const;
 

@@ -34,6 +34,7 @@ export type LumenCharacter =
   | "orca"
   | "youtube-music"
   | "mail"
+  | "whatsapp"
   | "generic";
 
 type MouthShape = "smile" | "wideSmile" | "frown" | "o" | "flat" | "pant" | "sleep";
@@ -55,6 +56,9 @@ const HERMES_PURPLE: RGB = [0.753, 0.518, 0.988];
 const ORCA_BLUE: RGB = [0.22, 0.439, 0.89];
 const YTM_CRIMSON: RGB = [1, 0, 0.2];
 const MAIL_BLUE: RGB = [0.184, 0.549, 1];
+const WHATSAPP_GREEN: RGB = [0.145, 0.827, 0.4];
+const WHATSAPP_CREAM: RGB = [0.953, 0.906, 0.78];
+const WHATSAPP_INK: RGB = [0.157, 0.137, 0.267];
 const BLUSH: RGB = [0.91, 0.57, 0.63];
 const APPROVAL_AMBER: RGB = [0.984, 0.749, 0.141];
 const ERROR_RED: RGB = [0.937, 0.306, 0.349];
@@ -96,6 +100,8 @@ const AGENT_CHARACTER_MAP: Record<string, LumenCharacter> = {
   "youtube-music": "youtube-music",
   integration_mail: "mail",
   mail: "mail",
+  integration_whatsapp: "whatsapp",
+  whatsapp: "whatsapp",
 };
 
 const CHARACTER_COLOR: Record<LumenCharacter, RGB> = {
@@ -111,6 +117,7 @@ const CHARACTER_COLOR: Record<LumenCharacter, RGB> = {
   orca: ORCA_BLUE,
   "youtube-music": YTM_CRIMSON,
   mail: MAIL_BLUE,
+  whatsapp: WHATSAPP_GREEN,
   generic: SAND,
 };
 
@@ -127,6 +134,7 @@ const CHARACTER_FACE: Record<LumenCharacter, FaceLayout> = {
   orca: { eyeLeftX: 37, eyeRightX: 59, eyeY: 49, mouthX: 48, mouthY: 62 },
   "youtube-music": { eyeLeftX: 38, eyeRightX: 58, eyeY: 46, mouthX: 48, mouthY: 59 },
   mail: { eyeLeftX: 37, eyeRightX: 59, eyeY: 54, mouthX: 48, mouthY: 66 },
+  whatsapp: { eyeLeftX: 32, eyeRightX: 54, eyeY: 49, mouthX: 43, mouthY: 67 },
   generic: { eyeLeftX: 38, eyeRightX: 58, eyeY: 44, mouthX: 48, mouthY: 57 },
 };
 
@@ -294,13 +302,13 @@ function paintOutlinedShape(
   ctx.stroke();
 }
 
-function curve(ctx: CanvasRenderingContext2D, x1: number, y1: number, cx: number, cy: number, x2: number, y2: number, width = 3) {
+function curve(ctx: CanvasRenderingContext2D, x1: number, y1: number, cx: number, cy: number, x2: number, y2: number, width = 3, color = INK) {
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.quadraticCurveTo(cx, cy, x2, y2);
   ctx.lineWidth = width;
   ctx.lineCap = "round";
-  ctx.strokeStyle = rgbCss(INK);
+  ctx.strokeStyle = rgbCss(color);
   ctx.stroke();
 }
 
@@ -1407,6 +1415,9 @@ export class CompassEngine {
       case "mail":
         this.drawMail(ctx, fill);
         break;
+      case "whatsapp":
+        this.drawWhatsApp(ctx, fill, lagX, lagY);
+        break;
       case "generic":
         this.drawGeneric(ctx, fill);
         break;
@@ -1756,6 +1767,53 @@ export class CompassEngine {
     paintOutlinedShape(ctx, SAND);
   }
 
+  private drawWhatsApp(ctx: CanvasRenderingContext2D, fill: RGB, lagX = 0, lagY = 0) {
+    const bx = lagX * 0.9;
+    const by = lagY * 0.9;
+
+    // Balão traseiro de resposta em creme (#F3E7C7) no topo-direito com cauda saliente à direita
+    ctx.beginPath();
+    ctx.moveTo(46 + bx, 9 + by);
+    ctx.lineTo(75 + bx, 9 + by);
+    ctx.arcTo(87 + bx, 9 + by, 87 + bx, 21 + by, 12);
+    ctx.lineTo(87 + bx, 35 + by);
+    ctx.lineTo(94 + bx, 46 + by);
+    ctx.quadraticCurveTo(85 + bx, 48 + by, 78 + bx, 46 + by);
+    ctx.lineTo(46 + bx, 46 + by);
+    ctx.arcTo(34 + bx, 46 + by, 34 + bx, 34 + by, 12);
+    ctx.lineTo(34 + bx, 21 + by);
+    ctx.arcTo(34 + bx, 9 + by, 46 + bx, 9 + by, 12);
+    ctx.closePath();
+    ctx.fillStyle = rgbCss(WHATSAPP_CREAM);
+    ctx.fill();
+    ctx.strokeStyle = rgbCss(WHATSAPP_INK);
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.stroke();
+
+    // Balão frontal principal em verde WhatsApp (#25D366) com cauda saliente à esquerda embaixo
+    ctx.beginPath();
+    ctx.moveTo(29, 26);
+    ctx.lineTo(56, 26);
+    ctx.arcTo(73, 26, 73, 43, 17);
+    ctx.lineTo(73, 68);
+    ctx.arcTo(73, 85, 56, 85, 17);
+    ctx.lineTo(24, 85);
+    ctx.quadraticCurveTo(13, 88, 4, 86);
+    ctx.quadraticCurveTo(11, 77, 13, 69);
+    ctx.lineTo(13, 43);
+    ctx.arcTo(13, 26, 29, 26, 17);
+    ctx.closePath();
+    ctx.fillStyle = rgbCss(fill);
+    ctx.fill();
+    ctx.strokeStyle = rgbCss(WHATSAPP_INK);
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.stroke();
+  }
+
   private drawGeneric(ctx: CanvasRenderingContext2D, fill: RGB) {
     // Folha de papel A4 em proporção vertical (~1:1,4) com canto superior direito dobrado
     ctx.beginPath();
@@ -1811,6 +1869,8 @@ export class CompassEngine {
   ) {
     const [gx, gy] = gaze;
     const eyeScale = compact ? 1.24 : 1;
+    const ink = this.character === "whatsapp" ? WHATSAPP_INK : INK;
+    const cream = this.character === "whatsapp" ? WHATSAPP_CREAM : SAND;
     for (const side of [-1, 1]) {
       const x = side < 0 ? face.eyeLeftX : face.eyeRightX;
       const y = face.eyeY + gy;
@@ -1822,9 +1882,9 @@ export class CompassEngine {
         ctx.translate(-x, -y);
       }
       if (eye === "heart") { heart(ctx, x, y, 5.4, BLUSH); ctx.restore(); continue; }
-      if (eye === "star") { star(ctx, x, y, 5.3, SAND); ctx.restore(); continue; }
+      if (eye === "star") { star(ctx, x, y, 5.3, cream); ctx.restore(); continue; }
       if (eye === "closed" || eye === "happy" || (sleeping && eye === "pill") || eyeOpen < 0.16) {
-        curve(ctx, x - 5, y, x, y + (eye === "happy" ? -6 : 4), x + 5, y, 3.3);
+        curve(ctx, x - 5, y, x, y + (eye === "happy" ? -6 : 4), x + 5, y, 3.3, ink);
         ctx.restore();
         continue;
       }
@@ -1838,7 +1898,7 @@ export class CompassEngine {
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         }
-        ctx.strokeStyle = rgbCss(INK);
+        ctx.strokeStyle = rgbCss(ink);
         ctx.lineWidth = compact ? 2.2 : 1.8;
         ctx.lineCap = "round";
         ctx.stroke();
@@ -1846,8 +1906,8 @@ export class CompassEngine {
         continue;
       }
       if (eye === "line" || eye === "flat") {
-        curve(ctx, x - 5, y, x, y + (eye === "line" ? 0.5 : 1.5), x + 5, y, 3.3);
-        if (eye === "flat") curve(ctx, x + 5 * side, y - 6.5, x, y - 4.5, x - 4 * side, y - 3, 2.3);
+        curve(ctx, x - 5, y, x, y + (eye === "line" ? 0.5 : 1.5), x + 5, y, 3.3, ink);
+        if (eye === "flat") curve(ctx, x + 5 * side, y - 6.5, x, y - 4.5, x - 4 * side, y - 3, 2.3, ink);
         ctx.restore();
         continue;
       }
@@ -1856,18 +1916,18 @@ export class CompassEngine {
       const ry = baseRy * Math.max(0.2, eyeOpen);
       ctx.beginPath();
       ctx.ellipse(x + gx, y, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fillStyle = rgbCss(INK);
+      ctx.fillStyle = rgbCss(ink);
       ctx.fill();
       if (eye !== "tired") {
         if (eyeOpen > 0.45) {
           ctx.beginPath();
           ctx.arc(x + gx - 2, y - 2.2 * eyeOpen, 1.9, 0, Math.PI * 2);
-          ctx.fillStyle = rgbCss(SAND);
+          ctx.fillStyle = rgbCss(cream);
           ctx.fill();
         }
       } else {
-        curve(ctx, x + 5.5 * side, y - 2.2, x, y - 4, x - 4.5 * side, y - 5.8, 2.5);
-        curve(ctx, x - 4.5, y + 4.8, x, y + 6.3, x + 4.5, y + 4.8, 1.8);
+        curve(ctx, x + 5.5 * side, y - 2.2, x, y - 4, x - 4.5 * side, y - 5.8, 2.5, ink);
+        curve(ctx, x - 4.5, y + 4.8, x, y + 6.3, x + 4.5, y + 4.8, 1.8, ink);
       }
       ctx.restore();
     }
@@ -1877,10 +1937,11 @@ export class CompassEngine {
     const mx = face.mouthX;
     const y = face.mouthY;
     const strokeBoost = compact ? 1.24 : 1;
+    const ink = this.character === "whatsapp" ? WHATSAPP_INK : INK;
     if (this.morph > 0.1 || this.slotH > 0.08) {
       ctx.beginPath();
       ctx.ellipse(mx, y + 2, 7 + 4 * this.morph, 2.5 + this.slotH * 10, 0, 0, Math.PI * 2);
-      ctx.fillStyle = rgbCss(INK);
+      ctx.fillStyle = rgbCss(ink);
       ctx.fill();
       return;
     }
@@ -1888,32 +1949,32 @@ export class CompassEngine {
       const pinch = Math.abs(Math.sin(this.elapsed * 16));
       ctx.beginPath();
       ctx.ellipse(mx, y + 1, 5.5 - pinch * 1.2, 1.5 + pinch * 2.2, 0, 0, Math.PI * 2);
-      ctx.fillStyle = rgbCss(INK);
+      ctx.fillStyle = rgbCss(ink);
       ctx.fill();
       return;
     }
     if (shape === "o" || shape === "sleep") {
       ctx.beginPath();
       ctx.ellipse(mx, y, (shape === "sleep" ? 2.4 : 3.5) * (compact ? 1.15 : 1), (shape === "sleep" ? 2.6 : 4.5) * (compact ? 1.15 : 1), 0, 0, Math.PI * 2);
-      ctx.fillStyle = rgbCss(INK);
+      ctx.fillStyle = rgbCss(ink);
       ctx.fill();
     } else if (shape === "pant") {
       ctx.beginPath();
       ctx.ellipse(mx, y + 1.5, 5.4 * (compact ? 1.12 : 1), 4.1 * (compact ? 1.12 : 1), 0, 0, Math.PI * 2);
-      ctx.fillStyle = rgbCss(INK);
+      ctx.fillStyle = rgbCss(ink);
       ctx.fill();
       ctx.beginPath();
       ctx.ellipse(mx, y + 3.2, 2.8, 1.4, 0, 0, Math.PI * 2);
       ctx.fillStyle = rgbCss(BLUSH);
       ctx.fill();
     } else if (shape === "frown") {
-      curve(ctx, mx - 7, y + 3, mx, y - 4, mx + 7, y + 3, 3.2 * strokeBoost);
+      curve(ctx, mx - 7, y + 3, mx, y - 4, mx + 7, y + 3, 3.2 * strokeBoost, ink);
     } else if (shape === "flat") {
-      curve(ctx, mx - 5, y, mx, y + 0.5, mx + 5, y, 3 * strokeBoost);
+      curve(ctx, mx - 5, y, mx, y + 0.5, mx + 5, y, 3 * strokeBoost, ink);
     } else {
       const half = shape === "wideSmile" ? 10 : 7;
       const depth = shape === "wideSmile" ? 10 : 7;
-      curve(ctx, mx - half, y - 1, mx, y + depth, mx + half, y - 1, (shape === "wideSmile" ? 3.6 : 3.2) * strokeBoost);
+      curve(ctx, mx - half, y - 1, mx, y + depth, mx + half, y - 1, (shape === "wideSmile" ? 3.6 : 3.2) * strokeBoost, ink);
     }
   }
 

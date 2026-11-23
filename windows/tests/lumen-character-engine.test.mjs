@@ -53,6 +53,8 @@ const agents = [
   ["youtube-music", "youtube-music"],
   ["integration_mail", "mail"],
   ["mail", "mail"],
+  ["integration_whatsapp", "whatsapp"],
+  ["whatsapp", "whatsapp"],
   ["agent_cursor", "generic"],
   ["unknown-agent", "generic"],
 ];
@@ -86,7 +88,7 @@ test("desenha todos os estados para todos os personagens a 22/96 px e DPR 1/1,5/
   const canonicalIds = [
     "integration_claude", "agent_claude-desktop", "agent_codex", "ai_openai",
     "agent_antigravity", "agent_gemini", "agent_opencode", "grok", "agent_hermes",
-    "agent_hermes-desktop", "agent_orca", "integration_youtubemusic", "integration_mail", "unknown-agent",
+    "agent_hermes-desktop", "agent_orca", "integration_youtubemusic", "integration_mail", "integration_whatsapp", "unknown-agent",
   ];
   for (const id of canonicalIds) {
     const engine = new BotEngine();
@@ -190,7 +192,7 @@ test("desenha cada emote nos dois tamanhos sem erro para todos os personagens", 
   for (const id of [
     "integration_claude", "agent_claude-desktop", "agent_codex", "ai_openai",
     "agent_antigravity", "agent_gemini", "agent_opencode", "grok", "agent_hermes",
-    "agent_hermes-desktop", "agent_orca", "integration_youtubemusic", "integration_mail", "unknown-agent",
+    "agent_hermes-desktop", "agent_orca", "integration_youtubemusic", "integration_mail", "integration_whatsapp", "unknown-agent",
   ]) {
     const engine = new BotEngine();
     engine.setAgent(id);
@@ -515,7 +517,7 @@ test("particleOverhang centraliza verticalmente e versão mini/compacta desenha 
   for (const agent of [
     "agent_codex", "integration_claude", "agent_claude-desktop",
     "grok", "agent_hermes", "agent_hermes-desktop", "agent_orca",
-    "integration_youtubemusic", "integration_mail",
+    "integration_youtubemusic", "integration_mail", "integration_whatsapp",
   ]) {
     for (const state of ["idle", "working", "thinking", "searching", "approval", "question", "error", "finished", "ratelimit", "sleeping", "dizzy"]) {
       const e = new BotEngine();

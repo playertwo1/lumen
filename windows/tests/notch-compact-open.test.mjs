@@ -168,7 +168,7 @@ test("compactCenter retorna null quando ocioso e respeita prioridades de context
     todos: [makeTodo({ due_time: "15:00" })],
   });
   assert.equal(withMail?.kind, "mail");
-  assert.equal(withMail?.text, "Mail · 3 não lidos");
+  assert.equal(withMail?.text, "E-mail · 3 não lidos");
 
   const withWa = compactCenter({
     ...idle,
@@ -176,7 +176,7 @@ test("compactCenter retorna null quando ocioso e respeita prioridades de context
     whatsapp: { unread: 1, conversations: [{ name: "Ana", unread: 1 }] },
   });
   assert.equal(withWa?.kind, "whatsapp");
-  assert.equal(withWa?.text, "Nova msg · Ana");
+  assert.equal(withWa?.text, "WhatsApp · Ana");
 
   const withNotice = compactCenter({
     ...idle,
@@ -422,9 +422,11 @@ test("faixa de e-mail mantém o clique disponível, abre a lista maior e permite
       subject: "Assunto para abrir", date: Date.now(), unread: true, flagged: false,
     };
     const opened = [];
+    let attempts = 0;
     internals.invoke = async (cmd, args) => {
       if (cmd === "mail_detail") {
         assert.equal(args.message.entryId, message.entryId);
+        if (++attempts === 1) return null;
         return { text: "Corpo da mensagem de teste", attachments: [] };
       }
       if (cmd === "mail_open") opened.push(args);
@@ -439,7 +441,9 @@ test("faixa de e-mail mantém o clique disponível, abre a lista maior e permite
     island.fsm.forcePetit();
     island.syncDom();
     const center = [...root.walk()].find((e) => e.attributes.get("id") === "compact-center");
-    assert.match(center.textContent, /Mail · 1 não lido/);
+    assert.match(center.textContent, /E-mail · 1 não lido/);
+    assert.match(center.getAttribute("aria-label"), /^Abrir caixa de entrada/);
+    assert.equal(center.find(".compact-center-chevron")[0].style.display, "");
     island.onCursor(window.innerWidth / 2, 1);
     mock.timers.tick(500);
     assert.equal(State.mode, "compact");
@@ -448,18 +452,30 @@ test("faixa de e-mail mantém o clique disponível, abre a lista maior e permite
     assert.equal(State.focusId, "integration_mail");
     assert.equal(island.targetSize().h, 260);
     assert.equal(root.find(".mail-focused").length, 1);
-    assert.equal(root.find(".mail-toolbar")[0].textContent, "ResumirRascunho");
+    assert.equal(root.find(".mail-tools")[0].getAttribute("open"), null);
+    assert.match(root.find(".mail-tools")[0].textContent, /Ações da caixa/);
 
     root.find(".mail-row")[0].fire("click");
     assert.equal(root.find(".mail-detail-subject")[0].textContent, message.subject);
+    assert.equal(document.activeElement, root.find(".mail-detail-subject")[0]);
+    await new Promise(setImmediate);
+    assert.equal(document.activeElement, root.find(".mail-detail-subject")[0]);
+    root.find(".mail-retry")[0].fire("click");
     await new Promise(setImmediate);
     assert.equal(root.find(".mail-detail-text")[0].textContent, "Corpo da mensagem de teste");
     assert.deepEqual(opened, []);
     const openInApp = root.find(".link-btn").find((button) => button.textContent === "Abrir no MailCraft");
-    openInApp.fire("click");
+    openInApp.focus();
+    State.dismissMailUnread(1);
+    island.syncDom();
+    const refreshedOpen = root.find(".link-btn").find((button) => button.textContent === "Abrir no MailCraft");
+    assert.notEqual(refreshedOpen, openInApp);
+    assert.equal(document.activeElement, refreshedOpen);
+    refreshedOpen.fire("click");
     assert.deepEqual(opened, [{ message, reply: false }]);
     root.find(".mail-back")[0].fire("click");
     assert.equal(root.find(".detail-open").length, 0);
+    assert.equal(document.activeElement, root.find(".mail-row")[0]);
     State.setFocus(State.mainPillId);
     island.syncDom();
     assert.equal(island.targetSize().h, 160);
@@ -468,6 +484,32 @@ test("faixa de e-mail mantém o clique disponível, abre a lista maior e permite
     island?.fsm.cancelTimers();
     globalThis.requestAnimationFrame = prevRaf;
   }
+});
+
+test("busca do Mail mantém o campo em foco e distingue falha de caixa vazia", async ({ mock }) => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  State.integrations.integration_mail = {
+    data: { running: true, windows: true, backend: "mailcraft", unread: 0, messages: [], shown: 12, maxShown: 60 },
+  };
+  let attempts = 0;
+  internals.invoke = async (cmd) => cmd === "mail_search" && ++attempts > 1 ? [] : null;
+  const card = buildMailCard({ keyboard: () => {} });
+  card.sync();
+  card.el.find(".mail-icon")[0].fire("click");
+  const field = card.el.find(".mail-search")[0];
+  field.value = "fatura";
+  field.focus();
+  for (const fn of field.listeners.get("keydown")) {
+    fn({ key: "Enter", preventDefault() {}, stopPropagation() {} });
+  }
+  await new Promise(setImmediate);
+  assert.equal(document.activeElement, field);
+  assert.match(card.el.find(".mail-rows")[0].textContent, /Não foi possível buscar/);
+  card.el.find(".mail-retry")[0].fire("click");
+  await new Promise(setImmediate);
+  assert.equal(attempts, 2);
+  assert.equal(card.el.find(".mail-retry").length, 0);
+  assert.equal(field.value, "fatura");
 });
 
 test("botão Limpar no card do Mail remove o aviso de 357 não lidos tanto na lista quanto no detalhe e no notch compacto", () => {

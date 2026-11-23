@@ -299,6 +299,21 @@ body {
   color: #ffffff;
 }
 
+#compact-center.opens-inbox:hover .compact-center-text {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+#compact-center.opens-inbox {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.compact-center-chevron {
+  flex: none;
+  color: #c5c8cd;
+}
+
 #compact-center.urgent .compact-center-text {
   color: #fde68a;
 }
@@ -3139,8 +3154,20 @@ input[type="range"]::-webkit-slider-thumb {
   height: 100%;
 }
 
-.wa-unread {
-  font: 600 10px var(--font);
+.wa-list-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wa-list > .int-head,
+.wa-list-body > .int-actions {
+  flex-shrink: 0;
+}
+
+.wa-list .wa-unread {
+  font: 600 10px/1.25 var(--font);
   color: #25d366;
   font-variant-numeric: tabular-nums;
   padding: 1px 6px;
@@ -3169,8 +3196,8 @@ input[type="range"]::-webkit-slider-thumb {
 .wa-rows {
   overflow-y: auto;
   min-height: 0;
-  padding-right: 12px;
-  scrollbar-width: none;
+  padding-right: 6px;
+  scrollbar-width: thin;
 }
 
 .wa-row {
@@ -3180,7 +3207,7 @@ input[type="range"]::-webkit-slider-thumb {
   width: 100%;
   gap: 6px;
   padding: 3px 6px;
-  cursor: default;
+  cursor: pointer;
   flex: 0 0 auto;
 }
 
@@ -3201,13 +3228,29 @@ input[type="range"]::-webkit-slider-thumb {
   flex: 0 1 auto;
 }
 
-.wa-row.unread .wa-row-name {
+.wa-row .wa-row-name,
+.mail-row .mail-name {
+  font: 500 11.5px/1.3 var(--font);
+  color: #c5c8cd;
+}
+
+.wa-row.unread .wa-row-name,
+.mail-row.unread .mail-name {
   font-weight: 600;
   color: #e8e9ec;
 }
 
-.wa-row.unread .wa-preview {
-  color: var(--dim-2);
+.wa-row .wa-preview,
+.mail-row .mail-subject {
+  font: 400 10.5px/1.35 var(--font);
+  color: #a6abb4;
+}
+
+.wa-card .int-ago,
+.mail-card .int-ago {
+  font: 400 10px/1.3 var(--font);
+  font-variant-numeric: tabular-nums;
+  color: #a6abb4;
 }
 
 .wa-spacer {
@@ -3257,7 +3300,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .wa-name {
-  font: 600 11px var(--font);
+  font: 600 12px/1.3 var(--font);
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -3300,7 +3343,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .wa-sender {
-  font: 600 9px var(--font);
+  font: 600 10px/1.3 var(--font);
   color: rgba(37, 211, 102, 0.8);
   white-space: nowrap;
   overflow: hidden;
@@ -3313,7 +3356,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .wa-text {
-  font: 400 10.5px/1.35 var(--font);
+  font: 400 12px/1.45 var(--font);
   color: #c5c8cd;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -3472,6 +3515,29 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   display: none;
 }
 
+.mail-detail,
+.wa-convo {
+  --inbox-entry-x: 5px;
+  animation: inbox-view-enter 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mail-list,
+.wa-list {
+  --inbox-entry-x: -4px;
+  animation: inbox-view-enter 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes inbox-view-enter {
+  from {
+    opacity: 0.84;
+    transform: translateX(var(--inbox-entry-x));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .mail-head {
   padding-right: 26px;
   flex: 0 0 auto;
@@ -3500,8 +3566,60 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   cursor: pointer;
 }
 
-.mail-unread {
-  font: 600 10px var(--font);
+.mail-tools {
+  flex: 0 0 auto;
+  color: #a6abb4;
+  font: 500 11px var(--font);
+}
+
+.mail-tools summary,
+.mail-retry {
+  cursor: pointer;
+}
+
+.mail-tools summary {
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 5px;
+}
+
+.mail-tools summary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+}
+
+.mail-retry {
+  color: var(--ink);
+}
+
+.mail-card :focus-visible,
+.wa-card :focus-visible,
+#compact-center:focus-visible {
+  outline: 2px solid #e99a3d;
+  outline-offset: -2px;
+}
+
+.wa-read-status {
+  flex: 0 0 auto;
+  color: #c5c8cd;
+  font: 500 11px/1.3 var(--font);
+}
+
+.wa-read-status:not(:empty) {
+  padding-top: 4px;
+}
+
+.wa-list-body .wa-mark-read {
+  color: #c5c8cd;
+  cursor: pointer;
+}
+
+.wa-mark-read[aria-disabled="true"] {
+  cursor: progress;
+}
+
+.mail-head .mail-unread {
+  font: 600 10px/1.25 var(--font);
   color: #2f8cff;
   font-variant-numeric: tabular-nums;
   padding: 1px 6px;
@@ -3681,25 +3799,12 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   background: rgba(47, 140, 255, 0.14);
 }
 
-.mail-row.unread .mail-name {
-  font-weight: 600;
-  color: #e8e9ec;
-}
-
-.mail-row.unread .mail-subject {
-  color: #8e939c;
-}
-
 .mail-row-copy {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-}
-
-.mail-row .mail-subject {
-  color: #a6abb4;
 }
 
 .mail-dot {
@@ -3764,11 +3869,14 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
 }
 
 .mail-detail-subject {
-  font: 500 11px/1.3 var(--font);
-  color: #c5c8cd;
-  white-space: nowrap;
+  font: 600 13px/1.3 var(--font);
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
   overflow: hidden;
-  text-overflow: ellipsis;
   flex: 0 0 auto;
 }
 
@@ -3785,6 +3893,9 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
 }
 
 .mail-detail > .mail-detail-text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #c5c8cd;
   max-height: none;
   overflow-wrap: anywhere;
   scrollbar-width: thin;
@@ -3805,7 +3916,16 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
 }
 
 .mail-actions .link-btn.accent {
-  color: rgba(47, 140, 255, 0.9);
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: rgba(47, 140, 255, 0.16);
+  color: #add4ff;
+  font-weight: 600;
+}
+
+.mail-actions .link-btn.accent:hover {
+  background: rgba(47, 140, 255, 0.24);
+  color: #d8ecff;
 }
 
 .mail-actions .link-btn.amber {
@@ -4543,6 +4663,14 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
    through opacity and colour; scale, springs and decorative loops go. The mail
    spinner stays (it says "working"), and .pulse only fades. */
 @media (prefers-reduced-motion: reduce) {
+  .mail-list,
+  .mail-detail,
+  .wa-list,
+  .wa-convo {
+    --inbox-entry-x: 0px;
+    animation-duration: 90ms;
+  }
+
   .view,
   .view.on {
     transform: none;

@@ -119,13 +119,19 @@ class FakeElement {
     node.parentNode = parent;
     this.parentNode = null;
   }
-  /** `.a.b` class selectors only: the first descendant carrying every class. */
+  /** ID or compound class selector. */
   querySelector(selector) {
+    if (selector.startsWith("#")) return [...this.walk()].find((e) => e.id === selector.slice(1)) ?? null;
     const wanted = selector.split(".").filter(Boolean);
     return [...this.walk()].find((e) => wanted.every((c) => e.classList.contains(c))) ?? null;
   }
+  get id() { return this.getAttribute("id") ?? ""; }
+  set id(value) { this.setAttribute("id", value); }
   scrollIntoView() {}
-  focus() {}
+  contains(node) {
+    return node === this || [...this.walk()].includes(node);
+  }
+  focus() { document.activeElement = this; }
   select() {}
   /** Every descendant element, depth first. */
   *walk() {

@@ -54,8 +54,9 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
   // ── The list ──
   const unreadTag = h("span", { class: "wa-unread" });
   const head = h("div", { class: "int-head" }, dot(WHATSAPP_GREEN, 7), h("b", { text: "WhatsApp" }), unreadTag);
-  const listBody = h("div", {});
-  const listView = h("div", { class: "wa-list" }, head, listBody);
+  const listBody = h("div", { class: "wa-list-body" });
+  const readStatus = h("div", { class: "wa-read-status", role: "status", tabindex: "-1" });
+  const listView = h("div", { class: "wa-list" }, head, listBody, readStatus);
 
   // ── The conversation ──
   const back = h("button", { class: "int-back wa-back", title: tl("Back") }, svg(ICONS.chevronLeft, 10, { stroke: 2.4 }));
@@ -63,7 +64,7 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
   const convoName = h("b", { class: "wa-name" });
   const convoHead = h("div", { class: "wa-head" }, back, convoAvatar, convoName);
   const messages = h("div", { class: "wa-messages" });
-  const field = h("textarea", { class: "wa-field", rows: "1", spellcheck: "true" }) as HTMLTextAreaElement;
+  const field = h("textarea", { class: "wa-field", rows: "1", spellcheck: "true", "aria-label": "Responder no WhatsApp" }) as HTMLTextAreaElement;
   const sendBtn = h("button", { class: "wa-send", title: tl("Send") }, svg(ICONS.arrowUp, 12, { fill: "#0B0C0E" }));
   const reply = h("div", { class: "wa-reply" }, field, sendBtn);
   const note = h("div", { class: "wa-note" });
@@ -75,6 +76,7 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
   /** The row whose "Ignore this chat" is showing (a right-click on it). */
   let ignoring: string | null = null;
   let listKey = "";
+  let markingRead = false;
   let convoKey = "";
 
   const current = (): WaConversation | undefined =>
@@ -87,35 +89,41 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
     convoKey = "";
     void Bridge.whatsappOpen(id);
     host.keyboard(true);
-    window.setTimeout(() => field.focus(), 120);
+    window.setTimeout(() => { if (openChat === id) field.focus(); }, 120);
     sync();
   }
 
-  function close() {
-    if (openChat == null) return;
-    void Bridge.whatsappClose(openChat);
+  function close(restoreFocus = false) {
+    const id = openChat;
+    if (id == null) return;
+    void Bridge.whatsappClose(id);
     openChat = null;
     field.value = "";
     host.holdOpen(false);
     host.keyboard(false);
     listKey = "";
     sync();
+    if (restoreFocus) {
+      const rows = listBody.querySelector(".wa-rows")?.children ?? [];
+      const previous = Array.from(rows).find((row) => (row as HTMLElement).dataset.chatId === id) as HTMLElement | undefined;
+      (previous ?? listBody.querySelector<HTMLElement>(".wa-row") ?? listBody.querySelector<HTMLElement>(".wa-settings"))?.focus();
+    }
   }
 
   async function send() {
     const chat = openChat;
     const text = field.value;
-    if (!chat || !canSend(text, WhatsApp.view.sending)) return;
+    if (!chat || WhatsApp.view.link.state !== "connected" || !canSend(text, WhatsApp.view.sending)) return;
     const sent = await Bridge.whatsappSend(chat, text);
     if (sent && openChat === chat && field.value === text) {
       field.value = "";
       host.holdOpen(false);
       syncSendButton();
     }
-    field.focus();
+    if (openChat === chat) field.focus();
   }
 
-  back.addEventListener("click", close);
+  back.addEventListener("click", () => close(true));
   sendBtn.addEventListener("click", () => void send());
   field.addEventListener("input", () => {
     host.holdOpen(field.value.trim().length > 0);
@@ -130,7 +138,7 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
       // Back to the list, not the island folding away.
       e.preventDefault();
       e.stopPropagation();
-      close();
+      close(true);
     }
   });
 
@@ -143,7 +151,7 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
   });
 
   function syncSendButton() {
-    const ok = canSend(field.value, WhatsApp.view.sending);
+    const ok = WhatsApp.view.link.state === "connected" && canSend(field.value, WhatsApp.view.sending);
     sendBtn.classList.toggle("ready", ok);
     sendBtn.disabled = !ok;
     field.disabled = WhatsApp.view.sending;
@@ -156,6 +164,7 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
       h("span", { class: "int-name wa-row-name", text: c.name }),
       h("span", { class: "int-ago", text: timeAgo(c.lastActivity) }),
     );
+    r.dataset.chatId = c.id;
     const last = c.messages[c.messages.length - 1];
     if (ignoring === c.id) {
       r.append(h("span", { class: "wa-spacer" }), h("span", {
@@ -194,6 +203,8 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
     listKey = key;
     unreadTag.textContent = v.unread > 0 ? t("{0} unread", { 0: v.unread }) : "";
     unreadTag.style.display = v.unread > 0 ? "" : "none";
+    const previousButton = listBody.querySelector(".wa-mark-read");
+    const restoreReadFocus = previousButton && document.activeElement === previousButton;
     clear(listBody);
     if (v.link.state !== "connected") {
       listBody.append(
@@ -211,8 +222,28 @@ export function buildWhatsAppCard(host: WhatsAppCardHost): WhatsAppCard {
       listBody.append(h("div", { class: "int-actions" }, h("button", {
         class: "link-btn wa-mark-read",
         text: "Marcar todas como lidas no Lumen",
-        onclick: () => void Bridge.whatsappMarkAllRead(),
+        "aria-disabled": String(markingRead),
+        onclick: async (event: Event) => {
+          if (markingRead) return;
+          markingRead = true;
+          readStatus.textContent = "Marcando mensagens como lidas…";
+          const button = event.currentTarget as HTMLButtonElement | null;
+          button?.setAttribute("aria-disabled", "true");
+          try {
+            await Bridge.whatsappMarkAllRead();
+            readStatus.textContent = "Mensagens marcadas como lidas no Lumen.";
+          } catch {
+            readStatus.textContent = "Não foi possível marcar como lidas. Tente novamente.";
+          } finally {
+            markingRead = false;
+            const currentButton = listBody.querySelector<HTMLButtonElement>(".wa-mark-read");
+            currentButton?.setAttribute("aria-disabled", "false");
+          }
+        },
       })));
+    }
+    if (restoreReadFocus) {
+      (listBody.querySelector<HTMLElement>(".wa-mark-read") ?? readStatus).focus();
     }
   }
 

@@ -161,7 +161,7 @@ export function compactCenter(input: CompactInputs): CompactCenterItem | null {
     let text: string;
     if (unreadConvs.length === 1) {
       const c = unreadConvs[0];
-      text = c.unread > 1 ? `${c.name} (${c.unread})` : `Nova msg · ${c.name}`;
+      text = `WhatsApp · ${c.name}${c.unread > 1 ? ` (${c.unread})` : ""}`;
     } else {
       text = `WhatsApp · ${input.whatsapp.unread} ${input.whatsapp.unread === 1 ? "nova" : "novas"}`;
     }
@@ -178,7 +178,7 @@ export function compactCenter(input: CompactInputs): CompactCenterItem | null {
   if (input.mailUnread > 0) {
     return {
       kind: "mail",
-      text: `Mail · ${input.mailUnread} ${input.mailUnread === 1 ? "não lido" : "não lidos"}`,
+      text: `E-mail · ${input.mailUnread} ${input.mailUnread === 1 ? "não lido" : "não lidos"}`,
       dot: "#38BDF8",
       note: false,
       urgent: false,
