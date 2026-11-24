@@ -3,7 +3,7 @@
 // the field must keep the keyboard focus (mousedown never takes it).
 
 import { svg, h } from "./dom";
-import { FlowBridge } from "../core/flow";
+import { FlowBridge, dictationModel } from "../core/flow";
 import { tl } from "../i18n/i18n";
 
 const MIC = "M12 3.5a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0v-5a3 3 0 0 1 3-3zM6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3.5";
@@ -13,7 +13,7 @@ export function dictateButton(input: HTMLInputElement): HTMLButtonElement {
   const btn = h("button", { class: "dictate-btn", title: tl("Dictation") }, svg(MIC, 13, { stroke: 1.8 })) as HTMLButtonElement;
   btn.hidden = true;
   void FlowBridge.status().then((s) => {
-    btn.hidden = !(s?.prefs.enabled && s.models.parakeet.state === "ready");
+    btn.hidden = !(s?.prefs.enabled && dictationModel(s).state === "ready");
   });
   let active = false;
   let timer = 0;

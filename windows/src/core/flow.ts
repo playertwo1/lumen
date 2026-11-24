@@ -92,6 +92,10 @@ export interface ModelsStatus {
   whisperMb?: number;
 }
 
+/** The model dictation listens with: Whisper when chosen and downloaded, else Parakeet (speech::dictation_ready in Rust). */
+export const dictationModel = (s: Pick<FlowStatus, "prefs" | "models">): ModelState =>
+  s.prefs.speechModel === "whisper" && s.models.whisper?.state === "ready" ? s.models.whisper : s.models.parakeet;
+
 export interface FlowStatus {
   prefs: FlowPrefs;
   models: ModelsStatus;

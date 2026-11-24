@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { comboFromKeys, knownCode } from "../src/hub/keys.ts";
 import { keyLabel } from "../src/hub/ui.ts";
-import { flowKeyId } from "../src/core/flow.ts";
+import { dictationModel, flowKeyId } from "../src/core/flow.ts";
 import { setLanguage } from "../src/i18n/i18n.ts";
 
 test("the keys held become a shortcut: modifiers first, known keys only, four at most", () => {
@@ -30,4 +30,14 @@ test("a key is written the way it is printed", () => {
   assert.equal(flowKeyId({ key: "left_shift", keyCombo: [] }), "left_shift");
   setLanguage("fr");
   assert.equal(keyLabel("left_ctrl"), "Ctrl de gauche");
+});
+
+test("dictation is ready with Whisper chosen and downloaded, even without Parakeet", () => {
+  const ready = { state: "ready" };
+  const missing = { state: "missing" };
+  const s = (speechModel, parakeet, whisper) => ({ prefs: { speechModel }, models: { parakeet, whisper, downloadMb: 0 } });
+  assert.equal(dictationModel(s("whisper", missing, ready)).state, "ready");
+  assert.equal(dictationModel(s("whisper", ready, missing)).state, "ready", "Whisper missing: Parakeet, as in Rust");
+  assert.equal(dictationModel(s("parakeet", missing, ready)).state, "missing", "Parakeet chosen: Whisper doesn't count");
+  assert.equal(dictationModel(s("whisper", missing, undefined)).state, "missing");
 });

@@ -5,7 +5,7 @@
 import { h, clear } from "../../views/dom";
 import { t } from "../../i18n/i18n";
 import { onEvent } from "../../core/bridge";
-import { FlowBridge, type FlowEntry, type FlowStats, flowKeyId } from "../../core/flow";
+import { FlowBridge, type FlowEntry, type FlowStats, dictationModel, flowKeyId } from "../../core/flow";
 import type { HubContext } from "../shell";
 import { emptyState, glowCard } from "../hero";
 import { button, card, icon, iconButton, keyLabel, label, number, row, shortCount, toggle } from "../ui";
@@ -32,7 +32,7 @@ function time(ms: number): string {
 export async function dictationPage(page: HTMLElement, ctx: HubContext) {
   const status = ctx.status;
   const key = keyLabel(status.keys === "wayland" ? "wayland" : flowKeyId(status.prefs), status.platform);
-  const ready = status.prefs.enabled && status.models.parakeet.state === "ready";
+  const ready = status.prefs.enabled && dictationModel(status).state === "ready";
 
   const record = button(t("Record a call"), () => {
     void FlowBridge.startNote().then(() => ctx.navigate("notes"), (err) => alertLine.replaceChildren(String(err)));
@@ -148,6 +148,11 @@ function setup(ctx: HubContext): HTMLElement {
   body.append(row(t("Turn on dictation"), null, toggle(status.prefs.enabled, (on) => {
     void ctx.setPrefs((p) => (p.enabled = on)).then(() => ctx.navigate("dictation"));
   })));
-  body.append(row(t("Parakeet, on your computer"), t("The most accurate, offline, 25 languages. Downloaded once (about {0} MB).", { 0: number(status.models.downloadMb) }), modelsControl(ctx, () => ctx.navigate("dictation"))));
+  // Whisper chosen and downloaded: that is the model in use, so Parakeet is not offered for download here.
+  if (dictationModel(status) === status.models.whisper) {
+    body.append(row("Whisper Large v3 Turbo, no seu computador", "O modelo do ditado, offline. Troque em Ditado → Ajustes → Reconhecimento.", modelsControl(ctx, () => ctx.navigate("dictation"), "whisper")));
+  } else {
+    body.append(row(t("Parakeet, on your computer"), t("The most accurate, offline, 25 languages. Downloaded once (about {0} MB).", { 0: number(status.models.downloadMb) }), modelsControl(ctx, () => ctx.navigate("dictation"))));
+  }
   return glowCard("#FB923C", body);
 }

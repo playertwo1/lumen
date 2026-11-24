@@ -7,7 +7,7 @@ import "./hub.css";
 import { h, clear } from "../views/dom";
 import { LUMEN_WINDOWS, PRODUCT_NAME, t, onLanguageChange } from "../i18n/i18n";
 import { onEvent } from "../core/bridge";
-import { FlowBridge, type FlowPrefs, type FlowStatus, type ModelsStatus, flowKeyId } from "../core/flow";
+import { FlowBridge, type FlowPrefs, type FlowStatus, type ModelsStatus, dictationModel, flowKeyId } from "../core/flow";
 import { hero, liveMochi, setVoiceLevel, setWindowShown } from "./hero";
 import { icon, keyLabel } from "./ui";
 import { searchSettings, type SettingsSearchHit } from "./search";
@@ -161,7 +161,7 @@ export async function startHub(root: HTMLElement, opts: HubOptions) {
 
   function drawStatus() {
     clear(statusLine);
-    const models = status.models.parakeet.state;
+    const models = dictationModel(status).state;
     let color = "#6b7079";
     let text: string;
     if (!status.prefs.enabled) {
