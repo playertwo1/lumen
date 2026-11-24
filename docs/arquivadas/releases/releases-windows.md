@@ -2,6 +2,19 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.24 — botão Excluir ao lado de Abrir nos prioritários do MailCraft
+
+- [x] Pedido do dono em 2026-11-24: adicionar **Excluir** ao lado de **Abrir** nos e-mails prioritários (e demais linhas mantidas) na triagem do MailCraft (`9f84f5cf`) e publicar a release com `.exe`/`.msi` no GitHub.
+- [x] Validações locais: `npx tsc --noEmit`, `npm test` (776/776), `npm run build`, `cargo test --lib --locked` (961 passaram, 10 ignorados), `python scripts/test-whats-new.py windows` (1 item em 1 idioma), `impeccable detect --json --changed` (`[]`).
+- [x] Empacotamento e publicação 100% locais (sem GitHub Actions): build local `npx tauri build && node scripts/pack.mjs` com `CARGO_PROFILE_RELEASE_LTO=thin` e `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4`; varredura do Microsoft Defender em `windows/release/` (`found no threats`); commits [`9f84f5cf`](https://github.com/playertwo1/lumen/commit/9f84f5cf) e [`9f255e3e`](https://github.com/playertwo1/lumen/commit/9f255e3e) + tag [`windows-v0.7.24`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.24) enviados para `origin`; `windows-v0.7.24` e `windows-latest` publicados com instaladores (`-setup.exe`, `.msi`), `lumen.exe` e `lumen-hook.exe`.
+- [x] Digests do GitHub conferidos bit a bit com o SHA-256 local:
+  - `Lumen-Windows-0.7.24-setup.exe` / `Lumen-Windows-setup.exe`: `7a0052f2b1feceaa2461d0067cdae0925110b1505fd7fecf2b7eba638530ecf8`
+  - `Lumen-Windows-0.7.24.msi` / `Lumen-Windows.msi`: `6cb28d9b09879262201971917c7d39678361945ace487766f1f95089915e651c`
+  - `lumen.exe`: `455eb2617c51cb12e5defaab294ba70e6432dbe3ebfe10e23d5e323c29392905`
+  - `lumen-hook.exe`: `2110ad54501dca96202f193627585b2ecaf21d7df75fe863b1a8e07fa9aa23e6`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1` de `0.7.10` para `0.7.24`).
+- [ ] **NOT_RUN:** validação real pelo dono no MailCraft instalado (~54 mensagens em triagem, botão **Excluir** ao lado de **Abrir**, resumo em Markdown) e ditado com Whisper.
+
 ### Windows 0.7.23 — triagem completa e resumo estruturado no MailCraft
 
 - [x] Pedido do dono em 2026-11-24: avançar para a versão nova (`0.7.23`), subir tudo para o Git e publicar os instaladores versionados do Lumen Windows (triagem completa, resumo rápido estruturado e master-detail no MailCraft + correção do ditado com Whisper `6350a1ed`).
