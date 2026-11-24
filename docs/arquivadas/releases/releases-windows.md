@@ -2,6 +2,17 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.22 — comando de voz por atalho
+
+- [x] Pedido do dono em 2026-11-23: publicar uma versão para o comando de voz (Ctrl+Alt+V: "brilho a 20%", "tirar som") funcionar no Lumen instalado, com a pílula mostrando "Estou ouvindo…".
+- [x] Validações locais: `npm test` (774/774), `npm run build`, `cargo test --lib --locked` (958 passaram, 10 ignorados), `python scripts/test-whats-new.py windows`. No modo dev: brilho 50 → 20% e mudo conferido pelo Core Audio, com fala sintética no lugar do microfone; captura de tela da pílula em "Estou ouvindo…".
+- [x] Pré-flight [`45293814513`](https://github.com/playertwo1/lumen/actions/runs/45293814513): upgrades sintéticos MSI e NSIS de 0.7.10 para 0.7.22 preservaram os dados. Artefatos examinados no Microsoft Defender, sem detecção.
+- [x] Publicação pelo workflow [`45297578236`](https://github.com/playertwo1/lumen/actions/runs/45297578236), alteração `efa3520c`, tag [`windows-v0.7.22`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.22). `windows-latest` atualizado com os mesmos arquivos.
+- [x] Instaladores públicos baixados, conferidos com os digests do GitHub e examinados no Microsoft Defender, sem detecção.
+  - EXE: `717d6c384c43d92d09940dee6cf17f1e71c2d69ebd289ef8fe7d93d0457c3755`.
+  - MSI: `f5d76e86b06ab7aec60d4608450cfb0268e86a668e85bb749bbcbffcccce698d`.
+- [ ] **NOT_RUN:** o dono apertar Ctrl+Alt+V no Lumen instalado e falar "brilho a 20%" e "tirar som" no microfone.
+
 ### Windows 0.7.21 — WhatsApp e MailCraft na ilha
 
 - [x] Pedido do dono em 2026-11-23: integrar, publicar o instalador Windows versionado e explicar as mudanças. Inclui mascote do WhatsApp, faixas clicáveis, leitura e recuperação nos cartões e consulta aos limites do Antigravity.

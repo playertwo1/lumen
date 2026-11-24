@@ -1,6 +1,6 @@
 # STATE do fork — ponto de retomada
 
-**Atualizado:** 2026-11-23 · **Última release:** [`windows-v0.7.21`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.21) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (validação do dono)
+**Atualizado:** 2026-11-23 · **Última release:** [`windows-v0.7.22`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.22) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (validação do dono)
 
 Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação. O que cada etapa faz está no [ROADMAP-FORK](ROADMAP-FORK.md); o histórico deste arquivo até a reorganização está em [arquivadas/state/](arquivadas/state/state-ate-2026-11-17.md).
 
@@ -23,7 +23,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 ## Pendências do dono (validação real)
 
 - **WhatsApp e MailCraft na ilha** (`0.7.21`): conferir faixa e mascote do WhatsApp, leitura e abertura da mensagem no MailCraft e o foco ao navegar pelo teclado e com NVDA, usando a versão instalada.
-- **M2b.6 — comando de voz** (`main`, sem release): apertar Ctrl+Alt+V e falar "brilho a 20%" e depois "tirar som" no microfone; a pílula mostra o resultado. A tecla muda em Notch → Atalhos.
+- **M2b.6 — comando de voz** (`0.7.22`): apertar Ctrl+Alt+V e falar "brilho a 20%" e depois "tirar som" no microfone; a pílula mostra o resultado. A tecla muda em Notch → Atalhos.
 - **M2b — botões de comando** (`main`, sem release): passar o mouse na pílula, clicar o raio e testar os 12 botões (mídia, volume, brilho, janelas lado a lado, bloquear tela); conferir se a barra cabe na pílula, inclusive nas bordas esquerda e direita; esconder e reordenar em Ditado → Ajustes e reiniciar o Lumen para ver se a escolha fica.
 
 - **L8.1–L8.6** e o Apagar/Spam da triagem do MailCraft (`0.7.12`): roteiros nos checkpoints da L8.
