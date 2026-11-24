@@ -35,8 +35,12 @@ import { SeasonCache, parseOutfit } from "../mochi/wardrobe";
 import { UploadCanvas } from "../upload/canvas";
 import { USC, UploadSeq, uploadProgressCurve } from "../upload/sequence";
 import { dominantPct, planColor } from "../core/plan";
+import type { PlanProvider, PlanThresholdAlert } from "../core/plan-alerts";
 import { language, t, tl } from "../i18n/i18n";
-import { claudeCompactPillVisible, closePlanCard, openPlanColor, planCardOpen } from "../views/usage";
+import {
+  claudeCompactPillVisible, closePlanCard, openPlanColor, planCardOpen,
+  refreshAgyPlanUsage, refreshCodexPlanUsage,
+} from "../views/usage";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
 import { h, svg } from "../views/dom";
 import { ICONS } from "../views/icons";
@@ -132,6 +136,8 @@ export class Island {
   private compactTodos: TodoItem[] = [];
   private compactNotice: CompactNotice | null = null;
   private compactNoticeTimer: number | null = null;
+  private planAlertQueue: PlanThresholdAlert[] = [];
+  private activePlanAlert: PlanThresholdAlert | null = null;
   private lastCompactW = COMPACT_W;
   private wakeStrip!: HTMLElement;
 
@@ -609,6 +615,42 @@ export class Island {
     State.notify();
   }
 
+  /** Abre o card de uso do provedor (ou foca a pílula correspondente se o medidor estiver desligado). */
+  openPlan(provider: PlanProvider) {
+    Sound.resume();
+    State.lastActivity = performance.now();
+    this.fsm.userInteracted();
+    const s = State.settings;
+    const pillEnabled = provider === "agy"
+      ? s.showAntigravityPlanInNotch
+      : provider === "codex"
+        ? s.showCodexPlanInNotch
+        : s.planRelayInstalled && (s.showPlanInNotch || s.showPlanInCompactIsland);
+
+    if (pillEnabled) {
+      State.planDetailIsCodex = provider === "codex";
+      State.planDetailIsAgy = provider === "agy";
+      State.showingPlanDetail = true;
+      if (provider === "codex") refreshCodexPlanUsage();
+      else if (provider === "agy") refreshAgyPlanUsage();
+      this.fsm.forceHome();
+      this.expand("overview");
+      State.notify();
+      return;
+    }
+
+    const fallbackPill = provider === "codex"
+      ? "agent_codex"
+      : provider === "agy"
+        ? "agent_antigravity"
+        : "integration_claude";
+    if (State.tasks.some((task) => task.id === fallbackPill)) {
+      State.setFocus(fallbackPill);
+    }
+    this.fsm.forceHome();
+    this.expand("overview");
+  }
+
   expand(view: IslandViewName) {
     this.stopSequenceIfLeaving(view);
     if (view !== "overview") closePlanCard();
@@ -819,22 +861,61 @@ export class Island {
     this.ensureRunning();
   }
 
+  pushPlanAlert(alert: PlanThresholdAlert) {
+    if (State.paused) return;
+    if (this.activePlanAlert) {
+      const idx = this.planAlertQueue.findIndex(
+        (x) => x.provider === alert.provider && x.windowKey === alert.windowKey,
+      );
+      if (idx >= 0) this.planAlertQueue[idx] = alert;
+      else this.planAlertQueue.push(alert);
+      return;
+    }
+    this.showPlanAlertNow(alert);
+  }
+
+  private showPlanAlertNow(alert: PlanThresholdAlert) {
+    if (State.paused) return;
+    if (State.mode === "hidden") this.revealSilently();
+    this.pushCompactNotice(
+      alert.islandText,
+      alert.style.color,
+      { kind: "plan", provider: alert.provider },
+      alert.style.ttlMs,
+      alert.style.urgent,
+    );
+    this.activePlanAlert = alert;
+    Sound.play(alert.style.sound);
+    if (alert.style.urgent) this.engine.triggerEmote("surprised", 1.3);
+    this.ensureRunning();
+  }
+
   pushCompactNotice(
     text: string,
     color: string,
     action: CompactCenterAction | null = null,
     ttlMs = 7000,
+    urgent = false,
   ) {
     if (this.compactNoticeTimer != null) window.clearTimeout(this.compactNoticeTimer);
+    this.activePlanAlert = null;
     this.compactNotice = {
       text,
       color,
       expiresAt: Date.now() + ttlMs,
+      urgent,
       action,
     };
     this.compactNoticeTimer = window.setTimeout(() => {
       this.compactNoticeTimer = null;
       this.compactNotice = null;
+      const hadPlanAlert = this.activePlanAlert != null;
+      this.activePlanAlert = null;
+      if (hadPlanAlert && this.planAlertQueue.length > 0) {
+        const next = this.planAlertQueue.shift()!;
+        this.showPlanAlertNow(next);
+        return;
+      }
       this.dirty = true;
       if (State.mode === "compact") this.animateGeometry(true);
       this.ensureRunning();
@@ -1166,6 +1247,9 @@ export class Island {
         this.fsm.forceHome();
         this.expand("overview");
         break;
+      case "plan":
+        this.openPlan(action.provider);
+        break;
       case "music": {
         const musicTask = State.tasks.find((t) => MUSIC_IDS.includes(t.id));
         if (musicTask) State.setFocus(musicTask.id);
@@ -1223,6 +1307,16 @@ export class Island {
     this.ensureRunning();
   }
 
+  private positionCompactCenter(hh = this.height.value) {
+    if (this.compactCenterEl.classList.contains("notice-tint") && hh >= 28) {
+      this.compactCenterEl.style.height = "24px";
+      this.compactCenterEl.style.top = `${Math.round((hh - 24) / 2)}px`;
+    } else {
+      this.compactCenterEl.style.height = `${hh}px`;
+      this.compactCenterEl.style.top = "0px";
+    }
+  }
+
   private applyGeometry() {
     const w = this.width.value;
     const hh = this.height.value;
@@ -1238,7 +1332,7 @@ export class Island {
     this.miniGrid.style.left = `${w - 40 - 14.5}px`;
     this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
     this.clockEl.style.height = `${hh}px`;
-    this.compactCenterEl.style.height = `${hh}px`;
+    this.positionCompactCenter(hh);
     this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
     this.uploadCanvas.el.style.left = `${(w - EXPANDED_W) / 2}px`;
 
@@ -2003,8 +2097,16 @@ export class Island {
   ): CompactCenterItem | null {
     const centerItem = State.mode === "compact" ? this.getCompactCenterItem(now) : null;
     this.compactCenterAction = centerItem?.action ?? null;
+    const isPlanNotice = centerItem?.kind === "notice" && centerItem.action?.kind === "plan" && centerItem.dot != null;
     this.compactCenterEl.classList.toggle("on", centerItem != null);
     this.compactCenterEl.classList.toggle("urgent", Boolean(centerItem?.urgent));
+    this.compactCenterEl.classList.toggle("notice-tint", isPlanNotice);
+    if (isPlanNotice && centerItem?.dot) {
+      this.compactCenterEl.style.setProperty?.("--notice-color", centerItem.dot);
+    } else if (typeof this.compactCenterEl.style.removeProperty === "function") {
+      this.compactCenterEl.style.removeProperty("--notice-color");
+    }
+    this.positionCompactCenter();
     this.compactCenterEl.style.pointerEvents = centerItem ? "auto" : "none";
     this.compactCenterEl.tabIndex = centerItem ? 0 : -1;
     const opensInbox = centerItem?.kind === "whatsapp" || centerItem?.kind === "mail";
@@ -2016,7 +2118,11 @@ export class Island {
         : (hasPlanGauge ? "74px" : "20px");
       this.compactCenterText.textContent = centerItem.text;
       const inbox = centerItem.kind === "whatsapp" ? "Abrir conversas" : "Abrir caixa de entrada";
-      this.compactCenterEl.title = opensInbox ? `${inbox} · ${centerItem.text}` : centerItem.text;
+      this.compactCenterEl.title = opensInbox
+        ? `${inbox} · ${centerItem.text}`
+        : isPlanNotice
+          ? `Abrir detalhes de uso · ${centerItem.text}`
+          : centerItem.text;
       this.compactCenterEl.setAttribute("aria-label", this.compactCenterEl.title);
       this.compactCenterDot.style.display = centerItem.dot ? "" : "none";
       if (centerItem.dot) this.compactCenterDot.style.background = centerItem.dot;

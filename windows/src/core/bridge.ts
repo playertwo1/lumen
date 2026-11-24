@@ -441,6 +441,9 @@ export const Bridge = {
   /** A generic Windows toast is offered only for an accepted hidden-island permission. */
   permissionToast: (requestId: string, sessionId: string, agentId: string, wasHidden: boolean) =>
     call<boolean>("permission_toast_show", { requestId, sessionId, agentId, wasHidden }),
+  /** Windows toast for quota threshold alerts (50/40/30/20/10% remaining). */
+  planAlertToast: (provider: string, windowKey: string, title: string, body: string) =>
+    call<boolean>("plan_alert_toast_show", { provider, windowKey, title, body }),
   /** "The card is up" — until this lands the relay only waits a moment. */
   approvalAck: (requestId: string) => call<void>("approval_ack", { requestId }),
   /** Answers a question Claude Code asked: question text → chosen label. */

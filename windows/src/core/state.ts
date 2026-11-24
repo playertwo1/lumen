@@ -172,6 +172,8 @@ export interface Settings {
   showCodexPlanInNotch: boolean;
   /** Show the Antigravity plan pill in the island's header. */
   showAntigravityPlanInNotch: boolean;
+  /** Notify when 5h or weekly quota reaches 50/40/30/20/10% remaining across Claude, Codex and Antigravity. */
+  planThresholdAlerts: boolean;
   /** Who the chat talks to (see core/providers.ts); picked in the chat view. */
   chatProvider: ProviderId;
   /** The model picked for each provider other than Anthropic, by provider id. */
@@ -244,6 +246,7 @@ export const DEFAULT_SETTINGS: Settings = {
   planRelayInstalled: false,
   showCodexPlanInNotch: false,
   showAntigravityPlanInNotch: false,
+  planThresholdAlerts: true,
   chatProvider: "anthropic",
   chatModels: {},
   chatSubscriptions: {},

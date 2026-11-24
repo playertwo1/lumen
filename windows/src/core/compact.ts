@@ -2,10 +2,12 @@
 // Mantido livre de DOM para facilitar testes determinísticos de prioridade e largura.
 
 import type { TodoItem } from "./tasks";
+import type { PlanProvider } from "./plan-alerts";
 
 export type CompactCenterAction =
   | { kind: "approval" }
   | { kind: "focus"; pillId: string }
+  | { kind: "plan"; provider: PlanProvider }
   | { kind: "task"; taskId: string }
   | { kind: "music" }
   | { kind: "view"; view: "overview" | "taskCapture" };
@@ -14,6 +16,7 @@ export interface CompactNotice {
   text: string;
   color: string;
   expiresAt: number;
+  urgent?: boolean;
   action?: CompactCenterAction | null;
 }
 
@@ -151,7 +154,7 @@ export function compactCenter(input: CompactInputs): CompactCenterItem | null {
       text: input.notice.text.trim(),
       dot: input.notice.color,
       note: false,
-      urgent: false,
+      urgent: Boolean(input.notice.urgent),
       action: input.notice.action ?? null,
     };
   }

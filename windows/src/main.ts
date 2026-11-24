@@ -15,6 +15,8 @@ import { registerCoucoudoro } from "./island/coucoudoro";
 import { registerWhatsAppHandlers } from "./island/whatsapp";
 import { MUSIC_IDS } from "./core/spotify";
 import type { TaskReminderPayload } from "./core/tasks";
+import type { PlanProvider } from "./core/plan-alerts";
+import { registerPlanAlertSink, startPlanAlertPolling } from "./views/usage";
 import { Recap } from "./recap/recap";
 import { Updates } from "./island/update";
 import { WhatsNew } from "./whats-new/controller";
@@ -217,6 +219,11 @@ async function main() {
   await onEvent<{ count?: number; unread?: number }>("mail-inbox-summarized", () => island.mailInboxSummarized());
   await onEvent<MochiRunStatePayload>("mochi-run-state", (payload) => State.applyMochiRunState(payload));
   await onEvent<boolean>("mochi-paused", (on) => State.applyPaused(Boolean(on)));
+  registerPlanAlertSink((alert) => island.pushPlanAlert(alert));
+  startPlanAlertPolling();
+  await onEvent<PlanProvider>("plan-toast-open", (provider) => {
+    if (!State.paused) island.openPlan(provider);
+  });
 
   island.launch();
 

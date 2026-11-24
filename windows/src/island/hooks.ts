@@ -13,7 +13,7 @@ import { pillDefinition } from "../core/pills";
 import { agentColor, agentName, takesCard, validateAgent } from "./agents";
 import type { Island } from "./island";
 import { parseClaudePlan, restorePlanUsage } from "../core/plan";
-import { setClaudePlanUsage, storedClaudePlanUsage } from "../views/usage";
+import { refreshPlanForAgent, setClaudePlanUsage, storedClaudePlanUsage } from "../views/usage";
 import { N_, t } from "../i18n/i18n";
 import { Launch } from "../core/launch";
 import { recordAgentWork } from "../mochi/work-streak";
@@ -651,6 +651,7 @@ function handleHook(island: Island, payload: HookPayload) {
 
     case "Stop": {
       State.updateTask(agentId, "finished");
+      refreshPlanForAgent(agentId);
       // Claude Code puts the turn's answer in the Stop payload itself, so there is
       // no transcript to read (the relay does not even forward its path). Other
       // agents report their last words the same way (Hermes, Codex) or as

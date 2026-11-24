@@ -37,8 +37,10 @@ const AUMID: &str = "fr.louisraille.coucou";
 const AUMID_KEY: &str = "Software\\Classes\\AppUserModelId\\fr.louisraille.coucou";
 const GROUP: &str = "permission";
 const TASK_GROUP: &str = "task";
+const PLAN_GROUP: &str = "plan_quota";
 const TOAST_LIFETIME: Duration = Duration::from_secs(30);
 const TASK_TOAST_LIFETIME: Duration = Duration::from_secs(60 * 60 * 12);
+const PLAN_TOAST_LIFETIME: Duration = Duration::from_secs(60 * 60 * 6);
 const CLSID: GUID = GUID::from_u128(0x5a0c5efa_c98f_4fa4_a337_012f9685bed3);
 const CLSID_TEXT: &str = "{5A0C5EFA-C98F-4FA4-A337-012F9685BED3}";
 
@@ -71,6 +73,13 @@ struct TaskActionEntry {
     expires_at: Instant,
 }
 
+#[derive(Clone)]
+struct PlanAlertEntry {
+    provider: String,
+    window_key: String,
+    expires_at: Instant,
+}
+
 enum Command {
     Show {
         request_id: String,
@@ -85,6 +94,12 @@ enum Command {
         subtitle: String,
     },
     ClearTask(String),
+    ShowPlanAlert {
+        provider: String,
+        window_key: String,
+        title: String,
+        body: String,
+    },
     Activate {
         app_id: String,
         args: String,
@@ -172,6 +187,31 @@ pub fn clear_task_reminder(toasts: &PermissionToasts, task_id: &str) {
     let _ = toasts.tx.send(Command::ClearTask(task_id.to_owned()));
 }
 
+pub fn show_plan_alert(
+    toasts: &PermissionToasts,
+    provider: String,
+    window_key: String,
+    title: String,
+    body: String,
+) -> bool {
+    if !toasts.is_available()
+        || provider.trim().is_empty()
+        || window_key.trim().is_empty()
+        || title.trim().is_empty()
+    {
+        return false;
+    }
+    toasts
+        .tx
+        .send(Command::ShowPlanAlert {
+            provider,
+            window_key,
+            title,
+            body,
+        })
+        .is_ok()
+}
+
 pub fn clear(toasts: &PermissionToasts, request_id: &str) {
     let _ = toasts.tx.send(Command::Clear(request_id.to_owned()));
 }
@@ -206,6 +246,7 @@ fn run(
     available.store(true, Ordering::Relaxed);
     let mut active: HashMap<String, Action> = HashMap::new();
     let mut active_tasks: HashMap<String, TaskActionEntry> = HashMap::new();
+    let mut active_plans: HashMap<String, PlanAlertEntry> = HashMap::new();
 
     let stopped = loop {
         match rx.recv_timeout(Duration::from_secs(1)) {
@@ -267,8 +308,41 @@ fn run(
                     remove_task_toast(&mut active_tasks, &token);
                 }
             }
+            Ok(Command::ShowPlanAlert {
+                provider,
+                window_key,
+                title,
+                body,
+            }) => {
+                // Substitui qualquer toast anterior da mesma janela/provedor na Central de Ações.
+                let stale: Vec<_> = active_plans
+                    .iter()
+                    .filter(|(_, entry)| entry.provider == provider && entry.window_key == window_key)
+                    .map(|(token, _)| token.clone())
+                    .collect();
+                for token in stale {
+                    remove_plan_toast(&mut active_plans, &token);
+                }
+                if let Err(err) = show_plan_toast(
+                    &notifier,
+                    &mut active_plans,
+                    provider,
+                    window_key,
+                    &title,
+                    &body,
+                ) {
+                    crate::log::line(format!("plan alert toast could not be shown: {err}"));
+                }
+            }
             Ok(Command::Activate { app_id, args }) => {
-                activate(&app, &mut active, &mut active_tasks, &app_id, &args);
+                activate(
+                    &app,
+                    &mut active,
+                    &mut active_tasks,
+                    &mut active_plans,
+                    &app_id,
+                    &args,
+                );
             }
             Ok(Command::Stop(done)) => break Some(done),
             Err(RecvTimeoutError::Disconnected) => break None,
@@ -291,6 +365,14 @@ fn run(
         for token in expired_tasks {
             remove_task_toast(&mut active_tasks, &token);
         }
+        let expired_plans: Vec<_> = active_plans
+            .iter()
+            .filter(|(_, entry)| entry.expires_at <= Instant::now())
+            .map(|(token, _)| token.clone())
+            .collect();
+        for token in expired_plans {
+            remove_plan_toast(&mut active_plans, &token);
+        }
     };
 
     available.store(false, Ordering::Relaxed);
@@ -299,6 +381,9 @@ fn run(
     }
     for token in active_tasks.keys().cloned().collect::<Vec<_>>() {
         remove_task_toast(&mut active_tasks, &token);
+    }
+    for token in active_plans.keys().cloned().collect::<Vec<_>>() {
+        remove_plan_toast(&mut active_plans, &token);
     }
     drop(registration);
     if let Some(done) = stopped {
@@ -412,10 +497,61 @@ fn show_task_toast(
     Ok(())
 }
 
+fn build_plan_toast_xml(token: &str, title: &str, body: &str) -> String {
+    let title = xml_escape(title);
+    let body = xml_escape(body);
+    format!(
+        r#"<toast launch="plan:{token}:open"><visual><binding template="ToastGeneric"><text>{title}</text><text>{body}</text></binding></visual><audio silent="true"/></toast>"#
+    )
+}
+
+fn show_plan_toast(
+    notifier: &ToastNotifier,
+    active_plans: &mut HashMap<String, PlanAlertEntry>,
+    provider: String,
+    window_key: String,
+    title: &str,
+    body: &str,
+) -> windows::core::Result<()> {
+    let token = format!(
+        "{:08x}{:08x}",
+        std::process::id(),
+        NEXT_TOKEN.fetch_add(1, Ordering::Relaxed)
+    );
+    let xml = build_plan_toast_xml(&token, title, body);
+    let document = XmlDocument::new()?;
+    document.LoadXml(&HSTRING::from(xml))?;
+    let toast = ToastNotification::CreateToastNotification(&document)?;
+    toast.SetTag(&HSTRING::from(&token))?;
+    toast.SetGroup(&HSTRING::from(PLAN_GROUP))?;
+    let expiry = SystemTime::now() + PLAN_TOAST_LIFETIME;
+    let date = DateTime {
+        UniversalTime: (expiry
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            / 100) as i64
+            + 116_444_736_000_000_000,
+    };
+    toast
+        .SetExpirationTime(&PropertyValue::CreateDateTime(date)?.cast::<IReference<DateTime>>()?)?;
+    notifier.Show(&toast)?;
+    active_plans.insert(
+        token,
+        PlanAlertEntry {
+            provider,
+            window_key,
+            expires_at: Instant::now() + PLAN_TOAST_LIFETIME,
+        },
+    );
+    Ok(())
+}
+
 fn activate(
     app: &AppHandle,
     active: &mut HashMap<String, Action>,
     active_tasks: &mut HashMap<String, TaskActionEntry>,
+    active_plans: &mut HashMap<String, PlanAlertEntry>,
     app_id: &str,
     args: &str,
 ) {
@@ -427,6 +563,18 @@ fn activate(
         remove_task_history(token);
         if entry.expires_at > Instant::now() {
             crate::tasks::handle_toast_action(app, &entry.task_id, task_action);
+        }
+        return;
+    }
+
+    if let Some(token) = parse_plan_activation(app_id, args) {
+        let Some(entry) = active_plans.remove(token) else {
+            remove_plan_history(token);
+            return;
+        };
+        remove_plan_history(token);
+        if entry.expires_at > Instant::now() {
+            let _ = app.emit_to("island", "plan-toast-open", &entry.provider);
         }
         return;
     }
@@ -494,6 +642,18 @@ fn parse_task_activation<'a>(app_id: &str, args: &'a str) -> Option<(&'a str, Ta
     Some((token, kind))
 }
 
+fn parse_plan_activation<'a>(app_id: &str, args: &'a str) -> Option<&'a str> {
+    if app_id != AUMID {
+        return None;
+    }
+    let rest = args.strip_prefix("plan:")?;
+    let (token, action) = rest.split_once(':')?;
+    if action != "open" || token.len() != 16 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(token)
+}
+
 fn remove_toast(active: &mut HashMap<String, Action>, token: &str) {
     active.remove(token);
     remove_history(token);
@@ -502,6 +662,11 @@ fn remove_toast(active: &mut HashMap<String, Action>, token: &str) {
 fn remove_task_toast(active_tasks: &mut HashMap<String, TaskActionEntry>, token: &str) {
     active_tasks.remove(token);
     remove_task_history(token);
+}
+
+fn remove_plan_toast(active_plans: &mut HashMap<String, PlanAlertEntry>, token: &str) {
+    active_plans.remove(token);
+    remove_plan_history(token);
 }
 
 fn remove_history(token: &str) {
@@ -519,6 +684,16 @@ fn remove_task_history(token: &str) {
         history.RemoveGroupedTagWithId(
             &HSTRING::from(token),
             &HSTRING::from(TASK_GROUP),
+            &HSTRING::from(AUMID),
+        )
+    });
+}
+
+fn remove_plan_history(token: &str) {
+    let _ = ToastNotificationManager::History().and_then(|history| {
+        history.RemoveGroupedTagWithId(
+            &HSTRING::from(token),
+            &HSTRING::from(PLAN_GROUP),
             &HSTRING::from(AUMID),
         )
     });
@@ -818,6 +993,27 @@ mod tests {
         );
         assert_eq!(
             parse_task_activation("other.app", &format!("task:{token}:open")),
+            None
+        );
+    }
+
+    #[test]
+    fn plan_toast_xml_and_activation_parse_open() {
+        let token = "abcdef1200000009";
+        let xml = build_plan_toast_xml(token, "Lumen · Cota em <20%>", "Codex 5h & Semana");
+        assert!(xml.contains(r#"launch="plan:abcdef1200000009:open""#));
+        assert!(xml.contains("Lumen · Cota em &lt;20%&gt;"));
+        assert!(xml.contains("Codex 5h &amp; Semana"));
+        assert_eq!(
+            parse_plan_activation(AUMID, &format!("plan:{token}:open")),
+            Some(token)
+        );
+        assert_eq!(
+            parse_plan_activation(AUMID, &format!("plan:{token}:deny")),
+            None
+        );
+        assert_eq!(
+            parse_plan_activation("other.app", &format!("plan:{token}:open")),
             None
         );
     }

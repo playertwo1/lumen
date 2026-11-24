@@ -44,6 +44,8 @@ pub struct Settings {
     /// Show the Antigravity plan pill (5 h / weekly limits from `agy /usage`).
     /// Off by default; nothing is installed for it.
     pub show_antigravity_plan_in_notch: bool,
+    /// Notify when 5h or weekly quota reaches 50/40/30/20/10% remaining across Claude, Codex and Antigravity.
+    pub plan_threshold_alerts: bool,
     /// Who the chat talks to: "anthropic", a cloud provider of
     /// openai_compat.rs ("openai", "google", "openrouter"), or a model server
     /// of local_chat.rs ("ollama", "lmstudio", "custom"). Picked in the chat view.
@@ -180,6 +182,7 @@ impl Default for Settings {
             plan_relay_installed: false,
             show_codex_plan_in_notch: false,
             show_antigravity_plan_in_notch: false,
+            plan_threshold_alerts: true,
             chat_provider: crate::chat::ANTHROPIC.into(),
             chat_models: BTreeMap::new(),
             chat_subscriptions: BTreeMap::new(),
@@ -487,6 +490,7 @@ mod tests {
   "planRelayInstalled": true,
   "showCodexPlanInNotch": true,
   "showAntigravityPlanInNotch": true,
+  "planThresholdAlerts": false,
   "chatProvider": "ollama",
   "chatModels": { "ollama": "llama3.2", "openai": "gpt-x" },
   "chatSubscriptions": { "google": true, "anthropic": false },
@@ -1027,6 +1031,7 @@ mod tests {
                 "planRelayInstalled",
                 "showCodexPlanInNotch",
                 "showAntigravityPlanInNotch",
+                "planThresholdAlerts",
                 "chatProvider",
                 "chatModels",
                 "chatSubscriptions",

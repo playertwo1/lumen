@@ -15,6 +15,15 @@ import {
   effectivePct, parseAgyPlan, parseCodexPlan, pillLabel, planColor, resetLabel,
   type CodexPlanUsage, type PlanUsage, type PlanWindow,
 } from "../core/plan";
+import {
+  PlanThresholdTracker,
+  quotaThresholdForRemaining,
+  quotaThresholdStyle,
+  remainingPctForWindow,
+  restorePlanAlertState,
+  type PlanProvider,
+  type PlanThresholdAlert,
+} from "../core/plan-alerts";
 import { State } from "../core/state";
 import { clear, dot, h, svg } from "./dom";
 import { ICONS } from "./icons";
@@ -66,6 +75,86 @@ export function closePlanCard(): void {
   State.showingPlanDetail = false;
 }
 
+// ── Avisos progressivos de cota (50%, 40%, 30%, 20%, 10% restantes) ───────────
+
+const ALERT_STORE_KEY = "lumen.planThresholdAlerts.v1";
+const BACKGROUND_POLL_MS = 180_000;
+
+let alertTracker: PlanThresholdTracker | null = null;
+let alertSink: ((alert: PlanThresholdAlert) => void) | null = null;
+let pollTimer: number | null = null;
+
+function readStoredAlertState(): string | null {
+  try {
+    return typeof window !== "undefined" ? (window.localStorage?.getItem(ALERT_STORE_KEY) ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredAlertState(tracker: PlanThresholdTracker): void {
+  try {
+    if (typeof window !== "undefined") {
+      window.localStorage?.setItem(ALERT_STORE_KEY, JSON.stringify(tracker.snapshot()));
+    }
+  } catch {
+    // Armazenamento indisponível ou cheio: mantém em memória durante a sessão.
+  }
+}
+
+function getTracker(): PlanThresholdTracker {
+  if (!alertTracker) {
+    alertTracker = new PlanThresholdTracker(restorePlanAlertState(readStoredAlertState()));
+  }
+  return alertTracker;
+}
+
+export function registerPlanAlertSink(sink: ((alert: PlanThresholdAlert) => void) | null): void {
+  alertSink = sink;
+}
+
+export function resetPlanAlertTrackerForTests(): void {
+  alertTracker = new PlanThresholdTracker();
+}
+
+export function evaluateAndDispatchPlanAlerts(
+  provider: PlanProvider,
+  usage: PlanUsage | null | undefined,
+  now = Date.now(),
+): PlanThresholdAlert[] {
+  if (!State.settings.planThresholdAlerts || State.paused || !usage) return [];
+  const tracker = getTracker();
+  const alerts = tracker.evaluate(provider, usage, now);
+  if (alerts.length === 0) return [];
+  writeStoredAlertState(tracker);
+  for (const alert of alerts) {
+    alertSink?.(alert);
+    void Bridge.planAlertToast(alert.provider, alert.windowKey, alert.toastTitle, alert.toastBody);
+  }
+  return alerts;
+}
+
+/**
+ * Atualiza Codex e Antigravity em segundo plano quando os avisos e os medidores estiverem ativos.
+ * Um turno finalizado via hook (`Stop`) também aciona a leitura pelo `refreshPlanForAgent`.
+ */
+export function startPlanAlertPolling(): void {
+  if (typeof window === "undefined" || pollTimer != null) return;
+  const tick = () => {
+    if (State.paused || !State.settings.planThresholdAlerts) return;
+    if (State.settings.showCodexPlanInNotch) refreshCodexPlanUsage();
+    if (State.settings.showAntigravityPlanInNotch) refreshAgyPlanUsage();
+  };
+  window.setTimeout(tick, 5000);
+  pollTimer = window.setInterval(tick, BACKGROUND_POLL_MS);
+}
+
+export function refreshPlanForAgent(agentId: string): void {
+  if (State.paused || !State.settings.planThresholdAlerts) return;
+  if (agentId === "agent_codex") refreshCodexPlanUsage();
+  else if (agentId === "agent_antigravity") refreshAgyPlanUsage();
+}
+
 // ── Claude numbers ────────────────────────────────────────────────────────────
 
 const STORE_KEY = "coucou.claudePlanUsage";
@@ -82,6 +171,7 @@ export function setClaudePlanUsage(usage: PlanUsage): void {
       // Storage off or full: the numbers just will not outlive this run.
     }
   }
+  evaluateAndDispatchPlanAlerts("claude", usage);
   // The relay calls in with every Claude Code update: a hidden island is only
   // woken when the numbers actually moved.
   if (!same || State.mode === "expanded") State.notify();
@@ -101,9 +191,9 @@ export function storedClaudePlanUsage(): string | null {
 let codexInFlight = false;
 
 /**
- * Asks Codex again when the numbers are missing or older than a minute. Only
- * from the pill (shown or clicked), never on a timer, and never while paused:
- * `codex app-server` talks to Codex's own service.
+ * Asks Codex again when the numbers are missing or older than a minute.
+ * Called from the pill, the background quota monitor, or Codex turn completion,
+ * and never while paused: `codex app-server` talks to Codex's own service.
  */
 export function refreshCodexPlanUsage(): void {
   if (codexInFlight || State.paused || !codexIsStale(State.codexPlanUsage)) return;
@@ -113,6 +203,7 @@ export function refreshCodexPlanUsage(): void {
       const usage = parseCodexPlan(result);
       if (usage) {
         State.codexPlanUsage = usage;
+        evaluateAndDispatchPlanAlerts("codex", usage);
         State.notify();
       }
     })
@@ -125,7 +216,7 @@ export function refreshCodexPlanUsage(): void {
 
 let agyInFlight = false;
 
-/** Same rules as Codex's: only from the pill, stale answers only, never while paused. */
+/** Same rules as Codex's: stale answers only, never while paused. */
 export function refreshAgyPlanUsage(): void {
   if (agyInFlight || State.paused || !codexIsStale(State.agyPlanUsage)) return;
   agyInFlight = true;
@@ -134,6 +225,7 @@ export function refreshAgyPlanUsage(): void {
       const usage = parseAgyPlan(result);
       if (usage) {
         State.agyPlanUsage = usage;
+        evaluateAndDispatchPlanAlerts("agy", usage);
         State.notify();
       }
     })
@@ -195,9 +287,13 @@ function gaugeRow(label: string, w: PlanWindow | undefined, weekly: boolean, now
     return row;
   }
   const pct = effectivePct(w, now);
+  const remaining = remainingPctForWindow(w, now);
+  const threshold = quotaThresholdForRemaining(remaining);
+  const barColor = threshold ? quotaThresholdStyle(threshold).color : planColor(pct);
   const fill = h("i", { class: "plan-fill" });
   fill.style.width = `${pct}%`;
-  fill.style.background = planColor(pct);
+  fill.style.background = barColor;
+  row.title = `Restam ${Math.round(remaining)}% antes de zerar`;
   row.append(
     h("span", { class: "plan-bar" }, fill),
     h("span", { class: "plan-pct", text: `${Math.round(pct)}%` }),

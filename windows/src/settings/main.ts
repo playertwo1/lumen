@@ -376,6 +376,17 @@ function planSection(status: HookStatus): HTMLElement {
           void save();
         }),
       ),
+      h("div", {
+        class: "hint",
+        text: "Avisa na ilha e no Windows quando a janela de 5h ou semanal de Claude, Codex ou Antigravity chegar a 50%, 40%, 30%, 20% e 10% restantes.",
+      }),
+      h("div", { class: "row" },
+        h("label", { text: "Avisar nos limites de cota (50% a 10% restantes)" }),
+        toggle(settings.planThresholdAlerts, (on) => {
+          settings.planThresholdAlerts = on;
+          void save();
+        }),
+      ),
     );
   }
 

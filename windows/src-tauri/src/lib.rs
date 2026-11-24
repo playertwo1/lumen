@@ -728,6 +728,18 @@ fn permission_toast_show(
     permission_notifications::show(&app, &toasts, request_id, session_id, agent_id, was_hidden)
 }
 
+#[cfg(windows)]
+#[tauri::command]
+fn plan_alert_toast_show(
+    toasts: State<'_, permission_notifications::PermissionToasts>,
+    provider: String,
+    window_key: String,
+    title: String,
+    body: String,
+) -> bool {
+    permission_notifications::show_plan_alert(&toasts, provider, window_key, title, body)
+}
+
 /// An option picked on the island for a question Claude Code asked.
 #[tauri::command]
 fn approval_answer(
@@ -1246,6 +1258,8 @@ pub fn run() {
             approval_decision,
             #[cfg(windows)]
             permission_toast_show,
+            #[cfg(windows)]
+            plan_alert_toast_show,
             approval_answer,
             approval_ack,
             approval_decline,

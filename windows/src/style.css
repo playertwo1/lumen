@@ -318,6 +318,50 @@ body {
   color: #fde68a;
 }
 
+#compact-center.notice-tint {
+  height: 24px;
+  top: 6px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--notice-color, #94a3b8) 44%, transparent);
+  background: color-mix(in srgb, var(--notice-color, #94a3b8) 14%, #0e0f11);
+  color: #f8fafc;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+}
+
+#compact-center.notice-tint:hover {
+  border-color: color-mix(in srgb, var(--notice-color, #94a3b8) 72%, transparent);
+  background: color-mix(in srgb, var(--notice-color, #94a3b8) 20%, #0e0f11);
+}
+
+#compact-center.notice-tint .compact-center-text,
+#compact-center.notice-tint.urgent .compact-center-text {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+#compact-center.notice-tint.urgent {
+  border-color: color-mix(in srgb, var(--notice-color, #F4505E) 68%, transparent);
+  background: color-mix(in srgb, var(--notice-color, #F4505E) 19%, #0e0f11);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--notice-color, #F4505E) 22%, transparent);
+  animation: plan-notice-pulse 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes plan-notice-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--notice-color, #F4505E) 18%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 14px color-mix(in srgb, var(--notice-color, #F4505E) 38%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #compact-center.notice-tint.urgent {
+    animation: none;
+  }
+}
+
 #compact-center .compact-center-dot {
   flex: 0 0 auto;
   width: 6px;
