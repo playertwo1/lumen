@@ -297,6 +297,22 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
   await flush();
   assert.ok(called.some((c) => c.cmd === "mail_open" && c.args.reply === false));
 
+  // Nos e-mails prioritários, "Excluir" fica ao lado de "Abrir" e também pede confirmação em dois cliques.
+  const priorityDelete = () =>
+    page.find("button").find((b) => b.getAttribute("aria-label") === "Excluir (vai para Excluídos): Conta de luz de novembro");
+  const deletesBeforePriority = deleteCalls().length;
+  priorityDelete().fire("click");
+  await flush();
+  assert.equal(deleteCalls().length, deletesBeforePriority);
+  assert.equal(priorityDelete().textContent, "Excluir?");
+  priorityDelete().fire("click");
+  await flush();
+  assert.equal(deleteCalls().length, deletesBeforePriority + 1);
+  assert.equal(deleteCalls().at(-1).args.message.entryId, "1");
+  page.find("button").find((b) => b.textContent === "Desfazer").fire("click");
+  await flush();
+  assert.match(page.textContent, /Conta de luz de novembro/);
+
   // "Apagar os N": só com o filtro "recomendo apagar", pede confirmação e move só os recomendados.
   assert.ok(!page.find("button").some((b) => /^Apagar os/.test(b.textContent)));
   tile("recomendo apagar").fire("click");

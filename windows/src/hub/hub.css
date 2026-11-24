@@ -5289,7 +5289,7 @@ button.hub-icon.tasks-cal-close {
 }
 
 .mail-triage-actions .hub-btn.danger {
-  min-width: 78px; /* "Apagar?" não desloca a linha */
+  min-width: 82px; /* "Apagar?" / "Excluir?" não desloca a linha */
 }
 
 .mail-triage-actions .hub-btn.is-armed {

@@ -752,17 +752,17 @@ function mailCraftTriageCard(initial: ClassifiedMail[], opts: TriageCardOptions 
           open.title = "Abrir no MailCraft";
           return open;
         };
-        const mkDelete = () =>
-          actionButton("Apagar", () => MailBridge.actChecked(m, "delete"), {
-            confirm: "Apagar?",
+        const mkDelete = (labelText: "Apagar" | "Excluir" = "Apagar") =>
+          actionButton(labelText, () => MailBridge.actChecked(m, "delete"), {
+            confirm: `${labelText}?`,
             removeRow: gone("Excluídos"),
             kind: "danger",
-            label: `Apagar (vai para Excluídos): ${m.subject}`,
+            label: `${labelText} (vai para Excluídos): ${m.subject}`,
           });
 
-        const primaryAction = deletes ? mkDelete() : mkOpen();
+        const rowButtons = deletes ? [mkDelete("Apagar")] : [mkOpen(), mkDelete("Excluir")];
 
-        // Menu secundário acessível ("⋯"): substitui o overlay de hover com 2 controles em repouso.
+        // Menu secundário acessível ("⋯"): ações complementares sem poluir a linha em repouso.
         const menuBtn = h(
           "button",
           {
@@ -849,16 +849,6 @@ function mailCraftTriageCard(initial: ClassifiedMail[], opts: TriageCardOptions 
                 .catch(showError),
             );
           }
-          if (!deletes) {
-            addMenuItem(
-              "Apagar (Excluídos)",
-              () =>
-                MailBridge.actChecked(m, "delete")
-                  .then(() => gone("Excluídos")())
-                  .catch(showError),
-              "danger",
-            );
-          }
         };
 
         menuBtn.addEventListener("click", (e) => {
@@ -887,7 +877,7 @@ function mailCraftTriageCard(initial: ClassifiedMail[], opts: TriageCardOptions 
           (menu.querySelector(".mail-row-menu-item") as HTMLButtonElement | null)?.focus();
         });
 
-        const actions = h("div", { class: "mail-triage-actions" }, primaryAction, menuWrap);
+        const actions = h("div", { class: "mail-triage-actions" }, ...rowButtons, menuWrap);
         const badge = item.recommend === "ler" ? h("span", { class: "mail-rule-outcome accent", text: "Ler" }) : null;
         row.style.setProperty("--i", String(Math.min(rowIdx++, 8)));
         row.append(
