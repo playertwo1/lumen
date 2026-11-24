@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows 0.7.23 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Triagem completa no MailCraft:** leitura em lote via uma única conexão, classificação pela IA em lotes de até 25 mensagens (teto de 200 por chamada) com recuperação de JSON truncado e cache compartilhado entre Triagem e Resumo rápido.
+- **Resumo rápido e layout Master-Detail:** o resumo agora renderiza títulos, listas e negrito em Markdown seguro com horário de geração; a página traz barra compacta de conexão no topo, filtros com "todas" e grupos recolhíveis de Promoções/Spam com "Limpar grupo (N)", menu secundário "⋯" por linha e rascunho de resposta (`replyToId`) sem envio automático.
+- **Ditado com Whisper:** a barra lateral, a página Ditado e o botão de ditar respeitam o modelo Whisper selecionado quando já estiver baixado, sem pedir para baixar o Parakeet.
+
 ## Windows 0.7.22 — 23 de novembro de 2026
 
 - Comando de voz por atalho: aperte Ctrl+Alt+V e fale "brilho a 20%" para ajustar o brilho, ou "tirar som" e "volta o som" para silenciar e reativar o áudio. A fala é transcrita no computador, sem IA e sem internet, e passa pelas mesmas permissões dos botões de comando. A tecla muda em Notch → Atalhos.

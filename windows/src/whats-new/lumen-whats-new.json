@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.23",
+      "items": [
+        {
+          "icon": "eye",
+          "title": { "pt-BR": "Triagem do MailCraft em toda a caixa" },
+          "detail": { "pt-BR": "Analisa todas as mensagens em lotes, com filtros por prioridade e grupos de baixo sinal recolhidos." }
+        },
+        {
+          "icon": "sparkles",
+          "title": { "pt-BR": "Resumo rápido com formatação clara" },
+          "detail": { "pt-BR": "Seções e listas organizadas com horário de geração, além de rascunho de resposta pelo menu da linha." }
+        },
+        {
+          "icon": "mic",
+          "title": { "pt-BR": "Ditado com Whisper sem baixar Parakeet" },
+          "detail": { "pt-BR": "O botão e a aba Ditado agora respeitam a escolha do Whisper quando o modelo já estiver baixado." }
+        }
+      ]
+    },
+    {
       "version": "0.7.22",
       "items": [
         {
