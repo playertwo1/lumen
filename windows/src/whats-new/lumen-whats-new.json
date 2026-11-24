@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.7.22",
+      "items": [
+        {
+          "icon": "mic",
+          "title": { "pt-BR": "Comando de voz" },
+          "detail": { "pt-BR": "Aperte Ctrl+Alt+V e diga \"brilho a 20%\" ou \"tirar som\"." }
+        },
+        {
+          "icon": "eye",
+          "title": { "pt-BR": "Pílula mostra que ouve" },
+          "detail": { "pt-BR": "\"Estou ouvindo…\" e os pontinhos seguem a sua voz." }
+        }
+      ]
+    },
+    {
       "version": "0.7.21",
       "items": [
         {

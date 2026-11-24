@@ -1,5 +1,10 @@
 # Changelog
 
+## Windows 0.7.22 — 23 de novembro de 2026
+
+- Comando de voz por atalho: aperte Ctrl+Alt+V e fale "brilho a 20%" para ajustar o brilho, ou "tirar som" e "volta o som" para silenciar e reativar o áudio. A fala é transcrita no computador, sem IA e sem internet, e passa pelas mesmas permissões dos botões de comando. A tecla muda em Notch → Atalhos.
+- Enquanto escuta, a pílula mostra "Estou ouvindo…" e os pontinhos acompanham o microfone.
+
 ## Windows 0.7.21 — 23 de novembro de 2026
 
 - WhatsApp ganhou personagem próprio e uma faixa que abre a lista de conversas. A faixa exige conexão ativa, e o cartão permite marcar mensagens como lidas no Lumen.
