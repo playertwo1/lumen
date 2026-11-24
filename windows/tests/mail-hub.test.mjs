@@ -23,12 +23,13 @@ registerHooks({
 });
 
 document.addEventListener = () => {};
+document.removeEventListener ??= () => {};
 window.addEventListener ??= () => {};
 document.documentElement = { lang: "pt-BR" };
 document.visibilityState = "hidden";
 globalThis.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
 
-const { mailOverviewPage, mailRulesPage, mailBannedPage, mailVIPPage } = await import("../src/hub/pages/mail.ts");
+const { mailOverviewPage, mailRulesPage, mailBannedPage, mailVIPPage, renderSummaryBody } = await import("../src/hub/pages/mail.ts");
 const flush = () => new Promise((resolve) => setTimeout(resolve, 10));
 const originalInvoke = internals.invoke;
 
@@ -39,6 +40,24 @@ function makeCtx(navigated = []) {
     navigate: (id) => navigated.push(id),
   };
 }
+
+test("renderSummaryBody converte Markdown com segurança sem links clicáveis", () => {
+  const host = root();
+  renderSummaryBody(
+    host,
+    "## Prioridades\n\n1. Pagar **fatura** com [link suspeito](https://exemplo.invalid)\n• Conferir `protocolo`",
+    ["2 mensagens sem corpo detalhado."],
+  );
+  assert.equal(host.find("h3").length, 1);
+  assert.equal(host.find("strong").length, 1);
+  assert.equal(host.find("ol").length, 1);
+  assert.equal(host.find("ul").length, 1);
+  assert.equal(host.find("code").length, 1);
+  assert.equal(host.find("a").length, 0);
+  assert.match(host.textContent, /Prioridades/);
+  assert.match(host.textContent, /Pagar fatura com link suspeito/);
+  assert.match(host.textContent, /2 mensagens sem corpo detalhado\./);
+});
 
 test("mailOverviewPage preserva âncora mail.autosort, testa conexão, resume caixa e salva rascunho sem enviar", async (t) => {
   t.after(() => {
@@ -87,8 +106,13 @@ test("mailOverviewPage preserva âncora mail.autosort, testa conexão, resume ca
 
   page.find("button").find((b) => b.textContent === "Resumir caixa agora").fire("click");
   await flush();
-  assert.match(page.textContent, /4 mensagens · 1 não lidas · mailcraft/);
+  assert.match(page.textContent, /4 mensagens · 1 não lidas · .+ · mailcraft/);
   assert.match(page.textContent, /Retornar contrato\./);
+
+  // Validação impede rascunho vazio; preencher e salvar não envia.
+  page.find("button").find((b) => b.textContent === "Salvar rascunho (sem enviar)").fire("click");
+  await flush();
+  assert.match(page.textContent, /Preencha o destinatário, o assunto, a mensagem/);
 
   const inputs = page.find("input");
   const toInput = inputs.find((i) => i.getAttribute("aria-label") === "Destinatário do rascunho");
@@ -102,6 +126,11 @@ test("mailOverviewPage preserva âncora mail.autosort, testa conexão, resume ca
   await flush();
   assert.match(page.textContent, /Rascunho salvo sem envio\./);
   assert.ok(!called.some((c) => c.cmd.includes("send") || c.cmd === "mail_plan_start"));
+
+  page.find("button").find((b) => b.textContent === "Limpar").fire("click");
+  assert.equal(toInput.value, "");
+  assert.equal(subjInput.value, "");
+  assert.equal(bodyInput.value, "");
 });
 
 test("Visão geral abre o MailCraft com o canal de controle e mostra sucesso ou erro perto do botão", async (t) => {
@@ -134,7 +163,7 @@ test("Visão geral abre o MailCraft com o canal de controle e mostra sucesso ou 
 
   const page = root();
   await mailOverviewPage(page, makeCtx());
-  const statusLine = () => page.find("div").find((el) => el.getAttribute("role") === "status" && el.textContent.includes("MailCraft"));
+  const statusLine = () => page.find(".mail-status-line").find((el) => el.getAttribute("role") === "status" && el.textContent.includes("MailCraft"));
 
   page.find("button").find((b) => b.textContent === "Abrir MailCraft").fire("click");
   await flush();
@@ -172,12 +201,16 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
     if (cmd === "mail_classify") {
       return {
         note: null,
+        totalReported: 254,
         items: [
           { message: msg("1", "Energia", "Conta de luz de novembro"), category: "conta", recommend: "manter", reason: "Fatura com vencimento" },
           { message: msg("2", "Streaming", "Sua assinatura será renovada"), category: "assinatura", recommend: "ler", reason: "Renovação" },
           { message: msg("3", "Loja", "50% off"), category: "promocao", recommend: "apagar", reason: "Oferta" },
         ],
       };
+    }
+    if (cmd === "mail_prepare_draft") {
+      return { saved: true, provider: "mailcraft", composeId: 9, openedWindow: true, note: "Rascunho de resposta salvo." };
     }
     return undefined;
   };
@@ -191,16 +224,22 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
   await flush();
   assert.match(page.textContent, /Contas a pagar/);
   assert.match(page.textContent, /Renovações de assinatura/);
-  assert.match(page.textContent, /3 mensagens classificadas/);
+  assert.match(page.textContent, /3 mensagens classificadas\. \(3 de 254 na caixa — limite de 200\)/);
   // Com resultado, a explicação vira uma linha; "Saiba mais" mostra o texto inteiro.
   assert.match(page.textContent, /Só recomenda: nada sai da caixa sem o seu clique/);
-  assert.doesNotMatch(page.textContent, /Seus VIPs, palavras proibidas/);
+  assert.doesNotMatch(page.textContent, /até 200 mensagens/);
   page.find("button").find((b) => b.textContent === "Saiba mais").fire("click");
-  assert.match(page.textContent, /Seus VIPs, palavras proibidas/);
+  assert.match(page.textContent, /até 200 mensagens/);
   page.find("button").find((b) => b.textContent === "Menos").fire("click");
   assert.match(page.textContent, /2prioritários/);
-  // Contas e renovações não oferecem "Importante": já estão no topo.
-  assert.equal(page.find("button").filter((b) => b.textContent === "Importante").length, 1);
+
+  // Promoções inicia recolhida na visão "todas"; expandir mostra o item e o menu secundário "⋯".
+  const promoToggle = page.find("button").find((b) => b.classList.contains("mail-triage-group-toggle") && b.textContent.includes("Promoções"));
+  assert.equal(promoToggle.getAttribute("aria-expanded"), "false");
+  assert.doesNotMatch(page.textContent, /50% off/);
+  promoToggle.fire("click");
+  await flush();
+  assert.match(page.textContent, /50% off/);
 
   // Os números filtram: "recomendo apagar" mostra só a promoção; "Mostrar tudo" volta.
   const tile = (caption) => page.find("button").find((b) => b.textContent.endsWith(caption));
@@ -214,15 +253,26 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
   assert.match(page.textContent, /Contas a pagar/);
   assert.equal(tile("recomendo apagar").getAttribute("aria-pressed"), "false");
 
-  page.find("button").find((b) => b.textContent === "Importante").fire("click");
+  // Menu "⋯" oferece "Marcar como importante" e "Responder em rascunho" sem sujar a linha em repouso.
+  page.find("button").find((b) => b.getAttribute("aria-label") === "Mais ações para 50% off").fire("click");
+  page.find("button").find((b) => b.textContent === "Marcar como importante").fire("click");
   await flush();
   assert.ok(called.some((c) => c.cmd === "mail_act" && c.args.kind === "flag" && c.args.message.entryId === "3"));
   assert.ok(!called.some((c) => /send|delete/.test(c.cmd)));
 
+  // Responder em rascunho preenche Para/Assunto e envia replyToId.
+  page.find("button").find((b) => b.getAttribute("aria-label") === "Mais ações para Conta de luz de novembro").fire("click");
+  page.find("button").find((b) => b.textContent === "Responder em rascunho").fire("click");
+  assert.match(page.textContent, /Em resposta a: Conta de luz de novembro/);
+  page.find("textarea")[0].value = "Confirmando pagamento.";
+  page.find("button").find((b) => b.textContent === "Salvar rascunho (sem enviar)").fire("click");
+  await flush();
+  assert.ok(called.some((c) => c.cmd === "mail_prepare_draft" && c.args.replyToId === "1"));
+
   // Apagar pede confirmação: o primeiro clique não faz nada, o segundo move para Excluídos.
-  const apagar = () => page.find("button").filter((b) => /^Apagar/.test(b.textContent))[0];
+  const apagar = () => page.find("button").filter((b) => /^Apagar\b/.test(b.textContent) && !b.classList.contains("mail-bulk-delete") && !b.classList.contains("mail-group-clear"))[0];
   const deleteCalls = () => called.filter((c) => c.cmd === "mail_act" && c.args.kind === "delete");
-  const before = page.find("button").filter((b) => /^Apagar/.test(b.textContent)).length;
+  const before = page.find("button").filter((b) => /^Apagar\b/.test(b.textContent) && !b.classList.contains("mail-group-clear")).length;
   apagar().fire("click");
   await flush();
   assert.equal(deleteCalls().length, 0);
@@ -230,7 +280,7 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
   apagar().fire("click");
   await flush();
   assert.equal(deleteCalls().length, 1);
-  assert.equal(page.find("button").filter((b) => /^Apagar/.test(b.textContent)).length, before - 1);
+  assert.equal(page.find("button").filter((b) => /^Apagar\b/.test(b.textContent) && !b.classList.contains("mail-group-clear")).length, before - 1);
   assert.ok(!called.some((c) => c.args?.kind === "deletePermanently"));
 
   // "Desfazer" devolve a mensagem para a Entrada e para a lista.
@@ -240,7 +290,7 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
   await flush();
   assert.ok(called.some((c) => c.cmd === "mail_act" && c.args.kind === "undelete" && c.args.message.entryId === deletedId));
   assert.match(page.textContent, /De volta à Entrada/);
-  assert.equal(page.find("button").filter((b) => /^Apagar/.test(b.textContent)).length, before);
+  assert.equal(page.find("button").filter((b) => /^Apagar\b/.test(b.textContent) && !b.classList.contains("mail-group-clear")).length, before);
 
   // "Abrir" mostra a mensagem no MailCraft, sem mexer na caixa.
   page.find("button").find((b) => b.textContent === "Abrir").fire("click");
@@ -264,10 +314,24 @@ test("Triagem do MailCraft substitui o cartão do Outlook, agrupa e recomenda se
   assert.equal(deleteCalls().length, deletesBefore + 1);
   assert.equal(deleteCalls().at(-1).args.message.entryId, "3");
   assert.match(page.textContent, /1 mensagem movida para Excluídos/);
+  const undeletesBefore = called.filter((c) => c.cmd === "mail_act" && c.args.kind === "undelete" && c.args.message.entryId === "3").length;
   page.find("button").find((b) => b.textContent === "Desfazer").fire("click");
   await flush();
-  assert.equal(called.filter((c) => c.cmd === "mail_act" && c.args.kind === "undelete" && c.args.message.entryId === "3").length, 1);
+  assert.equal(called.filter((c) => c.cmd === "mail_act" && c.args.kind === "undelete" && c.args.message.entryId === "3").length, undeletesBefore + 1);
   assert.match(page.textContent, /1 mensagem de volta à Entrada/);
+
+  // "Limpar grupo (1)" no cabeçalho de Promoções move o grupo com dois cliques.
+  page.find("button").find((b) => b.textContent === "Mostrar tudo").fire("click");
+  await flush();
+  const groupClear = () => page.find("button").find((b) => /^Limpar grupo|^Apagar 1\?/.test(b.textContent));
+  const deletesBeforeGroup = deleteCalls().length;
+  groupClear().fire("click");
+  assert.match(groupClear().textContent, /Apagar 1\? Clique de novo/);
+  groupClear().fire("click");
+  await flush();
+  await new Promise((r) => setTimeout(r, 400));
+  await flush();
+  assert.equal(deleteCalls().length, deletesBeforeGroup + 1);
 });
 
 test("Triagem: sem o canal de controle, o erro oferece reiniciar o MailCraft com controle", async (t) => {
@@ -301,7 +365,10 @@ test("Triagem: sem o canal de controle, o erro oferece reiniciar o MailCraft com
   await mailOverviewPage(page, makeCtx());
   page.find("button").find((b) => b.textContent === "Fazer triagem").fire("click");
   await flush();
-  page.find("button").find((b) => b.textContent === "Importante").fire("click");
+  page.find("button").find((b) => b.classList.contains("mail-triage-group-toggle") && b.textContent.includes("Promoções")).fire("click");
+  await flush();
+  page.find("button").find((b) => b.getAttribute("aria-label") === "Mais ações para Oferta").fire("click");
+  page.find("button").find((b) => b.textContent === "Marcar como importante").fire("click");
   await flush();
   assert.match(page.textContent, /só para leitura local/);
   const fix = page.find("button").find((b) => b.textContent === "Reiniciar MailCraft com controle");

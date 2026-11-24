@@ -2020,7 +2020,7 @@ button.hub-btn.notes-todo-task:disabled {
   align-self: flex-start;
 }
 
-/* ── MailCraft & Outlook (Etapa 3 Editorial Desktop — Polish) ───────────── */
+/* ── MailCraft & Outlook (Etapa 3 Editorial Desktop — Polish & Typeset) ──── */
 
 .mail-page {
   --mail-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23AAA6A0' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
@@ -2042,14 +2042,137 @@ button.hub-btn.notes-todo-task:disabled {
   border-color: rgba(243, 238, 230, 0.22);
 }
 
+.mail-page .hub-input.is-invalid {
+  border-color: rgba(255, 90, 78, 0.72);
+  box-shadow: 0 0 0 2px rgba(255, 90, 78, 0.18);
+}
+
 .mail-page button.hub-btn:disabled {
-  opacity: 0.56;
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.mail-page button.hub-btn[aria-busy="true"]:disabled {
   cursor: wait;
+}
+
+.mail-config-top {
+  padding: 16px 20px;
+  gap: 10px;
+}
+
+.mail-config-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.mail-config-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mail-config-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mail-advanced-details {
+  border-top: 1px solid var(--hub-line);
+  padding-top: 10px;
+}
+
+.mail-advanced-summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 12.5px/1.3 var(--font);
+  color: var(--hub-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.mail-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.mail-advanced-summary::before {
+  content: "▸";
+  font-size: 11px;
+  color: var(--hub-muted);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mail-advanced-details[open] .mail-advanced-summary::before {
+  transform: rotate(90deg);
+}
+
+.mail-advanced-summary:hover {
+  color: var(--hub-text);
+}
+
+.mail-advanced-summary:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.mail-advanced-endpoint {
+  font: 500 11.5px/1.2 var(--mono);
+  color: var(--hub-muted);
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(243, 238, 230, 0.05);
+  border: 1px solid var(--hub-line);
+}
+
+.mail-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.mail-quick-links {
+  display: flex;
+  align-items: center;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--hub-line);
+}
+
+.mail-quick-link {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: 500 12px/1.3 var(--font);
+  color: var(--hub-secondary);
+  cursor: pointer;
+  transition: color 120ms ease-out;
+}
+
+.mail-quick-link:hover {
+  color: var(--hub-accent);
+}
+
+.mail-quick-link:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .mail-workbench {
   display: grid;
-  grid-template-columns: minmax(0, 1.32fr) minmax(320px, 0.98fr);
+  grid-template-columns: minmax(0, 1.38fr) minmax(320px, 0.96fr);
   gap: 16px;
   align-items: start;
 }
@@ -2069,6 +2192,13 @@ button.hub-btn.notes-todo-task:disabled {
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+}
+
+@media (min-width: 1141px) {
+  .mail-sticky-sidebar {
+    position: sticky;
+    top: 12px;
+  }
 }
 
 .mail-card {
@@ -2160,6 +2290,18 @@ button.hub-btn.notes-todo-task:disabled {
   color: #ffb2ad;
 }
 
+.mail-summary-trigger {
+  border-color: rgba(233, 154, 61, 0.36);
+  background: rgba(233, 154, 61, 0.09);
+  color: #f6c989;
+  font-weight: 600;
+}
+
+.mail-summary-trigger:hover:not(:disabled) {
+  border-color: rgba(233, 154, 61, 0.54);
+  background: rgba(233, 154, 61, 0.16);
+}
+
 .mail-summary-output {
   display: flex;
   flex-direction: column;
@@ -2168,8 +2310,15 @@ button.hub-btn.notes-todo-task:disabled {
   border-top: 1px solid var(--hub-line);
 }
 
-.mail-summary-output.is-empty {
-  display: none;
+.mail-summary-output.is-revealed .mail-summary-body {
+  animation: mail-summary-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes mail-summary-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 .mail-summary-meta {
@@ -2180,14 +2329,45 @@ button.hub-btn.notes-todo-task:disabled {
   letter-spacing: 0.01em;
 }
 
+.mail-summary-output.is-idle .mail-summary-meta {
+  color: var(--hub-muted);
+  font-weight: 500;
+}
+
 .mail-summary-meta.err {
   color: #ffb2ad;
+}
+
+.mail-summary-empty-hint {
+  margin: 0;
+  font: 400 13px/1.55 var(--font);
+  color: var(--hub-muted);
+  max-width: 58ch;
+  text-wrap: pretty;
 }
 
 .mail-summary-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.mail-summary-heading {
+  margin: 8px 0 2px;
+  font: 700 13.5px/1.35 var(--font);
+  letter-spacing: -0.005em;
+  color: var(--hub-text);
+  text-wrap: balance;
+}
+
+.mail-summary-heading:first-child {
+  margin-top: 2px;
+}
+
+.mail-summary-heading.is-sub {
+  font-size: 13px;
+  color: var(--hub-secondary);
+  margin-top: 6px;
 }
 
 .mail-summary-prose {
@@ -2228,6 +2408,63 @@ button.hub-btn.notes-todo-task:disabled {
   background: var(--hub-accent);
 }
 
+.mail-summary-list.is-ordered {
+  list-style: decimal;
+  padding-inline-start: 20px;
+}
+
+.mail-summary-list.is-ordered li {
+  padding-inline-start: 4px;
+}
+
+.mail-summary-list.is-ordered li::before {
+  display: none;
+}
+
+.mail-summary-list.is-ordered li::marker {
+  color: var(--hub-accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mail-summary-inline-code {
+  font: 500 12px/1.35 var(--mono);
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(243, 238, 230, 0.07);
+  border: 1px solid var(--hub-line);
+  color: var(--hub-text);
+}
+
+.mail-summary-code {
+  margin: 4px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--hub-surface);
+  border: 1px solid var(--hub-line);
+  font: 400 12px/1.5 var(--mono);
+  color: var(--hub-body);
+  overflow-x: auto;
+}
+
+.mail-summary-quote {
+  margin: 4px 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(243, 238, 230, 0.035);
+  border: 1px solid var(--hub-line);
+  font: 400 13px/1.55 var(--font);
+  color: var(--hub-secondary);
+  text-wrap: pretty;
+}
+
+.mail-summary-rule {
+  border: 0;
+  height: 1px;
+  background: var(--hub-line);
+  margin: 4px 0;
+}
+
 .mail-summary-warning {
   margin: 2px 0 0;
   padding: 8px 10px;
@@ -2236,6 +2473,30 @@ button.hub-btn.notes-todo-task:disabled {
   border: 1px solid rgba(233, 154, 61, 0.24);
   font-size: 12.5px;
   color: #f8dcb5;
+}
+
+.mail-reply-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--hub-accent-soft);
+  border: 1px solid rgba(233, 154, 61, 0.28);
+  font-size: 12.5px;
+  color: #f6c989;
+}
+
+.mail-reply-chip.is-hidden {
+  display: none;
+}
+
+.mail-reply-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .mail-draft-meta {
@@ -2273,6 +2534,13 @@ button.hub-btn.notes-todo-task:disabled {
   flex-wrap: wrap;
   padding-top: 12px;
   border-top: 1px solid var(--hub-line);
+}
+
+.mail-draft-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .mail-foot-note {
@@ -4703,8 +4971,12 @@ button.hub-icon.tasks-cal-close {
 }
 
 /* ── Triagem do MailCraft ─────────────────────────────────────────────────────
-   Texto à esquerda, ação recomendada à direita; as demais ações aparecem sobre o fim
-   da linha no hover/foco, sem mudar a altura. Os números do topo são filtros. */
+   Master-Detail: 4 filtros no topo (Todas + recortes), grupos colapsáveis para
+   baixo sinal, e 2 controles em repouso por linha com menu acessível "⋯". */
+
+.mail-triage-filters {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 
 .mail-triage-filters .mail-filter-tile {
   appearance: none;
@@ -4737,7 +5009,7 @@ button.hub-icon.tasks-cal-close {
   background: var(--hub-accent);
   transform: scaleX(0);
   transform-origin: left center;
-  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .mail-triage-filters .mail-filter-tile:first-child::after {
@@ -4773,6 +5045,7 @@ button.hub-icon.tasks-cal-close {
 .mail-filter-note {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 12.5px;
   color: var(--hub-secondary);
@@ -4783,15 +5056,12 @@ button.hub-icon.tasks-cal-close {
   display: none;
 }
 
-.mail-filter-note {
-  flex-wrap: wrap;
-}
-
 .mail-filter-note .mail-bulk-delete {
   margin-inline-start: auto;
 }
 
-.mail-filter-note .mail-bulk-delete.is-armed {
+.mail-filter-note .mail-bulk-delete.is-armed,
+.mail-group-clear.is-armed {
   background: rgba(255, 90, 78, 0.22);
   border-color: rgba(255, 90, 78, 0.5);
   color: #ffd2ce;
@@ -4836,13 +5106,68 @@ button.hub-icon.tasks-cal-close {
 }
 
 .mail-triage-results > .mail-triage-group {
-  padding: 18px 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 0 6px;
   border-top: 1px solid var(--hub-line);
 }
 
 .mail-triage-results > .mail-triage-group:first-child {
-  padding-top: 6px;
+  padding-top: 4px;
   border-top: 0;
+}
+
+.mail-triage-group-toggle {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 4px 8px 4px 4px;
+  margin-inline-start: -4px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: inherit;
+  cursor: pointer;
+  text-align: start;
+  transition: background-color 140ms ease-out;
+}
+
+.mail-triage-group-toggle:hover:not(.is-static) {
+  background: rgba(243, 238, 230, 0.05);
+}
+
+.mail-triage-group-toggle:focus-visible {
+  outline: 2px solid var(--hub-accent);
+  outline-offset: 2px;
+}
+
+.mail-triage-group-toggle.is-static {
+  cursor: default;
+  padding-inline-start: 0;
+  margin-inline-start: 0;
+}
+
+.mail-triage-group-toggle svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: var(--hub-secondary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mail-triage-group-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.mail-triage-group-toggle.is-static svg {
+  display: none;
 }
 
 .mail-triage-group .mail-section-title {
@@ -4866,10 +5191,15 @@ button.hub-icon.tasks-cal-close {
   border-top: 0;
   border-radius: 10px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   transition: background-color 150ms ease-out;
-  animation: mail-row-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: calc(var(--i, 0) * 24ms);
+  animation: mail-row-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+
+.mail-triage-row.is-menu-open {
+  z-index: 6;
+  background: var(--mail-row-hover);
 }
 
 .mail-triage-row + .mail-triage-row::before {
@@ -4883,8 +5213,10 @@ button.hub-icon.tasks-cal-close {
 
 .mail-triage-row:hover::before,
 .mail-triage-row:focus-within::before,
+.mail-triage-row.is-menu-open::before,
 .mail-triage-row:hover + .mail-triage-row::before,
-.mail-triage-row:focus-within + .mail-triage-row::before {
+.mail-triage-row:focus-within + .mail-triage-row::before,
+.mail-triage-row.is-menu-open + .mail-triage-row::before {
   opacity: 0;
 }
 
@@ -4893,10 +5225,17 @@ button.hub-icon.tasks-cal-close {
   background: var(--mail-row-hover);
 }
 
+.mail-triage-row:hover .mail-triage-reason,
+.mail-triage-row:focus-within .mail-triage-reason,
+.mail-triage-row.is-menu-open .mail-triage-reason {
+  color: var(--hub-secondary);
+}
+
 .mail-triage-text {
   display: grid;
   gap: 2px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .mail-triage-head {
@@ -4933,6 +5272,7 @@ button.hub-icon.tasks-cal-close {
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
+  transition: color 150ms ease-out;
 }
 
 .mail-triage-actions {
@@ -4940,7 +5280,7 @@ button.hub-icon.tasks-cal-close {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
   min-height: 28px;
 }
 
@@ -4958,32 +5298,78 @@ button.hub-icon.tasks-cal-close {
   color: #ffd2ce;
 }
 
-/* As ações secundárias ficam sobre o fim do texto, com um degradê da cor da linha. */
-.mail-row-more {
+.mail-row-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.mail-row-menu-btn {
+  min-width: 30px;
+  padding: 0 7px;
+}
+
+.mail-row-menu-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.mail-row-menu {
   position: absolute;
-  inset-block: -10px;
-  inset-inline-end: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-inline: 40px 8px;
-  background: linear-gradient(to right, transparent, var(--mail-row-hover) 36px);
-  opacity: 0;
-  transform: translateX(6px);
-  pointer-events: none;
-  transition: opacity 150ms ease-out, transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.mail-triage-actions:not(:has(> .hub-btn)) .mail-row-more {
+  top: calc(100% + 6px);
   inset-inline-end: 0;
-  padding-inline-end: 0;
+  z-index: 20;
+  min-width: 196px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--hub-card);
+  border: 1px solid var(--hub-line-strong);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: mail-menu-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.mail-triage-row:hover .mail-row-more,
-.mail-triage-row:focus-within .mail-row-more {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
+.mail-row-menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  text-align: start;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font: 500 12.5px/1.35 var(--font);
+  color: var(--hub-body);
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.mail-row-menu-item:hover,
+.mail-row-menu-item:focus-visible {
+  background: rgba(243, 238, 230, 0.09);
+  color: var(--hub-text);
+  outline: none;
+}
+
+.mail-row-menu-item.danger {
+  color: #ff9c94;
+}
+
+.mail-row-menu-item.danger:hover,
+.mail-row-menu-item.danger:focus-visible {
+  background: rgba(255, 90, 78, 0.16);
+  color: #ffd2ce;
+}
+
+@keyframes mail-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 /* No lugar da linha apagada: quem saiu e para onde, com "Desfazer". */
@@ -5026,7 +5412,24 @@ button.hub-icon.tasks-cal-close {
   }
 }
 
-/* Coluna estreita: tudo visível, ações embaixo do texto. */
+@media (max-width: 720px) {
+  .mail-triage-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 0;
+  }
+
+  .mail-triage-filters .mail-filter-tile:nth-child(odd) {
+    border-inline-start: 0;
+    padding-inline-start: 0;
+  }
+
+  .mail-triage-filters .mail-filter-tile:nth-child(n + 3) {
+    border-top: 1px solid var(--hub-line);
+    padding-top: 10px;
+  }
+}
+
+/* Coluna estreita: ações embaixo do texto e menu ancorado à esquerda. */
 @container (max-width: 560px) {
   .mail-triage-row {
     grid-template-columns: minmax(0, 1fr);
@@ -5038,26 +5441,24 @@ button.hub-icon.tasks-cal-close {
     flex-wrap: wrap;
   }
 
-  .mail-row-more {
-    position: static;
-    inset: auto;
-    padding: 0;
-    background: none;
-    opacity: 1;
-    transform: none;
-    pointer-events: auto;
-    flex-wrap: wrap;
+  .mail-row-menu {
+    inset-inline-end: auto;
+    inset-inline-start: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mail-triage-row {
+  .mail-triage-row,
+  .mail-row-menu,
+  .mail-undo-row,
+  .mail-summary-output.is-revealed .mail-summary-body {
     animation: none;
   }
 
-  .mail-row-more,
+  .mail-triage-group-toggle svg,
+  .mail-advanced-summary::before,
   .mail-triage-filters .mail-filter-tile::after {
-    transition: opacity 150ms ease-out;
+    transition: none;
     transform: none;
   }
 }

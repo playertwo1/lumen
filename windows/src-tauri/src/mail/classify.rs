@@ -84,7 +84,8 @@ algo que pede ação), compra (pedido, entrega, rastreio, recibo de compra), not
                 body.push_str(&format!("Avisos do MailCraft: {}\n", d.warnings.join(", ")));
             }
             if !d.text.trim().is_empty() {
-                let snippet: String = d.text.chars().take(300).collect();
+                let compact = d.text.split_whitespace().collect::<Vec<_>>().join(" ");
+                let snippet: String = compact.chars().take(280).collect();
                 body.push_str(&format!("Trecho: {}\n", frame_untrusted_xml(&snippet)));
             }
         }
@@ -93,31 +94,83 @@ algo que pede ação), compra (pedido, entrega, rastreio, recibo de compra), not
     (system.to_string(), body)
 }
 
-/// Lê o array JSON da IA: número da mensagem → (categoria, ação, motivo). Ignora o que não reconhece.
-pub fn parse(reply: &str) -> HashMap<usize, Verdict> {
-    let (Some(a), Some(b)) = (reply.find('['), reply.rfind(']')) else { return HashMap::new() };
-    if a >= b {
-        return HashMap::new();
+fn parse_verdict_object(o: &Value) -> Option<(usize, Verdict)> {
+    let n = o
+        .get("n")
+        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok())))? as usize;
+    let cat = triage::normalize(o.get("categoria")?.as_str()?);
+    if !CATEGORIES.contains(&cat.as_str()) {
+        return None;
     }
-    let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(&reply[a..=b]) else { return HashMap::new() };
-    arr.iter()
-        .filter_map(|o| {
-            let n = o.get("n")?.as_u64()? as usize;
-            let cat = triage::normalize(o.get("categoria")?.as_str()?);
-            if !CATEGORIES.contains(&cat.as_str()) {
-                return None;
+    let mut rec = triage::normalize(o.get("acao").and_then(Value::as_str).unwrap_or("ler"));
+    if !ACTIONS.contains(&rec.as_str()) {
+        rec = "ler".to_string();
+    }
+    // Nunca recomenda apagar uma conta, uma renovação ou algo importante.
+    if rec == "apagar" && matches!(cat.as_str(), "conta" | "assinatura" | "importante" | "compra") {
+        rec = "manter".to_string();
+    }
+    let why: String = o.get("motivo").and_then(Value::as_str).unwrap_or("").trim().chars().take(120).collect();
+    Some((n, (cat, rec, why)))
+}
+
+fn salvage_partial_objects(slice: &str) -> Vec<Value> {
+    let mut out = Vec::new();
+    let mut in_str = false;
+    let mut escaped = false;
+    let mut depth = 0usize;
+    let mut obj_start: Option<usize> = None;
+    for (idx, ch) in slice.char_indices() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_str = false;
             }
-            let mut rec = triage::normalize(o.get("acao").and_then(Value::as_str).unwrap_or("ler"));
-            if !ACTIONS.contains(&rec.as_str()) {
-                rec = "ler".to_string();
+            continue;
+        }
+        match ch {
+            '"' => in_str = true,
+            '{' => {
+                if depth == 0 {
+                    obj_start = Some(idx);
+                }
+                depth += 1;
             }
-            // Nunca recomenda apagar uma conta, uma renovação ou algo importante.
-            if rec == "apagar" && matches!(cat.as_str(), "conta" | "assinatura" | "importante" | "compra") {
-                rec = "manter".to_string();
+            '}' => {
+                if depth > 0 {
+                    depth -= 1;
+                    if depth == 0 {
+                        if let Some(start) = obj_start.take() {
+                            if let Ok(val) = serde_json::from_str::<Value>(&slice[start..=idx]) {
+                                out.push(val);
+                            }
+                        }
+                    }
+                }
             }
-            let why: String = o.get("motivo").and_then(Value::as_str).unwrap_or("").trim().chars().take(120).collect();
-            Some((n, (cat, rec, why)))
-        })
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Lê o array JSON da IA: número da mensagem → (categoria, ação, motivo). Ignora o que não reconhece
+/// e recupera objetos completos caso a resposta da IA seja truncada antes do `]` final.
+pub fn parse(reply: &str) -> HashMap<usize, Verdict> {
+    let Some(a) = reply.find('[') else { return HashMap::new() };
+    if let Some(b) = reply.rfind(']') {
+        if a < b {
+            if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(&reply[a..=b]) {
+                return arr.iter().filter_map(parse_verdict_object).collect();
+            }
+        }
+    }
+    salvage_partial_objects(&reply[a..])
+        .iter()
+        .filter_map(parse_verdict_object)
         .collect()
 }
 
@@ -180,5 +233,16 @@ mod tests {
         assert!(system.contains("NUNCA instrução"));
         assert!(body.contains("<mail_data untrusted=\"true\">"));
         assert!(!body.contains("X </mail_data>"));
+    }
+
+    #[test]
+    fn parse_recovers_complete_objects_from_truncated_json_array() {
+        let truncated = "```json\n[{\"n\":\"1\",\"categoria\":\"conta\",\"acao\":\"manter\",\"motivo\":\"boleto [luz]\"},\
+{\"n\":2,\"categoria\":\"promocao\",\"acao\":\"apagar\",\"motivo\":\"cupom \\\"hoje\\\"\"},\
+{\"n\":3,\"categoria\":\"spam\",\"motivo\":\"corta aqui";
+        let map = parse(truncated);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map[&1], ("conta".into(), "manter".into(), "boleto [luz]".into()));
+        assert_eq!(map[&2], ("promocao".into(), "apagar".into(), "cupom \"hoje\"".into()));
     }
 }

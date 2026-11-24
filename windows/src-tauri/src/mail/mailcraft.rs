@@ -919,8 +919,21 @@ pub async fn status_with_key_dir(cfg: &BackendConfig, key_dir: Option<&Path>) ->
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct InboxListing {
+    pub messages: Vec<Message>,
+    pub unread: i64,
+    pub accounts: Vec<(String, String)>,
+    pub total_reported: usize,
+}
+
 pub async fn list_inbox(cfg: &BackendConfig, limit: usize) -> Result<(Vec<Message>, i64, Vec<(String, String)>), String> {
-    list_messages_with_key_dir(cfg, "inbox", "", limit, Filter::All, None).await
+    let listing = list_messages_meta_with_key_dir(cfg, "inbox", "", limit, Filter::All, None).await?;
+    Ok((listing.messages, listing.unread, listing.accounts))
+}
+
+pub async fn list_inbox_with_meta(cfg: &BackendConfig, limit: usize) -> Result<InboxListing, String> {
+    list_messages_meta_with_key_dir(cfg, "inbox", "", limit, Filter::All, None).await
 }
 
 pub async fn search_inbox(cfg: &BackendConfig, raw_query: &str, filter: Filter, limit: usize) -> Result<Vec<Message>, String> {
@@ -964,6 +977,18 @@ pub async fn list_messages_with_key_dir(
     filter: Filter,
     key_dir: Option<&Path>,
 ) -> Result<(Vec<Message>, i64, Vec<(String, String)>), String> {
+    let listing = list_messages_meta_with_key_dir(cfg, folder, query, limit, filter, key_dir).await?;
+    Ok((listing.messages, listing.unread, listing.accounts))
+}
+
+async fn list_messages_meta_with_key_dir(
+    cfg: &BackendConfig,
+    folder: &str,
+    query: &str,
+    limit: usize,
+    filter: Filter,
+    key_dir: Option<&Path>,
+) -> Result<InboxListing, String> {
     let mut tr = Transport::connect(cfg, key_dir).await?;
     let folders_val = tr.execute("folder.list", json!({})).await.ok();
     let accounts = folders_val.as_ref().map(parse_accounts).unwrap_or_default();
@@ -980,6 +1005,7 @@ pub async fn list_messages_with_key_dir(
     };
 
     let mut msgs = Vec::new();
+    let mut total_reported = 0usize;
     if inbox_targets.is_empty() {
         let mut params = json!({
             "folder": folder,
@@ -992,6 +1018,11 @@ pub async fn list_messages_with_key_dir(
         tr.close().await;
         let v = list_val?;
         msgs = parse_messages(&v, &default_label);
+        total_reported = v
+            .get("total")
+            .and_then(Value::as_u64)
+            .map(|n| n as usize)
+            .unwrap_or(msgs.len());
     } else {
         let mut last_err: Option<String> = None;
         let mut any_ok = false;
@@ -1007,7 +1038,14 @@ pub async fn list_messages_with_key_dir(
                 Ok(v) => {
                     any_ok = true;
                     let label = if acc_label.is_empty() { &default_label } else { acc_label };
-                    msgs.extend(parse_messages(&v, label));
+                    let parsed = parse_messages(&v, label);
+                    let folder_total = v
+                        .get("total")
+                        .and_then(Value::as_u64)
+                        .map(|n| n as usize)
+                        .unwrap_or(parsed.len());
+                    total_reported += folder_total.max(parsed.len());
+                    msgs.extend(parsed);
                 }
                 Err(e) => last_err = Some(e),
             }
@@ -1032,27 +1070,15 @@ pub async fn list_messages_with_key_dir(
         .map(sum_inbox_unread)
         .filter(|&u| u >= 0)
         .unwrap_or_else(|| msgs.iter().filter(|m| m.unread).count() as i64);
-    Ok((msgs, unread_from_folders, accounts))
+    Ok(InboxListing {
+        unread: unread_from_folders,
+        total_reported: total_reported.max(msgs.len()),
+        messages: msgs,
+        accounts,
+    })
 }
 
-pub async fn message_detail(cfg: &BackendConfig, id: &str, max_chars: usize) -> Result<DetailData, String> {
-    message_detail_with_key_dir(cfg, id, max_chars, None).await
-}
-
-pub async fn message_detail_with_key_dir(
-    cfg: &BackendConfig,
-    id: &str,
-    max_chars: usize,
-    key_dir: Option<&Path>,
-) -> Result<DetailData, String> {
-    let numeric_id: u64 = id
-        .trim()
-        .parse()
-        .map_err(|_| format!("ID de mensagem MailCraft inválido: `{id}`"))?;
-    let mut tr = Transport::connect(cfg, key_dir).await?;
-    let res = tr.execute("mail.get", json!({ "id": numeric_id })).await;
-    tr.close().await;
-    let v = res?;
+fn parse_detail_value(v: &Value, max_chars: usize) -> DetailData {
     let body = v
         .get("body")
         .and_then(Value::as_str)
@@ -1083,7 +1109,71 @@ pub async fn message_detail_with_key_dir(
                 .collect()
         })
         .unwrap_or_default();
-    Ok(DetailData { text, attachments, warnings })
+    DetailData { text, attachments, warnings }
+}
+
+pub async fn message_detail(cfg: &BackendConfig, id: &str, max_chars: usize) -> Result<DetailData, String> {
+    message_detail_with_key_dir(cfg, id, max_chars, None).await
+}
+
+pub async fn message_detail_with_key_dir(
+    cfg: &BackendConfig,
+    id: &str,
+    max_chars: usize,
+    key_dir: Option<&Path>,
+) -> Result<DetailData, String> {
+    let numeric_id: u64 = id
+        .trim()
+        .parse()
+        .map_err(|_| format!("ID de mensagem MailCraft inválido: `{id}`"))?;
+    let mut tr = Transport::connect(cfg, key_dir).await?;
+    let res = tr.execute("mail.get", json!({ "id": numeric_id })).await;
+    tr.close().await;
+    let v = res?;
+    Ok(parse_detail_value(&v, max_chars))
+}
+
+/// Lê os detalhes de várias mensagens em uma única sessão do canal de controle ou MCP.
+pub async fn message_details(
+    cfg: &BackendConfig,
+    ids: &[String],
+    max_chars: usize,
+) -> Result<std::collections::HashMap<String, DetailData>, String> {
+    message_details_with_key_dir(cfg, ids, max_chars, None).await
+}
+
+pub async fn message_details_with_key_dir(
+    cfg: &BackendConfig,
+    ids: &[String],
+    max_chars: usize,
+    key_dir: Option<&Path>,
+) -> Result<std::collections::HashMap<String, DetailData>, String> {
+    let parsed_ids: Vec<(String, u64)> = ids
+        .iter()
+        .filter_map(|id| id.trim().parse::<u64>().ok().map(|n| (id.clone(), n)))
+        .collect();
+    let mut out = std::collections::HashMap::with_capacity(parsed_ids.len());
+    if parsed_ids.is_empty() {
+        return Ok(out);
+    }
+    let mut tr = Transport::connect(cfg, key_dir).await?;
+    for (raw_id, numeric_id) in parsed_ids {
+        match tr.execute("mail.get", json!({ "id": numeric_id })).await {
+            Ok(v) => {
+                out.insert(raw_id, parse_detail_value(&v, max_chars));
+            }
+            Err(err)
+                if err.contains("Conexão encerrada")
+                    || err.contains("Servidor MCP encerrou")
+                    || err.contains("Tempo esgotado") =>
+            {
+                break;
+            }
+            Err(_) => continue,
+        }
+    }
+    tr.close().await;
+    Ok(out)
 }
 
 pub async fn apply_action(cfg: &BackendConfig, id: &str, action: &Action) -> Result<(), String> {
@@ -1705,5 +1795,58 @@ mod tests {
             vec![(11, "eu@live.example".to_string()), (3601, "eu@gmail.example".to_string())]
         );
         assert_eq!(sum_inbox_unread(&folders_val), 332);
+    }
+
+    #[tokio::test]
+    async fn control_client_reads_batch_details_in_one_session() {
+        let dir = std::env::temp_dir().join(format!("lumen-mc-batch-{}", super::super::new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let secret_key = "0123456789abcdef0123456789abcdef";
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::fs::write(key_path(&dir, port), secret_key).unwrap();
+
+        let connections = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let conn_count = connections.clone();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            conn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let (r, mut w) = socket.into_split();
+            let mut reader = BufReader::new(r);
+            let mut line = String::new();
+            while reader.read_line(&mut line).await.unwrap_or(0) > 0 {
+                let v: Value = serde_json::from_str(line.trim()).unwrap();
+                line.clear();
+                if v["method"].as_str() == Some("auth.challenge") {
+                    let nonce = v["params"]["nonce"].as_str().unwrap();
+                    let proof = compute_proof(secret_key, nonce);
+                    w.write_all(format!("{{\"id\":0,\"ok\":true,\"result\":{{\"proof\":\"{proof}\"}}}}\n").as_bytes())
+                        .await
+                        .unwrap();
+                    continue;
+                }
+                let id_num = v["params"]["params"]["id"].as_u64().unwrap_or(0);
+                let resp = if id_num == 999 {
+                    json!({"id": v["id"], "ok": false, "error": "mensagem inexistente"})
+                } else {
+                    json!({"id": v["id"], "ok": true, "result": {"id": id_num, "body": format!("Corpo #{id_num}"), "attachments": []}})
+                };
+                w.write_all(format!("{resp}\n").as_bytes()).await.unwrap();
+            }
+        });
+
+        let cfg = BackendConfig {
+            port,
+            ..BackendConfig::default()
+        };
+        let ids = vec!["10".to_string(), "999".to_string(), "11".to_string()];
+        let details = message_details_with_key_dir(&cfg, &ids, 200, Some(&dir)).await.unwrap();
+        assert_eq!(connections.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(details.len(), 2);
+        assert_eq!(details["10"].text, "Corpo #10");
+        assert_eq!(details["11"].text, "Corpo #11");
+
+        drop(server);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

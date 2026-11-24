@@ -102,6 +102,7 @@ export interface ClassifiedMail {
 export interface ClassifyResult {
   items: ClassifiedMail[];
   note: string | null;
+  totalReported?: number | null;
 }
 
 export interface PreparedMail {
