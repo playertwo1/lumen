@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.24 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Triagem do MailCraft:** mensagens mantidas (incluindo os grupos prioritários) passam a exibir o botão **Excluir** diretamente ao lado de **Abrir**, com confirmação em dois cliques (**Excluir?**), envio para Excluídos e **Desfazer** com foco restaurado, removendo a duplicação no menu **⋯**.
+
 ## Windows 0.7.23 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Triagem completa no MailCraft:** leitura em lote via uma única conexão, classificação pela IA em lotes de até 25 mensagens (teto de 200 por chamada) com recuperação de JSON truncado e cache compartilhado entre Triagem e Resumo rápido.

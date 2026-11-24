@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.24",
+      "items": [
+        {
+          "icon": "eye",
+          "title": { "pt-BR": "Excluir ao lado de Abrir nos prioritários" },
+          "detail": { "pt-BR": "Na triagem do MailCraft, mensagens mantidas mostram Excluir ao lado de Abrir com confirmação e Desfazer." }
+        }
+      ]
+    },
+    {
       "version": "0.7.23",
       "items": [
         {
