@@ -2,6 +2,19 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.23 — triagem completa e resumo estruturado no MailCraft
+
+- [x] Pedido do dono em 2026-11-24: avançar para a versão nova (`0.7.23`), subir tudo para o Git e publicar os instaladores versionados do Lumen Windows (triagem completa, resumo rápido estruturado e master-detail no MailCraft + correção do ditado com Whisper `6350a1ed`).
+- [x] Validações locais: `npx tsc --noEmit`, `npm test` (776/776), `npm run build`, `cargo test --lib --locked` (961 passaram, 10 ignorados), `python scripts/test-whats-new.py windows` (3 itens em 1 idioma), `impeccable detect --json --changed` (`[]`).
+- [x] Empacotamento e publicação 100% locais (sem GitHub Actions): build local `npx tauri build && node scripts/pack.mjs` com `CARGO_PROFILE_RELEASE_LTO=thin` e `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4`; varredura do Microsoft Defender em `windows/release/` (`found no threats`); commits [`823656ca`](https://github.com/playertwo1/lumen/commit/823656ca) e [`15f78cf1`](https://github.com/playertwo1/lumen/commit/15f78cf1) + tag [`windows-v0.7.23`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.23) enviados para `origin`; `windows-latest` atualizado com `Lumen-Windows-setup.exe`, `Lumen-Windows.msi`, `lumen.exe` e `lumen-hook.exe`.
+- [x] Digests do GitHub conferidos bit a bit com o SHA-256 local:
+  - `Lumen-Windows-0.7.23-setup.exe` / `Lumen-Windows-setup.exe`: `1f79a7d64350882e383535aa4fc0e270aed45aeb2d53941e57e5fa2b6e3e9477`
+  - `Lumen-Windows-0.7.23.msi` / `Lumen-Windows.msi`: `cdabb0e798e2e3e24b78ad7a27cffd66d7d061f2c37aa75a4515ac5c80313903`
+  - `lumen.exe`: `15fc247be49dd307face97b5a207a1d3defa65650d4f717af290623390664511`
+  - `lumen-hook.exe`: `57a00c7b8b40602c357f622b2d03e8ea707d3e7188137c444c72d57d269eb596`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1` de `0.7.10` para `0.7.23`).
+- [ ] **NOT_RUN:** validação real pelo dono no MailCraft com a caixa real (~54 mensagens em triagem em lote, resumo rápido em Markdown e master-detail) e com o ditado usando o modelo Whisper selecionado.
+
 ### Windows 0.7.22 — comando de voz por atalho
 
 - [x] Pedido do dono em 2026-11-23: publicar uma versão para o comando de voz (Ctrl+Alt+V: "brilho a 20%", "tirar som") funcionar no Lumen instalado, com a pílula mostrando "Estou ouvindo…".
