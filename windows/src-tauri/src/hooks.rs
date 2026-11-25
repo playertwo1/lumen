@@ -429,14 +429,38 @@ fn install_relay(src: &Path, dest: &Path) {
         (Ok(a), Ok(b)) => a.len() == b.len() && a.modified().ok() == b.modified().ok(),
         _ => false,
     };
-    if same {
+    remove_old_relays(dest);
+    if same || std::fs::copy(src, dest).is_ok() {
         return;
     }
-    // A hook may be running right now and hold the file open; keeping the old
-    // copy is fine, it is the same relay.
-    if let Err(err) = std::fs::copy(src, dest) {
-        if !dest.exists() {
-            crate::log::line(format!("could not install {}: {err}", platform::HOOK_EXE));
+    // A relay in use cannot be overwritten — every agent session keeps its
+    // `--mcp` one running — but Windows lets it be renamed. The new one is
+    // written beside it, the old one steps aside and the new one takes its name.
+    let temp = dest.with_extension(format!("new-{}", std::process::id()));
+    let old = dest.with_extension(format!("old-{}", std::process::id()));
+    let result = std::fs::copy(src, &temp).and_then(|_| {
+        if dest.exists() {
+            std::fs::rename(dest, &old)?;
+        }
+        std::fs::rename(&temp, dest).inspect_err(|_| {
+            let _ = std::fs::rename(&old, dest);
+        })
+    });
+    if let Err(err) = result {
+        let _ = std::fs::remove_file(&temp);
+        crate::log::line(format!("could not install {}: {err}", platform::HOOK_EXE));
+    }
+}
+
+/// Relays set aside by earlier updates; one still running stays until next launch.
+#[cfg(windows)]
+fn remove_old_relays(dest: &Path) {
+    let (Some(dir), Some(stem)) = (dest.parent(), dest.file_stem().and_then(|s| s.to_str())) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let prefix = format!("{stem}.old-");
+    for entry in entries.flatten() {
+        if entry.file_name().to_str().is_some_and(|n| n.starts_with(&prefix)) {
+            let _ = std::fs::remove_file(entry.path());
         }
     }
 }
@@ -464,6 +488,35 @@ fn install_relay(src: &Path, dest: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn a_relay_that_is_running_is_still_replaced() {
+        let dir = std::env::temp_dir().join(format!("coucou-relay-swap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("coucou-hook.exe");
+        let src = dir.join("new-relay.exe");
+        let system = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap()).join("System32");
+        std::fs::copy(system.join("ping.exe"), &dest).unwrap();
+        std::fs::copy(system.join("whoami.exe"), &src).unwrap();
+        // The old relay is running, as the agents' `--mcp` ones always are.
+        let mut running = std::process::Command::new(&dest)
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        install_relay(&src, &dest);
+        let swapped = std::fs::read(&dest).unwrap() == std::fs::read(&src).unwrap();
+        let _ = running.kill();
+        let _ = running.wait();
+        assert!(swapped, "the new relay must take the name while the old one runs");
+        // Once nothing runs it, the set-aside copy goes on the next launch.
+        install_relay(&src, &dest);
+        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(left.len(), 2, "{left:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_saved_status_line_moves_out_of_bin_without_replacing_a_newer_one() {
