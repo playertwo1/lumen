@@ -2,6 +2,19 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.26 — personagens trabalhando com o Claude Code no terminal e no Orca
+
+- [x] Pedido do dono em 2026-11-24: os personagens não apareciam trabalhando com Claude, Codex e Antigravity; olhar os dados do Orca; depois "Commita e publica" e incluir a correção das várias sessões na mesma pílula. Causa: com a principal em Claude Desktop (padrão desde `90fe919f`), as sessões do Claude Code sem pílula declarada eram descartadas (`ea14cd49`). Correções em [`3f3ce0f2`](https://github.com/playertwo1/lumen/commit/3f3ce0f2) (rota para a principal Claude Desktop/Orca e `ORCA_PANE_KEY` no hook) e [`23b5dbd8`](https://github.com/playertwo1/lumen/commit/23b5dbd8) (várias sessões na mesma pílula).
+- [x] Validações locais: `npx tsc --noEmit`, `npm test` (786/786), `npm run build`, `cargo test --lib --locked` (962 passaram, 10 ignorados), `cargo test` do hook (43/43), `python scripts/test-whats-new.py windows` (1 item em 1 idioma).
+- [x] Empacotamento e publicação 100% locais (sem GitHub Actions): `npx tauri build && node scripts/pack.mjs` com `CARGO_PROFILE_RELEASE_LTO=thin` e `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4`; Microsoft Defender em `windows/release/` (`found no threats`); `lumen-hook.exe` conferido com `ORCA_PANE_KEY`; tag [`windows-v0.7.26`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.26) e `windows-latest` publicados com instaladores, `lumen.exe` e `lumen-hook.exe`.
+- [x] Digests do GitHub conferidos com o SHA-256 local:
+  - `Lumen-Windows-0.7.26-setup.exe` / `Lumen-Windows-setup.exe`: `fe06b89ed04c3772afcaf943d51092605bbaf44a296c7eff15282f03c876c67c`
+  - `Lumen-Windows-0.7.26.msi` / `Lumen-Windows.msi`: `b4344544fd7362e805c64038c5ada5f6ec0851b01ec35f25f541fa613c9fc281`
+  - `lumen.exe`: `2380c774991eaf2fcbf4e16c588d67b4aeb2821576956eb5c95eeec0891d95f3`
+  - `lumen-hook.exe`: `192fc6c586ba9c7606dd005a2b333973db6fcb1f75a943c18f4abc8bd24cc044`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1` de `0.7.10` para `0.7.26`).
+- [ ] **NOT_RUN:** validação real pelo dono: Claude Code no Orca animando a principal, várias sessões sem o personagem parar, e o hook novo copiado para a pasta do relay (com `coucou-hook.exe` em uso, a cópia falha e fica o antigo até reabrir o Lumen sem hooks rodando).
+
 ### Windows 0.7.25 — avisos progressivos de cota (50% a 10% restantes)
 
 - [x] Pedido do dono em 2026-11-24: adicionar avisos progressivos em **50%, 40%, 30%, 20% e 10% restantes** (janelas **5h** e **semanal**) para **Claude**, **Codex** e **Antigravity** (`123c4d19`) com cores crescentes de urgência até perto de zero e publicar o `.exe` release versionado no GitHub.
