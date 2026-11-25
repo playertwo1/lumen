@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.28",
+      "items": [
+        {
+          "icon": "clock",
+          "title": { "pt-BR": "Cotas do Codex e Antigravity" },
+          "detail": { "pt-BR": "As janelas de 5h e da semana do Codex e do Antigravity voltam a mostrar os números." }
+        }
+      ]
+    },
+    {
       "version": "0.7.27",
       "items": [
         {

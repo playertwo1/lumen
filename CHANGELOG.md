@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.28 — 25 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Cotas do Codex e do Antigravity voltam a aparecer:** o Lumen passa a encontrar as CLIs `codex` e `agy` instaladas depois que ele abriu, lendo o PATH atual do usuário e da máquina. Antes as janelas de 5h e da semana ficavam sem números, e os avisos de cota desses dois não disparavam.
+
 ## Windows 0.7.27 — 25 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Hook sempre atualizado:** o Lumen troca o hook dos agentes pela versão nova mesmo com sessões de Claude, Codex ou Grok abertas. Antes, a cópia falhava em silêncio enquanto houvesse uma sessão aberta e o hook antigo continuava em uso (sem, por exemplo, a detecção do Orca da 0.7.26).
