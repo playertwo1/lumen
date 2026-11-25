@@ -22,7 +22,9 @@ use ::windows::Win32::System::Diagnostics::ToolHelp::{
 };
 use ::windows::Win32::System::Ole::RevokeDragDrop;
 use ::windows::Win32::System::Pipes::GetNamedPipeClientProcessId;
-use ::windows::Win32::System::Registry::{RegGetValueW, HKEY_CLASSES_ROOT, RRF_RT_REG_SZ};
+use ::windows::Win32::System::Registry::{
+    RegGetValueW, HKEY, HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
+};
 use ::windows::Win32::System::SystemInformation::GetLocalTime;
 use ::windows::Win32::System::Threading::{
     AttachThreadInput, GetCurrentProcess, GetCurrentThreadId, OpenProcessToken,
@@ -142,13 +144,45 @@ pub fn reveal_folder(path: &str) {
     let _ = Command::new("explorer").arg(path).spawn();
 }
 
+/// The user's and the machine's PATH as a new terminal gets them, read now.
+/// The process keeps the PATH it started with (autostart, an update's relaunch),
+/// which misses every CLI installed since — Codex and agy were never found.
+fn registry_path() -> Vec<PathBuf> {
+    let read = |key: HKEY, sub: PCWSTR| -> Option<String> {
+        let mut buf = vec![0u16; 8192];
+        for _ in 0..2 {
+            let mut size = (buf.len() * 2) as u32;
+            // RRF_RT_REG_SZ also takes REG_EXPAND_SZ, expanded (%USERPROFILE%…).
+            let res = unsafe {
+                RegGetValueW(key, sub, w!("Path"), RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr().cast()), Some(&mut size))
+            };
+            if res.is_ok() {
+                let len = (size as usize / 2).saturating_sub(1).min(buf.len());
+                return Some(String::from_utf16_lossy(&buf[..len]));
+            }
+            buf = vec![0u16; (size as usize).div_ceil(2) + 1];
+        }
+        None
+    };
+    [
+        read(HKEY_CURRENT_USER, w!("Environment")),
+        read(HKEY_LOCAL_MACHINE, w!(r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")),
+    ]
+    .into_iter()
+    .flatten()
+    .flat_map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+    .filter(|d| d.is_absolute())
+    .collect()
+}
+
 /// Our own `where`: walks %PATH% against %PATHEXT%, no shell involved.
 /// Rust quotes arguments correctly for `.cmd`/`.bat` targets since 1.77, so
 /// spawning `code.cmd` directly is safe.
 pub fn find_on_path(stem: &str) -> Option<PathBuf> {
     let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
-    let dirs = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&dirs) {
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    dirs.extend(registry_path());
+    for dir in dirs {
         for ext in exts.split(';').filter(|e| !e.is_empty()) {
             let candidate = dir.join(format!("{stem}{}", ext.to_lowercase()));
             if candidate.is_file() {
@@ -888,6 +922,19 @@ pub fn pick_folder(app: &AppHandle, start: Option<&str>, title: &str) -> Option<
     .join()
     .ok()
     .flatten()
+}
+
+#[cfg(test)]
+mod path_tests {
+    #[test]
+    fn the_registry_path_is_read_expanded() {
+        let dirs = super::registry_path();
+        assert!(
+            dirs.iter().any(|d| d.to_string_lossy().to_ascii_lowercase().ends_with(r"\system32") && d.is_dir()),
+            "{dirs:?}"
+        );
+        assert!(dirs.iter().all(|d| !d.to_string_lossy().contains('%')), "{dirs:?}");
+    }
 }
 
 #[cfg(test)]
