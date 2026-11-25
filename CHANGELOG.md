@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.27 — 25 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Hook sempre atualizado:** o Lumen troca o hook dos agentes pela versão nova mesmo com sessões de Claude, Codex ou Grok abertas. Antes, a cópia falhava em silêncio enquanto houvesse uma sessão aberta e o hook antigo continuava em uso (sem, por exemplo, a detecção do Orca da 0.7.26).
+
 ## Windows 0.7.26 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Personagens voltam a trabalhar com o Claude Code no terminal e no Orca:** sessões do Claude Code sem pílula própria (por exemplo, as abertas pelo Orca) passam a animar a pílula principal quando ela é Claude Desktop ou Orca, em vez de serem descartadas. O hook reconhece os painéis do Orca e, com a pílula do Orca ativa, a sessão aparece nela.

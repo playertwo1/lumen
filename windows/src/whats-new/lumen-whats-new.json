@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.27",
+      "items": [
+        {
+          "icon": "sparkles",
+          "title": { "pt-BR": "Hook sempre atualizado" },
+          "detail": { "pt-BR": "O hook dos agentes troca para a versão nova mesmo com sessões abertas." }
+        }
+      ]
+    },
+    {
       "version": "0.7.26",
       "items": [
         {
