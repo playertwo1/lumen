@@ -22,7 +22,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 ## Pendências do dono (validação real)
 
-- **Personagens trabalhando (`0.7.26`)**: com a principal em Claude Desktop, rodar o Claude Code no Orca e ver o personagem principal trabalhando; com várias sessões ao mesmo tempo, uma terminar não pode parar o personagem. Conferir se o `coucou-hook.exe` em `%LOCALAPPDATA%\Coucou\bin` foi atualizado (data de hoje).
+- **Personagens trabalhando (`0.7.26`)**: com a principal em Claude Desktop, rodar o Claude Code no Orca e ver o personagem principal trabalhando; com várias sessões ao mesmo tempo, uma terminar não pode parar o personagem. O hook já está atualizado (`0.7.27`, conferido); com a pílula do Orca ativa, a sessão aberta no Orca deve aparecer nela.
 - **Avisos progressivos de cota (`0.7.25`)**: validar no app instalado os avisos de 50%, 40%, 30%, 20% e 10% restantes (5h e semana) para Claude, Codex e Antigravity, o clique no Windows Toast abrindo o card correspondente e o toggle em Configurações → Uso do plano.
 - **MailCraft (triagem completa, Excluir nos prioritários, resumo rápido e master-detail) + ditado com Whisper** (`0.7.23`–`0.7.24`): conferir na versão instalada se a triagem analisa todas as mensagens (ex.: ~54), se o botão **Excluir** ao lado de **Abrir** confirma em dois cliques e move para Excluídos com **Desfazer**, se o resumo rápido cobre toda a caixa com Markdown legível e timestamp, se `⋯` / `Limpar grupo` / rascunho encadeado funcionam e se o ditado com Whisper não pede para baixar o Parakeet.
 - **WhatsApp e MailCraft na ilha** (`0.7.21`): conferir faixa e mascote do WhatsApp, leitura e abertura da mensagem no MailCraft e o foco ao navegar pelo teclado e com NVDA, usando a versão instalada.
