@@ -2,6 +2,19 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.25 — avisos progressivos de cota (50% a 10% restantes)
+
+- [x] Pedido do dono em 2026-11-24: adicionar avisos progressivos em **50%, 40%, 30%, 20% e 10% restantes** (janelas **5h** e **semanal**) para **Claude**, **Codex** e **Antigravity** (`123c4d19`) com cores crescentes de urgência até perto de zero e publicar o `.exe` release versionado no GitHub.
+- [x] Validações locais: `npx tsc --noEmit`, `npm test` (783/783), `npm run build`, `cargo test --lib --locked` (962 passaram, 10 ignorados), `python scripts/test-whats-new.py windows` (1 item em 1 idioma).
+- [x] Empacotamento e publicação 100% locais (sem GitHub Actions): build local `npx tauri build && node scripts/pack.mjs` com `CARGO_PROFILE_RELEASE_LTO=thin` e `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4`; varredura do Microsoft Defender em `windows/release/` (`found no threats`); commits [`123c4d19`](https://github.com/playertwo1/lumen/commit/123c4d19) e [`1afe3a76`](https://github.com/playertwo1/lumen/commit/1afe3a76) + tag [`windows-v0.7.25`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.25) enviados para `origin`; `windows-v0.7.25` e `windows-latest` publicados com instaladores (`-setup.exe`, `.msi`), `lumen.exe` e `lumen-hook.exe`.
+- [x] Digests do GitHub conferidos bit a bit com o SHA-256 local:
+  - `Lumen-Windows-0.7.25-setup.exe` / `Lumen-Windows-setup.exe`: `7f28cbfa5c7536007a325bac28991576ca6cbcc38c2fcf65f2bbe8b08d48b191`
+  - `Lumen-Windows-0.7.25.msi` / `Lumen-Windows.msi`: `5983c032a3f6fccd29ffcb74b4670e7b32ee2459eed0ccaa427e154f23ee021b`
+  - `lumen.exe`: `19cb1fe2eb6ed074fe688bff59f40ed3efbee99e47b5f49e1a103c981ed7e2f9`
+  - `lumen-hook.exe`: `1a039c54c848d716289617b41d4e8a0cd379e2fe7ec8dc0d0334d9e2164d5f4f`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1` de `0.7.10` para `0.7.25`).
+- [ ] **NOT_RUN:** validação real pelo dono no app instalado (disparo real na ilha, Windows Toast WinRT e atualização ao vivo de Claude/Codex/Antigravity).
+
 ### Windows 0.7.24 — botão Excluir ao lado de Abrir nos prioritários do MailCraft
 
 - [x] Pedido do dono em 2026-11-24: adicionar **Excluir** ao lado de **Abrir** nos e-mails prioritários (e demais linhas mantidas) na triagem do MailCraft (`9f84f5cf`) e publicar a release com `.exe`/`.msi` no GitHub.
