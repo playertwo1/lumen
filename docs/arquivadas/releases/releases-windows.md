@@ -13,7 +13,7 @@
   - `lumen.exe`: `b897abbb6f765228248c47f9e6b5945bb3073366064d2dab545c30a1e986de68`
   - `lumen-hook.exe`: `d7748122ae88a1c33b6a91463f7d2e846af60501d9f3924b56ce748e6f52a0e3`
 - [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1` de `0.7.10` para `0.7.27`).
-- [ ] **NOT_RUN:** no app instalado, com sessões abertas, o `coucou-hook.exe` em `%LOCALAPPDATA%\Coucou\bin` passa a ter a data da instalação.
+- [x] No app instalado (2026-11-24, atualização 0.7.26 → 0.7.27 pelo Lumen com 9 sessões de agente abertas): o hook em `Coucou/bin` passou a ter o SHA-256 do `lumen-hook.exe` publicado, com a detecção do Orca; o antigo ficou como `coucou-hook.old-<pid>` até não estar mais em uso.
 
 ### Windows 0.7.26 — personagens trabalhando com o Claude Code no terminal e no Orca
 
