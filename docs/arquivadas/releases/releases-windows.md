@@ -2,6 +2,19 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.27 — hook dos agentes atualizado com sessões abertas
+
+- [x] Pedido do dono em 2026-11-24 ("Corrige e publica"), depois de ver que os `coucou-hook --mcp` das sessões abertas prendiam o arquivo e o hook instalado era de 23/11. Correção em [`bbb9b68d`](https://github.com/playertwo1/lumen/commit/bbb9b68d): o novo é gravado ao lado, o antigo renomeado (permitido em uso) e as sobras apagadas no início seguinte.
+- [x] Validações locais: `npx tsc --noEmit`, `npm test` (786/786), `cargo test --lib --locked` (963 passaram, 10 ignorados, com o teste novo que troca um relay em execução), `python scripts/test-whats-new.py windows`. Conferido à mão que sobrescrever um `.exe` em execução falha e renomear funciona.
+- [x] Empacotamento e publicação locais como na 0.7.26 (`LTO=thin`, `CODEGEN_UNITS=4`); Defender em `windows/release/` (`found no threats`); tag [`windows-v0.7.27`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.27) e `windows-latest` publicados.
+- [x] Digests do GitHub conferidos com o SHA-256 local:
+  - `Lumen-Windows-0.7.27-setup.exe` / `Lumen-Windows-setup.exe`: `a05f5e87d852e66de08ada82a748a14e39e8d6aa2fedd25360913a2a636f99c4`
+  - `Lumen-Windows-0.7.27.msi` / `Lumen-Windows.msi`: `65881671a28582da401b83f1b1018d189de1d815c187c7bc31f819eeb024adb5`
+  - `lumen.exe`: `b897abbb6f765228248c47f9e6b5945bb3073366064d2dab545c30a1e986de68`
+  - `lumen-hook.exe`: `d7748122ae88a1c33b6a91463f7d2e846af60501d9f3924b56ce748e6f52a0e3`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1` de `0.7.10` para `0.7.27`).
+- [ ] **NOT_RUN:** no app instalado, com sessões abertas, o `coucou-hook.exe` em `%LOCALAPPDATA%\Coucouin` passa a ter a data da instalação.
+
 ### Windows 0.7.26 — personagens trabalhando com o Claude Code no terminal e no Orca
 
 - [x] Pedido do dono em 2026-11-24: os personagens não apareciam trabalhando com Claude, Codex e Antigravity; olhar os dados do Orca; depois "Commita e publica" e incluir a correção das várias sessões na mesma pílula. Causa: com a principal em Claude Desktop (padrão desde `90fe919f`), as sessões do Claude Code sem pílula declarada eram descartadas (`ea14cd49`). Correções em [`3f3ce0f2`](https://github.com/playertwo1/lumen/commit/3f3ce0f2) (rota para a principal Claude Desktop/Orca e `ORCA_PANE_KEY` no hook) e [`23b5dbd8`](https://github.com/playertwo1/lumen/commit/23b5dbd8) (várias sessões na mesma pílula).

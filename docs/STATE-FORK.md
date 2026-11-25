@@ -1,6 +1,6 @@
 # STATE do fork — ponto de retomada
 
-**Atualizado:** 2026-11-24 · **Última release:** [`windows-v0.7.26`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.26) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (validação do dono)
+**Atualizado:** 2026-11-24 · **Última release:** [`windows-v0.7.27`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.27) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (validação do dono)
 
 Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação. O que cada etapa faz está no [ROADMAP-FORK](ROADMAP-FORK.md); o histórico deste arquivo até a reorganização está em [arquivadas/state/](arquivadas/state/state-ate-2026-11-17.md).
 
@@ -22,6 +22,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 ## Pendências do dono (validação real)
 
+- **Hook atualizado com sessões abertas (`0.7.27`)**: depois de instalar, sem fechar os agentes, o `coucou-hook.exe` em `%LOCALAPPDATA%\Coucou\bin` deve ter a data da instalação.
 - **Personagens trabalhando (`0.7.26`)**: com a principal em Claude Desktop, rodar o Claude Code no Orca e ver o personagem principal trabalhando; com várias sessões ao mesmo tempo, uma terminar não pode parar o personagem. Conferir se o `coucou-hook.exe` em `%LOCALAPPDATA%\Coucou\bin` foi atualizado (data de hoje).
 - **Avisos progressivos de cota (`0.7.25`)**: validar no app instalado os avisos de 50%, 40%, 30%, 20% e 10% restantes (5h e semana) para Claude, Codex e Antigravity, o clique no Windows Toast abrindo o card correspondente e o toggle em Configurações → Uso do plano.
 - **MailCraft (triagem completa, Excluir nos prioritários, resumo rápido e master-detail) + ditado com Whisper** (`0.7.23`–`0.7.24`): conferir na versão instalada se a triagem analisa todas as mensagens (ex.: ~54), se o botão **Excluir** ao lado de **Abrir** confirma em dois cliques e move para Excluídos com **Desfazer**, se o resumo rápido cobre toda a caixa com Markdown legível e timestamp, se `⋯` / `Limpar grupo` / rascunho encadeado funcionam e se o ditado com Whisper não pede para baixar o Parakeet.
