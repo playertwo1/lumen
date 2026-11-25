@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.26",
+      "items": [
+        {
+          "icon": "sparkles",
+          "title": { "pt-BR": "Personagens trabalhando de novo" },
+          "detail": { "pt-BR": "O Claude Code no terminal e no Orca volta a animar a pílula principal enquanto trabalha." }
+        }
+      ]
+    },
+    {
       "version": "0.7.25",
       "items": [
         {

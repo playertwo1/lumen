@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.26 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Personagens voltam a trabalhar com o Claude Code no terminal e no Orca:** sessões do Claude Code sem pílula própria (por exemplo, as abertas pelo Orca) passam a animar a pílula principal quando ela é Claude Desktop ou Orca, em vez de serem descartadas. O hook reconhece os painéis do Orca e, com a pílula do Orca ativa, a sessão aparece nela.
+
 ## Windows 0.7.25 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Avisos progressivos de cota (Claude, Codex e Antigravity):** quando as janelas de **5h** ou **semanal** chegam a **50%, 40%, 30%, 20% e 10% restantes**, o Lumen exibe um banner na ilha com cores e sons de urgência crescentes até perto de zero e dispara notificação nativa no Windows (com clique para abrir o card do provedor). Inclui polling em segundo plano (3 min) e atualização ao final do turno para Codex e Antigravity, além de opção nas Configurações para silenciar.
