@@ -3,6 +3,7 @@
 ## Windows 0.7.26 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Personagens voltam a trabalhar com o Claude Code no terminal e no Orca:** sessões do Claude Code sem pílula própria (por exemplo, as abertas pelo Orca) passam a animar a pílula principal quando ela é Claude Desktop ou Orca, em vez de serem descartadas. O hook reconhece os painéis do Orca e, com a pílula do Orca ativa, a sessão aparece nela.
+- **Várias sessões na mesma pílula:** quando uma sessão termina e outra ainda trabalha na mesma pílula (comum com o Orca), o personagem continua trabalhando e só vai para concluído quando a última termina.
 
 ## Windows 0.7.25 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
 

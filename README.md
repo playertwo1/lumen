@@ -60,7 +60,7 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 
 | Instalador | Escopo | Link direto |
 |---|---|---|
-| [`windows-v0.7.26`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.26) | 24 nov. 2026 | Personagens voltam a trabalhar com o Claude Code no terminal e no Orca |
+| [`windows-v0.7.26`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.26) | 24 nov. 2026 | Personagens voltam a trabalhar com o Claude Code no terminal e no Orca, também com várias sessões na mesma pílula |
 | **Setup do usuário (`.exe`)** | Instala apenas para o usuário atual (sem exigir admin) | [`Lumen-Windows-setup.exe`](https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe) |
 | **Instalador de sistema (`.msi`)** | Instalação padrão Windows Installer | [`Lumen-Windows.msi`](https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows.msi) |
 

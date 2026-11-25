@@ -6,7 +6,7 @@
         {
           "icon": "sparkles",
           "title": { "pt-BR": "Personagens trabalhando de novo" },
-          "detail": { "pt-BR": "O Claude Code no terminal e no Orca volta a animar a pílula principal enquanto trabalha." }
+          "detail": { "pt-BR": "Claude Code no terminal e no Orca volta a animar a pílula principal, mesmo com várias sessões." }
         }
       ]
     },
