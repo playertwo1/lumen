@@ -106,6 +106,36 @@ function cancelStopTimer(id: string): boolean {
   return true;
 }
 
+/**
+ * Sessions in the middle of a turn, per pill, with when each last spoke. Orca
+ * and the like run several sessions on one pill: one of them ending must not
+ * idle a character the others are still working. Keyed by the task, so a pill
+ * that goes takes its sessions with it.
+ */
+const busySessions = new WeakMap<object, Map<string, number>>();
+const MID_TURN = new Set(["UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure"]);
+// shortcut: a session killed without Stop or SessionEnd counts as busy for 10 min; upgrade to a liveness check if that shows.
+const BUSY_STALE_MS = 10 * 60_000;
+
+function markBusy(pill: string, session: string) {
+  const t = State.tasks.find((x) => x.id === pill);
+  if (!t || !session) return;
+  const sessions = busySessions.get(t) ?? new Map<string, number>();
+  sessions.set(session, Date.now());
+  busySessions.set(t, sessions);
+}
+
+/** The session's turn is over; true when another session of the pill is still working. */
+function othersBusy(pill: string, session: string): boolean {
+  const t = State.tasks.find((x) => x.id === pill);
+  const sessions = t && busySessions.get(t);
+  if (!sessions) return false;
+  sessions.delete(session);
+  const now = Date.now();
+  for (const [id, at] of sessions) if (now - at > BUSY_STALE_MS) sessions.delete(id);
+  return sessions.size > 0;
+}
+
 /** The pill that was focused before another pill's alert borrowed the front. */
 let focusBeforeAlert: string | null = null;
 let alertPill: string | null = null;
@@ -665,13 +695,18 @@ function handleHook(island: Island, payload: HookPayload) {
     }
 
     case "Stop": {
-      State.updateTask(agentId, "finished");
-      refreshPlanForAgent(agentId);
       // Claude Code puts the turn's answer in the Stop payload itself, so there is
       // no transcript to read (the relay does not even forward its path). Other
       // agents report their last words the same way (Hermes, Codex) or as
       // `message`.
       const finalText = toOneLine(payload.last_assistant_message ?? payload.message ?? "");
+      refreshPlanForAgent(agentId);
+      if (othersBusy(agentId, sessionId)) {
+        // Another session still works on this pill: its words show, the character keeps working.
+        if (finalText) State.appendStep(agentId, finalText);
+        break;
+      }
+      State.updateTask(agentId, "finished");
       if (finalText) {
         State.appendStep(agentId, finalText);
         const t = State.tasks.find((x) => x.id === agentId);
@@ -704,12 +739,14 @@ function handleHook(island: Island, payload: HookPayload) {
     case "Interrupt":
       // Codex: the user stopped the turn. Back to idle, nothing to celebrate.
       supersedeStop();
+      if (othersBusy(agentId, sessionId)) break;
       State.updateTask(agentId, "idle");
       State.setPillBadge(agentId, null);
       break;
 
     case "StopFailure":
       supersedeStop();
+      othersBusy(agentId, sessionId);
       State.updateTask(agentId, "error");
       Sound.play("error");
       if (showsAlert(agentId, focused)) surface("error", true);
@@ -717,6 +754,8 @@ function handleHook(island: Island, payload: HookPayload) {
       break;
 
     case "SessionEnd":
+      // The pill stays as it is while another of its sessions works.
+      if (othersBusy(agentId, sessionId)) break;
       // Nothing left for the timer to do, and it must not outlive the session: a
       // pill recreated within 5.2 s would be removed by it.
       cancelStopTimer(agentId);
@@ -823,5 +862,6 @@ function handleHook(island: Island, payload: HookPayload) {
     default:
       break;
   }
+  if (MID_TURN.has(name)) markBusy(agentId, sessionId);
   State.notify();
 }

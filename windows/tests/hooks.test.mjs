@@ -597,6 +597,23 @@ test("a Claude Code session in an Orca pane goes to Orca's pill when Orca is on,
   assert.equal(task("agent_claude-desktop").state, "working");
 });
 
+test("one of two sessions on a pill stopping keeps the character working until the last one stops", () => {
+  const tool = (session_id) => hook({ hook_event_name: "PreToolUse", session_id, cwd: "/p/proj", tool_name: "Bash", tool_input: { command: "ls" } });
+  tool("a");
+  tool("b");
+  hook({ hook_event_name: "Stop", session_id: "a", last_assistant_message: "A done" });
+  seconds(6);
+  assert.equal(task().state, "working");
+  assert.equal(task().steps.at(-1), "A done");
+  hook({ hook_event_name: "SessionEnd", session_id: "a" });
+  assert.equal(task().state, "working");
+
+  hook({ hook_event_name: "Stop", session_id: "b", last_assistant_message: "B done" });
+  assert.equal(task().state, "finished");
+  seconds(5.2);
+  assert.equal(task().state, "idle");
+});
+
 test("with another main tool, a declared Claude Code pill takes the session and idles after", () => {
   State.settings.mainPill = "agent_codex";
   State.settings.activeIntegrations = ["integration_claude"];
