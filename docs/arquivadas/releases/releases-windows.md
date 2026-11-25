@@ -2,6 +2,19 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.28 — cotas do Codex e do Antigravity voltam a aparecer
+
+- [x] Pedido do dono em 2026-11-25: o app não marcava as janelas de 5h e da semana do Codex e do Antigravity; depois "Publica a 0.7.28". Causa: o processo do Lumen tinha um PATH antigo (19 entradas) sem as pastas do `codex` e do `agy`, e as leituras voltavam vazias. Correção em [`dd01e075`](https://github.com/playertwo1/lumen/commit/dd01e075): `find_on_path` soma o PATH atual do usuário e da máquina, lido do registro.
+- [x] Validações locais: `npx tsc --noEmit`, `npm test` (786/786), `cargo test --lib --locked` (964 passaram, 10 ignorados), `python scripts/test-whats-new.py windows`. Reprodução com PATH antigo: antes nenhuma CLI encontrada; depois `codex` e `agy` encontrados e as duas leituras voltam com dados.
+- [x] Empacotamento e publicação locais como na 0.7.27; Defender em `windows/release/` (`found no threats`); tag [`windows-v0.7.28`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.28) e `windows-latest` publicados.
+- [x] Digests do GitHub conferidos com o SHA-256 local:
+  - `Lumen-Windows-0.7.28-setup.exe` / `Lumen-Windows-setup.exe`: `3c0062d6fc8df573f314eb0d849feb06a992de21b54590fb32f2d7bab69d19d0`
+  - `Lumen-Windows-0.7.28.msi` / `Lumen-Windows.msi`: `7608bce86aa3ee18685fe3755715bc4e768a87afa371a97a36d54d5944f549ec`
+  - `lumen.exe`: `4d8bb9fe357f3805ed61860195d3ac0d8c4fe21df5d0f5c50bd8bc0259c6ec98`
+  - `lumen-hook.exe`: `21c80098dee8dc6566efa1ee77f7a72e1119b6b9e0385296ccf42bd6a9270714`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1` de `0.7.10` para `0.7.28`).
+- [ ] **NOT_RUN:** no app instalado, as pílulas Codex e Antigravity mostrando 5h e semana, e o Lumen abrindo `codex`/`agy` no monitor de 3 min.
+
 ### Windows 0.7.27 — hook dos agentes atualizado com sessões abertas
 
 - [x] Pedido do dono em 2026-11-24 ("Corrige e publica"), depois de ver que os `coucou-hook --mcp` das sessões abertas prendiam o arquivo e o hook instalado era de 23/11. Correção em [`bbb9b68d`](https://github.com/playertwo1/lumen/commit/bbb9b68d): o novo é gravado ao lado, o antigo renomeado (permitido em uso) e as sobras apagadas no início seguinte.
