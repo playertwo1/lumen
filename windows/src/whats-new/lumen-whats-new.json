@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.25",
+      "items": [
+        {
+          "icon": "bell",
+          "title": { "pt-BR": "Avisos progressivos de cota" },
+          "detail": { "pt-BR": "Ilha e Windows avisam de 50% a 10% restantes (5h e semana) com cores no Claude, Codex e Antigravity." }
+        }
+      ]
+    },
+    {
       "version": "0.7.24",
       "items": [
         {

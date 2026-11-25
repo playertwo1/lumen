@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.25 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Avisos progressivos de cota (Claude, Codex e Antigravity):** quando as janelas de **5h** ou **semanal** chegam a **50%, 40%, 30%, 20% e 10% restantes**, o Lumen exibe um banner na ilha com cores e sons de urgência crescentes até perto de zero e dispara notificação nativa no Windows (com clique para abrir o card do provedor). Inclui polling em segundo plano (3 min) e atualização ao final do turno para Codex e Antigravity, além de opção nas Configurações para silenciar.
+
 ## Windows 0.7.24 — 24 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Triagem do MailCraft:** mensagens mantidas (incluindo os grupos prioritários) passam a exibir o botão **Excluir** diretamente ao lado de **Abrir**, com confirmação em dois cliques (**Excluir?**), envio para Excluídos e **Desfazer** com foco restaurado, removendo a duplicação no menu **⋯**.
