@@ -568,6 +568,35 @@ test("with another main tool, an undeclared Claude Code pill stays off while its
   assert.equal(task(), undefined);
 });
 
+test("with Claude Desktop as main and no Claude Code pill, the main character works for the session", () => {
+  State.settings.mainPill = "agent_claude-desktop";
+  State.settings.activeIntegrations = ["agent_codex"];
+  State.loadIntegrationTasks();
+  hook({ hook_event_name: "PreToolUse", cwd: "/p/proj", tool_name: "Bash", tool_input: { command: "ls" } });
+  assert.equal(task(), undefined);
+  assert.equal(task("agent_claude-desktop").state, "working");
+  hook({ hook_event_name: "SessionEnd" });
+  assert.equal(task("agent_claude-desktop").state, "idle");
+  assert.equal(task("agent_claude-desktop").name, "Claude Desktop");
+});
+
+test("a Claude Code session in an Orca pane goes to Orca's pill when Orca is on, else to the main tool", () => {
+  State.settings.mainPill = "agent_orca";
+  State.settings.activeIntegrations = ["integration_claude"];
+  State.loadIntegrationTasks();
+  hook({ hook_event_name: "PreToolUse", cwd: "/p/proj", term_editor: "orca", tool_name: "Bash", tool_input: { command: "ls" } });
+  assert.equal(task("agent_orca").state, "working");
+  assert.equal(task().state, "idle");
+  hook({ hook_event_name: "SessionEnd", term_editor: "orca" });
+
+  State.settings.mainPill = "agent_claude-desktop";
+  State.settings.activeIntegrations = [];
+  State.loadIntegrationTasks();
+  hook({ hook_event_name: "PreToolUse", cwd: "/p/proj", term_editor: "orca", tool_name: "Bash", tool_input: { command: "ls" } });
+  assert.equal(task("agent_orca"), undefined);
+  assert.equal(task("agent_claude-desktop").state, "working");
+});
+
 test("with another main tool, a declared Claude Code pill takes the session and idles after", () => {
   State.settings.mainPill = "agent_codex";
   State.settings.activeIntegrations = ["integration_claude"];

@@ -21,6 +21,21 @@ import { createLocalRunWatcher } from "./local-runs";
 
 const CLAUDE_ID = "integration_claude";
 const CURSOR_ID = "agent_cursor";
+const ORCA_ID = "agent_orca";
+/** Main tools that host Claude Code sessions: a session with no pill of its own shows on them. */
+const CLAUDE_HOSTS = new Set(["agent_claude-desktop", ORCA_ID]);
+
+/**
+ * The pill of a Claude Code session: Cursor's in Cursor's terminal, Orca's in an
+ * Orca pane when Orca is on, Claude Code's when it is declared, and otherwise
+ * the main tool when it hosts Claude Code — its events used to be dropped there.
+ */
+function workspacePillId(termEditor: string | undefined): string {
+  if (termEditor === "cursor") return CURSOR_ID;
+  if (termEditor === "orca" && State.isKept(ORCA_ID)) return ORCA_ID;
+  if (State.isKept(CLAUDE_ID)) return CLAUDE_ID;
+  return CLAUDE_HOSTS.has(State.mainPillId) ? State.mainPillId : CLAUDE_ID;
+}
 const localRuns = createLocalRunWatcher();
 
 function recordLocalRun(payload: HookPayload, agentId: string) {
@@ -507,7 +522,7 @@ function handleHook(island: Island, payload: HookPayload) {
   // "claude" is reserved; absent or invalid → Claude Code's own pill: Cursor's
   // when it runs in Cursor's terminal (Mac #120), VS Code's otherwise.
   const validAgent = validateAgent(payload.coucou_agent);
-  const workspaceId = payload.term_editor === "cursor" ? CURSOR_ID : CLAUDE_ID;
+  const workspaceId = workspacePillId(payload.term_editor);
   const agentId = validAgent ? `agent_${validAgent}` : workspaceId;
   const isExternalAgent = validAgent !== null;
   const sessionId = payload.session_id ?? "";

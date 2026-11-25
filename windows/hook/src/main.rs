@@ -386,8 +386,12 @@ fn agent_tag(arg: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<String> 
 
 /// `cursor` when the session runs in Cursor's integrated terminal. Cursor sets
 /// TERM_PROGRAM=vscode like VS Code does, so it is told apart by its own trace
-/// variable, or by its executable behind VS Code's git helper.
+/// variable, or by its executable behind VS Code's git helper. `orca` when it
+/// runs in an Orca pane, which sets ORCA_PANE_KEY for its own hooks.
 fn term_editor(env: &dyn Fn(&str) -> Option<String>) -> Option<&'static str> {
+    if env("ORCA_PANE_KEY").is_some_and(|v| !v.is_empty()) {
+        return Some("orca");
+    }
     if env("CURSOR_TRACE_ID").is_some_and(|v| !v.is_empty()) {
         return Some("cursor");
     }
@@ -568,6 +572,12 @@ mod tests {
         );
         assert_eq!(term_editor(&env_of(&[("CURSOR_TRACE_ID", "")])), None);
         assert_eq!(term_editor(&env_of(&[("TERM_PROGRAM", "vscode")])), None);
+    }
+
+    #[test]
+    fn an_orca_pane_is_told_apart() {
+        assert_eq!(term_editor(&env_of(&[("ORCA_PANE_KEY", "pane-1")])), Some("orca"));
+        assert_eq!(term_editor(&env_of(&[("ORCA_PANE_KEY", "")])), None);
     }
 
     #[test]
