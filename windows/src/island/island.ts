@@ -863,7 +863,8 @@ export class Island {
 
   pushPlanAlert(alert: PlanThresholdAlert) {
     if (State.paused) return;
-    if (this.activePlanAlert) {
+    // A queue that is still waiting (behind a plain notice) keeps its order.
+    if (this.activePlanAlert || this.planAlertQueue.length > 0) {
       const idx = this.planAlertQueue.findIndex(
         (x) => x.provider === alert.provider && x.windowKey === alert.windowKey,
       );
@@ -909,12 +910,15 @@ export class Island {
     this.compactNoticeTimer = window.setTimeout(() => {
       this.compactNoticeTimer = null;
       this.compactNotice = null;
-      const hadPlanAlert = this.activePlanAlert != null;
       this.activePlanAlert = null;
-      if (hadPlanAlert && this.planAlertQueue.length > 0) {
-        const next = this.planAlertQueue.shift()!;
-        this.showPlanAlertNow(next);
-        return;
+      // The notice area is free: resume the queue even if a plain notice
+      // ("Nota salva") had replaced the quota alert that was showing.
+      if (this.planAlertQueue.length > 0) {
+        if (!State.paused) {
+          this.showPlanAlertNow(this.planAlertQueue.shift()!);
+          return;
+        }
+        this.planAlertQueue.length = 0; // paused: island quota alerts are muted, as in pushPlanAlert
       }
       this.dirty = true;
       if (State.mode === "compact") this.animateGeometry(true);

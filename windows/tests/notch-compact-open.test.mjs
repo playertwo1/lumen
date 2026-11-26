@@ -625,3 +625,56 @@ test("seta ↗ Abrir tem tooltip contextual e aciona openTarget para Mail, Codex
   overview.sync();
   assert.equal(jump.getAttribute("title"), "Abrir Antigravity");
 });
+
+test("fila de alertas de cota retoma depois de um aviso comum e mantém a ordem", ({ mock }) => {
+  const root = initialDom.root();
+  const prevRaf = globalThis.requestAnimationFrame;
+  let island;
+  globalThis.requestAnimationFrame = () => 1;
+  mock.timers.enable({ apis: ["setTimeout"] });
+  const style = { level: 1, color: "#38BDF8", urgent: false, sound: "blip", ttlMs: 8000 };
+  const alert = (provider, windowKey, text) => ({ provider, windowKey, islandText: text, style });
+  const shown = () => island.compactNotice?.text ?? null;
+  try {
+    State.mode = "compact";
+    island = new Island(root);
+
+    // Interrupção: o segundo alerta aparece uma vez, depois do aviso comum.
+    island.pushPlanAlert(alert("claude", "fiveHour", "A1"));
+    island.pushPlanAlert(alert("codex", "fiveHour", "A2"));
+    assert.equal(shown(), "A1");
+    island.pushCompactNotice("Nota salva", "#34D399");
+    assert.equal(shown(), "Nota salva");
+    // Alerta novo durante o aviso entra atrás do que já esperava (mesmo provedor/janela substitui).
+    island.pushPlanAlert(alert("agy", "sevenDay", "A3"));
+    island.pushPlanAlert(alert("codex", "fiveHour", "A2b"));
+    mock.timers.tick(7000);
+    assert.equal(shown(), "Nota salva", "o aviso comum mantém sua duração");
+    mock.timers.tick(100);
+    assert.equal(shown(), "A2b");
+    mock.timers.tick(8100);
+    assert.equal(shown(), "A3");
+    mock.timers.tick(8100);
+    assert.equal(shown(), null);
+
+    // Sem fila, um alerta novo segue aparecendo na hora.
+    island.pushPlanAlert(alert("claude", "sevenDay", "B1"));
+    assert.equal(shown(), "B1");
+    mock.timers.tick(8100);
+    assert.equal(shown(), null);
+
+    // Pausa: a fila da ilha é descartada, nada aparece depois.
+    island.pushPlanAlert(alert("claude", "fiveHour", "C1"));
+    island.pushPlanAlert(alert("codex", "fiveHour", "C2"));
+    State.paused = true;
+    mock.timers.tick(8100);
+    assert.equal(shown(), null);
+    State.paused = false;
+    island.pushPlanAlert(alert("agy", "fiveHour", "D1"));
+    assert.equal(shown(), "D1", "a fila não fica presa depois da pausa");
+  } finally {
+    State.paused = false;
+    island?.fsm.cancelTimers();
+    globalThis.requestAnimationFrame = prevRaf;
+  }
+});
