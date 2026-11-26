@@ -25,7 +25,7 @@ Em ordem de execução. Uma etapa por vez; etapas pausadas só voltam com decis�
 | — | [Fase 2 — Melhorias do Windows](roadmap/fase-2-melhorias-windows.md) | Pausada (D-053) | Notificações nativas, modo jogo, custo por sessão, pílula do Git, aba do terminal, histórico, lançador, vigia de builds e outras. |
 | — | [Fase 2B — Paridade entre agentes](roadmap/fase-2b-paridade-agentes.md) | Pausada (D-053) | Claude, Codex, Antigravity e Hermes com as mesmas funções; herdr e Orca como ambientes. |
 | — | [Fase 2C — Pílulas e posição livre](roadmap/fase-2c-pilulas-posicao.md) | Pausada (D-053) | Escolher pílulas visíveis, Grok Bot como agente e arrastar a ilha no topo. |
-| — | [Parqueado](roadmap/parqueado.md) | Sem escopo | Ideias que só voltam com escopo e decisão do dono (Segunda Mente no Windows, ponte Notetaker → Drive, conectores, rotina por demonstração, ideias do MyBrain) e o que foi rejeitado. |
+| — | [Parqueado](roadmap/parqueado.md) | Sem escopo | Ideias que só voltam com escopo e decisão do dono (Segunda Mente no Windows, ponte Notetaker → Drive, conectores, rotina por demonstração, ideias do MyBrain, do Speakr e do Leon) e o que foi rejeitado. |
 | — | [Checklist de release](roadmap/release-checklist.md) | Procedimento | Passos para publicar uma versão Windows, só com pedido explícito. |
 
 As fases M vêm depois da L8 e seguem a ordem M1 → M10; uma não começa antes do fechamento da anterior, salvo onde o arquivo dela disser. Origem das fases M: [questionário de 2026-11-09](questionario/2026-11-09-mochi-assistant-roadmap.md).

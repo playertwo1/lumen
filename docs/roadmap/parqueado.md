@@ -115,6 +115,117 @@ Ordem sugerida, se o dono aprovar: L-MB1 (pequena e independente) → L-MB2 → 
 - **Koog, Koin, Room, Compose e a arquitetura MVI:** pilha Kotlin, sem equivalente útil no Tauri/Rust.
 - **Reuso de código ou de ícones:** licença GPL-3.0 e atribuição Flaticon (ver acima).
 
+### Ideias do Speakr (2026-11-25)
+
+Fonte: [`murtaza-nasir/speakr`](https://github.com/murtaza-nasir/speakr), app web auto-hospedado em Python (Flask) que grava ou recebe áudio, transcreve, separa falantes, resume, extrai eventos e responde perguntas sobre a biblioteca de gravações com citações. Estudado na `master` de 2026-11-24. A parte da Segunda Mente está em `docs/fases/estudo-speakr-leon.md` no repositório dela.
+
+**Licença: só ideias, nunca código.** O Speakr é AGPL-3.0 (e exige CLA de quem contribui com ele). Trazer código dele obrigaria o Lumen a virar AGPL. Implementar do zero, sem copiar nem traduzir linha a linha.
+
+Ordem sugerida, se o dono aprovar: L-SP1 (junto da M3) → L-SP2 → L-SP3 → L-SP4.
+
+#### L-SP1 — Citação verificada do trecho (M, encaixa na M3)
+
+- **No Speakr:** `src/services/citations.py`. O texto vai ao modelo com marcadores de segmento (`[S12 12:34 Dana]`) e o modelo cita no formato `[S12 "palavras exatas"]`. O app normaliza (minúsculas, espaços) e confere se a citação aparece de fato naquele segmento: se aparece, vira um link numerado `[1]` que abre o trecho; se não, mantém o número mas marca **não verificada**. Uma gramática só serve à resposta inteira e ao texto que chega aos pedaços (streaming), segurando no máximo 400 caracteres de marcador incompleto.
+- **No Lumen hoje:** a M3 (Obsidian) promete "buscar, citar e capturar notas", mas não define como a citação é conferida. O resumo do MailCraft e o do Anotador também não apontam de onde veio cada afirmação.
+- **Como seria:** na M3, cada nota lida pelo assistente entra com um id curto (`[N1 caminho/relativo.md]`) e parágrafos numerados; o modelo cita `[N1 "trecho"]`. O Lumen confere o trecho contra o arquivo lido **naquele turno** e mostra `[1]` clicável (abre a nota no Obsidian ou no Lumen) ou o aviso "trecho não encontrado". O mesmo formato serve depois ao resumo do MailCraft (citar a mensagem) e do Anotador.
+- **Regras:** "conteúdo externo é dado" (o trecho citado nunca vira instrução); nada do conteúdo vai para o registro local, só o id da nota e se a citação foi verificada.
+- **Aceite:** testes do parser em Rust: citação exata, com espaços e maiúsculas diferentes, trecho inexistente, segmento inexistente, marcador cortado no fim do streaming, duas grafias da mesma citação ficando com o mesmo número. Teste real: perguntar algo que está em duas notas e clicar nas duas citações.
+
+#### L-SP2 — Palavras do dicionário como "hotwords" no ditado (P a M, depende de conferência)
+
+- **No Speakr:** vocabulário próprio e hotwords (global, por pasta ou etiqueta, ou na hora de gravar) puxam o reconhecimento para nomes, siglas e jargão que ele erraria.
+- **No Lumen hoje:** o ditado já tem dicionário e substituições (`windows/src-tauri/src/flow/store.rs`, aplicados por `text::prepare`), mas só **depois** do reconhecimento. O motor é sherpa-onnx com Parakeet (`Cargo.toml`).
+- **Como seria:** conferir primeiro se o modelo e o modo de decodificação usados aceitam hotwords no sherpa-onnx (para modelos transdutores ele oferece lista de hotwords com `modified_beam_search`; a busca gulosa não usa). Se aceitar, passar as palavras do dicionário como hotwords com um peso fixo e manter as substituições como estão. Se não aceitar, registrar N/A e não trocar de motor por isso.
+- **Aceite:** 10 frases faladas com nomes e siglas do dicionário (dados sintéticos), contagem de acertos antes e depois, e tempo de reconhecimento que não piore de forma perceptível.
+
+#### L-SP3 — Gravar reunião (microfone + som do computador) para a Segunda Mente (G, insumo da ponte Notetaker)
+
+- **No Speakr:** grava o microfone, o som do sistema ou os dois misturados, com guia por sistema (no Windows: Stereo Mix, VB-Cable, Voicemeeter). A gravação vai ao servidor em pedaços durante a captura, então sessões de horas sobrevivem a recarregar a página.
+- **No Lumen hoje:** não grava reunião; a ideia está parqueada como "Ponte Notetaker → Segunda Mente via Google Drive" (acima).
+- **Como seria, se a ponte for aprovada:** capturar o som do sistema por WASAPI loopback (API nativa do Windows, sem driver virtual) e o microfone, misturar e gravar em pedaços de alguns minutos no disco local, para que fechar o Lumen ou travar não perca a reunião inteira. O destino é a Segunda Mente (que já importa transcrição com horários); o Lumen não precisa transcrever.
+- **Cuidado:** gravar outras pessoas exige que elas saibam. A spec precisa de aviso visível enquanto grava e de um botão claro de parar; nunca começar sozinho. Conteúdo de clientes não entra (regra do fork).
+- **Aceite:** gravar 30 minutos sintéticos, matar o processo no minuto 20 e recuperar ao menos os 15 primeiros minutos; nada sai da máquina sem o fluxo escolhido na ponte.
+
+#### L-SP4 — Da nota para o evento no Calendar (P)
+
+- **No Speakr:** "extração de eventos" acha itens de ação e eventos de agenda na transcrição e gera `.ics` (`src/services/calendar.py`).
+- **No Lumen hoje:** a L8.3 transforma uma ação do Anotador em tarefa; a L7 cria evento no Calendar com confirmação. Falta ligar os dois para eventos.
+- **Como seria:** no Anotador, uma frase com data e hora claras ("reunião com o contador dia 3 às 14h") ganha o botão "Virar evento", que abre o cartão de evento da L7 já preenchido. Data ou hora ambígua segue a regra de sempre: fica para o dono preencher. Sem `.ics`: o Calendar já é o destino.
+- **Aceite:** teste da extração com data explícita, ambígua e ausente; teste real criando um evento a partir de uma nota.
+
+#### Já coberto ou não se aplica (não fazer)
+
+- **Aviso de envio sem criptografia** (`src/config/outbound_warnings.py`: avisa quando um serviço remoto usa `http://` fora da máquina): os endereços dos provedores do Lumen são fixos e em `https` (`openai_compat.rs`). Vale para a Segunda Mente, que aceita base URL própria.
+- **Resumo por modelo, chat sobre a gravação, busca na biblioteca:** o Anotador e o chat já cobrem o que o Lumen precisa; a biblioteca de gravações é papel da Segunda Mente.
+
+#### Rejeitado
+
+- **Servidor web multiusuário, SSO, grupos, compartilhamento e links públicos, API REST, webhooks, cotas por usuário e registro de auditoria de admin:** o Lumen é um app de uma pessoa; nada disso tem caso de uso aqui.
+- **Separação de falantes e perfis de voz (WhisperX):** precisa de servidor com GPU e guarda impressão de voz de terceiros. Se um dia vier, é na Segunda Mente (lá já é ideia futura).
+- **Pasta "buraco negro" que importa áudio sozinha:** o ditado e o Anotador não trabalham com arquivos de áudio soltos; para a Segunda Mente o caminho é o compartilhar.
+- **Reuso de código:** AGPL-3.0 (ver acima).
+
+### Ideias do Leon (2026-11-25)
+
+Fonte: [`leon-ai/leon`](https://github.com/leon-ai/leon), assistente pessoal em Node.js/TypeScript (com partes em Python), na reescrita 2.0 (branch `develop`, estudada em 2026-11-26 pelo horário do autor). O resumo da arquitetura está em `core/context/ARCHITECTURE.md` dele; o laço do agente em `server/src/core/llm-manager/llm-duties/react-llm-duty/`, a memória em `server/src/core/memory-manager/` e o assistente proativo em `server/src/core/pulse-manager/pulse-manager.ts`.
+
+**Licença: MIT.** Dá para copiar código, desde que o aviso de copyright do Leon ("Copyright (c) 2019-present, Louis Grenard") vá junto do trecho copiado e na lista de licenças de terceiros. Na prática o núcleo dele é Node e o do Lumen é Rust, então quase tudo é ideia; só um trecho TypeScript da interface poderia vir direto. O nome, o logotipo e o personagem do Leon não entram.
+
+**O Leon é o projeto mais parecido com as fases M.** Os princípios batem: ferramentas declaradas em vez de shell livre, cada passo registrado, verificar o resultado. Por isso a maior parte das ideias abaixo melhora o laço do assistente que já existe.
+
+Ordem sugerida, se o dono aprovar: L-LE1 (antes da M5/M6, que têm mais passos) → L-LE2 e L-LE3 (com a M5/M6) → L-LE4 → L-LE5 (dentro da M9.2).
+
+#### L-LE1 — Guardas no laço do assistente (M)
+
+- **No Leon:** antes de executar, o laço valida e **repara** argumentos pelo schema, **bloqueia chamadas repetidas** idênticas, devolve **todo** sucesso ou falha como observação estruturada ao mesmo laço, tem prazo total por turno (modelo, tentativas, ferramentas e revisão dividem o mesmo prazo e reservam tempo para a resposta) e, ao estourar, relata o que ficou incompleto em vez de continuar.
+- **No Lumen hoje:** `mochi/chat_bridge.rs` limita o laço a `MAX_TOOL_STEPS = 8` e o registro (`mochi/registry.rs`) valida o schema e tem timeout por ferramenta. Não há bloqueio de chamada repetida nem prazo do turno inteiro.
+- **Como seria:**
+  - **Chamada repetida:** a mesma ferramenta com os mesmos argumentos (JSON normalizado) no mesmo turno não executa de novo; o modelo recebe "já executada, resultado: …". Evita, por exemplo, dois "fechar janela" seguidos.
+  - **Reparo de argumentos, só o trivial:** número em texto ("20", "20%") vira número quando o schema pede inteiro; espaços nas pontas saem. Nada é inventado: argumento ausente continua erro.
+  - **Prazo do turno:** por exemplo 60 s no total (definir na spec), com o resumo final garantido; ao estourar, a resposta diz o que foi feito e o que faltou.
+  - **Cancelamento:** a pausa rápida da M1 já corta; conferir que ela também interrompe o laço no meio.
+- **Aceite:** testes em `chat_bridge.rs` com modelo falso que repete a chamada, que manda "20%" como string, e que nunca para (estoura o prazo e o relato sai correto).
+
+#### L-LE2 — Carregar as ferramentas aos poucos (M, quando houver muitas)
+
+- **No Leon:** o modelo vê primeiro só os grupos de ferramentas (toolkits) com uma linha cada; o schema completo de uma função só entra no contexto quando ela vai ser usada, e schemas de grupos parados são compactados.
+- **No Lumen hoje:** são poucas ferramentas (M2) e todas vão no pedido. Com a M3 (Obsidian), M5 (acessibilidade) e M6 (web), a lista cresce e cada pedido fica mais caro e mais lento.
+- **Como seria:** agrupar por área (sistema, notas, interface, web). O primeiro pedido leva só os grupos; uma ferramenta interna `abrir_grupo` devolve os schemas do grupo pedido. O registro continua negado por padrão: abrir um grupo não habilita nada.
+- **Quando:** só se a medição mostrar ganho. Medir tokens e tempo do primeiro pedido com todas as ferramentas da M6 antes de decidir.
+
+#### L-LE3 — Resultado grande vira artefato com prévia (M, com a M3/M6)
+
+- **No Leon:** saída grande de ferramenta fica num registro de artefato; o modelo recebe uma prévia limitada e um identificador para pedir mais páginas. O contexto tem orçamento fixo e trocas antigas são compactadas quando preciso.
+- **No Lumen hoje:** o resultado da ferramenta vai inteiro em `<mochi_tool_result>`. Para volume e brilho isso é pequeno; uma página web (M6) ou uma nota longa (M3) não é.
+- **Como seria:** acima de um limite (definir na spec), o resultado fica só na memória do processo durante a conversa e o modelo recebe as primeiras linhas, o tamanho total e uma ferramenta `ler_mais(id, página)`. Nada vai para disco nem para o registro local.
+- **Aceite:** teste com resultado de 200 KB: o pedido ao modelo fica abaixo do limite e a página 3 traz o trecho certo.
+
+#### L-LE4 — Pausa para perguntar sem perder o plano (P a M)
+
+- **No Leon:** quando falta uma informação, o laço pausa com o plano e o estado guardados; a resposta do dono retoma a mesma tarefa.
+- **No Lumen hoje:** se o modelo pergunta algo no meio, a resposta do dono começa um turno novo, e o que já foi feito no turno anterior só aparece como histórico.
+- **Como seria:** uma ferramenta interna `perguntar_ao_dono(pergunta, opções?)` encerra o turno marcando-o como "aguardando"; a próxima mensagem retoma com as observações já obtidas. Útil para a M4 (voz: "qual dos dois monitores?") e a M8 (rotinas).
+- **Aceite:** teste com modelo falso que pergunta no passo 2 e termina no passo 3 depois da resposta, sem repetir o passo 1.
+
+#### L-LE5 — Memória do Leon como candidata na M9.2 (avaliação)
+
+- **No Leon:** memória em camadas (contexto temporário, fatos e preferências duráveis, resumo diário, memória de conversa), separadas por perfil; um `OWNER.md` legível e curado como perfil do dono; extração em segundo plano que reconcilia correções com os registros relevantes e **rejeita substituições velhas** (uma informação antiga não apaga uma mais nova); busca pelo QMD, com índice atualizado só onde mudou.
+- **Para a M9.2:** entra na tabela ao lado de Mem0 e Graphiti como "modelo de memória sem serviço novo". O dono já usa o QMD no cofre, e um `OWNER.md` legível e editável combina com a regra de nada escondido. Avaliar com as mesmas 10 perguntas da M9.1.
+- **Cuidado:** a extração automática roda depois de cada conversa e gasta a assinatura; na avaliação, medir o custo e considerar extrair só quando o dono pedir ("lembra disso").
+
+#### Rejeitado
+
+- **Pulse (o assistente investiga sozinho em segundo plano e decide quando falar):** gasta a assinatura sem pedido e quebra "0 % de CPU com a ilha escondida", pelos mesmos motivos da cristalização automática do Understudy. A iniciativa do assistente mora na Segunda Mente (F14); as regras de frequência do Pulse foram registradas lá.
+- **Experiências aprendidas sozinhas** (procedimentos salvos como `SKILL.md` depois de cada turno, até 196): é a cristalização automática já rejeitada; a M8.2 continua com "salvar como rotina" aprovado pelo dono.
+- **Ferramenta de shell e agentes de código como ferramenta:** contraria "Ferramenta, não shell".
+- **Telemetria:** o Leon vem com `telemetry_enabled: true` no `config.sample.yml`. O Lumen não tem telemetria.
+- **Modelo local escolhido por memória disponível (llmfit, llama.cpp):** fora das regras das fases M.
+- **Servidores MCP externos instalados pelo dono, com OAuth:** está no parqueado de conectores; o Lumen só expõe o próprio servidor MCP local.
+- **Interface gerada pelo modelo (Aurora: HTML, CSS e JavaScript gerados num quadro isolado):** risco alto para pouco ganho num chat de ilha. Só reabrir com caso de uso (por exemplo um gráfico de cotas) e, mesmo assim, preferir componentes fixos.
+- **Browser Use e Cua para web e computer use:** a M5 e a M6 já escolheram Agent Desktop e Agent Browser. Só voltam como alternativa se esses falharem na avaliação, conferindo licença antes.
+- **Satellite (um servidor central e aparelhos que executam ferramentas):** o Lumen é o próprio aparelho; a M7 usa a ligação com o celular que já existe.
+- **Humor do assistente influenciado pelo clima ("Vibes") e diário interno do assistente:** exige serviço de clima não configurado e não ajuda nas tarefas do dono.
+
 ### Fora de escopo do Mochi por decisão (2026-11-09)
 
 - Plugin Obsidian Local REST API: o cofre é lido direto pelos arquivos.
