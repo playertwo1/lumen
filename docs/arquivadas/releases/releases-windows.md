@@ -2,6 +2,20 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.29 — alertas de cota não ficam presos depois de um aviso comum
+
+- [x] Pedido do dono em 2026-11-26 ("faça merge das que tiver prontas … faça exe release"), depois do PR [#1](https://github.com/playertwo1/lumen/pull/1). Causa: `pushCompactNotice` limpava o alerta ativo, e ao expirar a fila só era drenada se ainda houvesse alerta ativo. Correção em [`00d13744`](https://github.com/playertwo1/lumen/commit/00d13744): a fila retoma quando a área de aviso libera, alertas novos entram atrás dos que esperam e a pausa descarta a fila.
+- [x] Validações locais na tag: `npx tsc --noEmit`, `npm test` (787/787, com o teste novo de fila em `notch-compact-open.test.mjs`) e `python scripts/test-whats-new.py windows`.
+- [x] Empacotamento e publicação locais como na 0.7.28 (`npx tauri build && node scripts/pack.mjs`, `LTO=thin`, `CODEGEN_UNITS=4`, checkout limpo da tag). Defender em `windows/release/` (`found no threats`). Tag [`windows-v0.7.29`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.29) e `windows-latest` publicados.
+- [x] Digests do GitHub conferidos com o SHA-256 local:
+  - `Lumen-Windows-0.7.29-setup.exe` / `Lumen-Windows-setup.exe`: `d5f1c10e95bd50a2f2471fd6fb99d9aafbaa3834565075e31382d98903442339`
+  - `Lumen-Windows-0.7.29.msi` / `Lumen-Windows.msi`: `a3fcf84dccf5ea9b29560d7fda8bf9898d0d5a08999a1870d09355394d83c1eb`
+  - `lumen.exe`: `985b1b4c7555c51b983908dd23ce55c21ab395f04a50394cd79112af582212bd`
+  - `lumen-hook.exe`: `8f436969ae9e37d70a4715675ea1fc34effb3a7b7c5646444d8d927e919041e1`
+- [x] O MSI ficou menor que o da 0.7.28 (24 MB contra 31 MB). A extração administrativa mostra que a 0.7.28 levava um `coucou_lib.dll` (18 MB) que sobrou do `target` antigo. A 0.7.29 instala só o `lumen.exe`, que já embute a biblioteca.
+- [ ] **NOT_RUN:** cargo test completo e script sintético de upgrade MSI/NSIS.
+- [ ] **NOT_RUN:** no app instalado, dois alertas de cota com “Nota salva” no meio.
+
 ### Windows 0.7.28 — cotas do Codex e do Antigravity voltam a aparecer
 
 - [x] Pedido do dono em 2026-11-25: o app não marcava as janelas de 5h e da semana do Codex e do Antigravity; depois "Publica a 0.7.28". Causa: o processo do Lumen tinha um PATH antigo (19 entradas) sem as pastas do `codex` e do `agy`, e as leituras voltavam vazias. Correção em [`dd01e075`](https://github.com/playertwo1/lumen/commit/dd01e075): `find_on_path` soma o PATH atual do usuário e da máquina, lido do registro.

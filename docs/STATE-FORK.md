@@ -1,6 +1,6 @@
 # STATE do fork — ponto de retomada
 
-**Atualizado:** 2026-11-24 · **Última release:** [`windows-v0.7.28`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.28) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (validação do dono)
+**Atualizado:** 2026-11-24 · **Última release:** [`windows-v0.7.29`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.29) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (validação do dono)
 
 Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação. O que cada etapa faz está no [ROADMAP-FORK](ROADMAP-FORK.md); o histórico deste arquivo até a reorganização está em [arquivadas/state/](arquivadas/state/state-ate-2026-11-17.md).
 
@@ -22,6 +22,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 ## Pendências do dono (validação real)
 
+- **Alertas de cota depois de um aviso comum (`0.7.29`)**: com dois alertas de cota na fila, salvar uma nota no meio do primeiro e conferir que o segundo aparece quando “Nota salva” some.
 - **Cotas do Codex e do Antigravity (`0.7.28`)**: depois de atualizar, abrir a ilha e ver as pílulas Codex e Antigravity com 5h e semana preenchidos.
 - **Personagens trabalhando (`0.7.26`)**: com a principal em Claude Desktop, rodar o Claude Code no Orca e ver o personagem principal trabalhando; com várias sessões ao mesmo tempo, uma terminar não pode parar o personagem. O hook já está atualizado (`0.7.27`, conferido); com a pílula do Orca ativa, a sessão aberta no Orca deve aparecer nela.
 - **Avisos progressivos de cota (`0.7.25`)**: validar no app instalado os avisos de 50%, 40%, 30%, 20% e 10% restantes (5h e semana) para Claude, Codex e Antigravity, o clique no Windows Toast abrindo o card correspondente e o toggle em Configurações → Uso do plano.
