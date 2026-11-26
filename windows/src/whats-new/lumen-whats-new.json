@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.29",
+      "items": [
+        {
+          "icon": "clock",
+          "title": { "pt-BR": "Alertas de cota não somem" },
+          "detail": { "pt-BR": "Um aviso como “Nota salva” não prende mais o próximo alerta de cota na fila." }
+        }
+      ]
+    },
+    {
       "version": "0.7.28",
       "items": [
         {

@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.29 — 26 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Alertas de cota não ficam presos:** quando um aviso comum, como “Nota salva”, interrompia um alerta de cota, o próximo alerta da fila não aparecia mais, mesmo com a ilha livre. Agora a fila retoma quando o aviso expira, na ordem em que os alertas chegaram.
+
 ## Windows 0.7.28 — 25 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Cotas do Codex e do Antigravity voltam a aparecer:** o Lumen passa a encontrar as CLIs `codex` e `agy` instaladas depois que ele abriu, lendo o PATH atual do usuário e da máquina. Antes as janelas de 5h e da semana ficavam sem números, e os avisos de cota desses dois não disparavam.
