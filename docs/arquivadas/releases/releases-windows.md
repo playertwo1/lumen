@@ -12,7 +12,7 @@
   - `Lumen-Windows-0.7.29.msi` / `Lumen-Windows.msi`: `a3fcf84dccf5ea9b29560d7fda8bf9898d0d5a08999a1870d09355394d83c1eb`
   - `lumen.exe`: `985b1b4c7555c51b983908dd23ce55c21ab395f04a50394cd79112af582212bd`
   - `lumen-hook.exe`: `8f436969ae9e37d70a4715675ea1fc34effb3a7b7c5646444d8d927e919041e1`
-- [x] O MSI ficou menor que o da 0.7.28 (24 MB contra 31 MB). A extração administrativa mostra que a 0.7.28 levava um `coucou_lib.dll` (18 MB) que sobrou do `target` antigo. A 0.7.29 instala só o `lumen.exe`, que já embute a biblioteca.
+- [x] O MSI ficou menor que o da 0.7.28 (24 MB contra 31 MB). A extração administrativa mostra que a 0.7.28 levava um `coucou_lib.dll` (18 MB), provavelmente uma sobra do `target` local daquela build. A 0.7.29 instala só o `lumen.exe`, que já embute a biblioteca.
 - [ ] **NOT_RUN:** cargo test completo e script sintético de upgrade MSI/NSIS.
 - [ ] **NOT_RUN:** no app instalado, dois alertas de cota com “Nota salva” no meio.
 
