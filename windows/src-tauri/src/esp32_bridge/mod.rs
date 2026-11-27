@@ -369,13 +369,14 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
     *rt.shutdown_tx.lock().unwrap() = Some(tx);
 
     let rt_main = rt.clone();
+    let rx_main = rx.clone();
     tauri::async_runtime::spawn(async move {
         let addr = SocketAddr::from(([0, 0, 0, 0], port));
         match TcpListener::bind(addr).await {
             Ok(listener) => {
                 rt_main.running.store(true, Ordering::SeqCst);
                 crate::log::line(format!("esp32_bridge: ouvindo em :{port}"));
-                server::serve_listener(listener, rt_main.clone(), rx.clone()).await;
+                server::serve_listener(listener, rt_main.clone(), rx_main).await;
                 rt_main.running.store(false, Ordering::SeqCst);
             }
             Err(err) => {
@@ -389,19 +390,173 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
 
     if panel_enabled && usage_port != port {
         let rt_usage = rt.clone();
-        let rx_usage = rt.shutdown_tx.lock().unwrap().as_ref().map(|s| s.subscribe());
-        if let Some(rx_usage) = rx_usage {
-            tauri::async_runtime::spawn(async move {
-                let addr = SocketAddr::from(([0, 0, 0, 0], usage_port));
-                if let Ok(listener) = TcpListener::bind(addr).await {
-                    rt_usage.usage_running.store(true, Ordering::SeqCst);
-                    crate::log::line(format!("esp32_bridge: painel /api/* também em :{usage_port}"));
-                    server::serve_listener(listener, rt_usage.clone(), rx_usage).await;
-                    rt_usage.usage_running.store(false, Ordering::SeqCst);
+        let rx_usage = rx.clone();
+        tauri::async_runtime::spawn(async move {
+            let addr = SocketAddr::from(([0, 0, 0, 0], usage_port));
+            if let Ok(listener) = TcpListener::bind(addr).await {
+                rt_usage.usage_running.store(true, Ordering::SeqCst);
+                crate::log::line(format!("esp32_bridge: painel /api/* também em :{usage_port}"));
+                server::serve_listener(listener, rt_usage.clone(), rx_usage).await;
+                rt_usage.usage_running.store(false, Ordering::SeqCst);
+            }
+        });
+    }
+
+    if cfg.esp32_relay_enabled && !cfg.esp32_relay_url.trim().is_empty() {
+        let rt_relay = rt.clone();
+        let mut rx_relay = rx;
+        let relay_url = cfg.esp32_relay_url.trim().to_string();
+        tauri::async_runtime::spawn(async move {
+            let Ok(client) = relay::RelayClient::new() else {
+                return;
+            };
+            let mut last_export_digest: Option<String> = None;
+            let mut last_usage_at: Option<Instant> = None;
+            // Primeiro tick breve após subir a ponte.
+            tokio::select! {
+                _ = rx_relay.changed() => return,
+                _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+            }
+            loop {
+                if *rx_relay.borrow() {
+                    break;
                 }
-            });
+                let room = secrets::get_internal(SECRET_RELAY_ROOM).unwrap_or_default();
+                let relay_key = secrets::get_internal(SECRET_RELAY_KEY).unwrap_or_default();
+                if crypto::valid_room(&room) && !relay_key.trim().is_empty() {
+                    let _ = run_relay_tick(
+                        &client,
+                        &rt_relay,
+                        &relay_url,
+                        &relay_key,
+                        &room,
+                        panel_enabled,
+                        &mut last_export_digest,
+                        &mut last_usage_at,
+                    )
+                    .await;
+                }
+                tokio::select! {
+                    _ = rx_relay.changed() => break,
+                    _ = tokio::time::sleep(Duration::from_secs(20)) => {}
+                }
+            }
+        });
+    }
+}
+
+pub(crate) fn digest_hex(bytes: &[u8]) -> String {
+    let d = ring::digest::digest(&ring::digest::SHA256, bytes);
+    let mut s = String::with_capacity(64);
+    for b in d.as_ref() {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+pub(crate) async fn run_relay_tick(
+    client: &relay::RelayClient,
+    rt: &Arc<Esp32Runtime>,
+    relay_url: &str,
+    relay_key: &str,
+    room: &str,
+    panel_enabled: bool,
+    last_export_digest: &mut Option<String>,
+    last_usage_at: &mut Option<Instant>,
+) -> Result<(), String> {
+    if crate::integrations::PAUSED.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    let keys = rt.key_strings();
+    if keys.is_empty() {
+        return Ok(());
+    }
+
+    let now_sec = Esp32Runtime::now_secs();
+    let msgs = client.pull_bridge(relay_url, relay_key, room).await?;
+    rt.note_relay_activity();
+
+    let mut need_repost_pc = false;
+    let mut incoming_esp32: Vec<serde_json::Value> = Vec::new();
+
+    for msg in msgs {
+        let Ok(plain) = crypto::decrypt_bridge_payload(&keys, &msg.body) else {
+            continue;
+        };
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&plain) else {
+            continue;
+        };
+        let origin = val
+            .get("origin_role")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        if origin == "pc" {
+            if now_sec.saturating_sub(msg.ts) < 3600 {
+                need_repost_pc = true;
+            }
+            continue;
+        }
+        if let Some(arr) = val.get("envelopes").and_then(serde_json::Value::as_array) {
+            incoming_esp32.extend(arr.iter().cloned());
+        } else if val.get("entity_id").is_some() {
+            incoming_esp32.push(val);
         }
     }
+
+    if !incoming_esp32.is_empty() {
+        if let Some(app) = rt.app.as_ref() {
+            let now_ms = crate::tasks::now_utc_ms_pub();
+            let _ = crate::tasks::sync_esp32_envelopes(app, &incoming_esp32, now_ms);
+        }
+    }
+
+    let exported = rt
+        .app
+        .as_ref()
+        .map(|app| crate::tasks::export_esp32_envelopes(app, 20, 48_000))
+        .unwrap_or_default();
+
+    if !exported.is_empty() {
+        let digest = digest_hex(&serde_json::to_vec(&exported).unwrap_or_default());
+        if need_repost_pc || last_export_digest.as_deref() != Some(digest.as_str()) {
+            let envelope = serde_json::json!({
+                "contract_version": 1,
+                "origin_role": "pc",
+                "sent_at": now_sec,
+                "envelopes": exported,
+            });
+            let plain = serde_json::to_string(&envelope).map_err(|e| e.to_string())?;
+            if let Some(newest_key) = keys.last() {
+                let wire = crypto::encrypt_bridge_payload(newest_key, &plain)?;
+                client.post_bridge(relay_url, relay_key, room, &wire).await?;
+                *last_export_digest = Some(digest);
+                rt.note_relay_activity();
+            }
+        }
+    }
+
+    if panel_enabled && last_usage_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(300)) {
+        let (c5, c5r, c7, c7r, c_ok) = rt.claude_quota.lock().unwrap().to_fields(now_sec);
+        let snap = tokens_agents::TokensSnapshot {
+            claude_session_pct: c5,
+            claude_session_reset_min: c5r,
+            claude_week_pct: c7,
+            claude_week_reset_min: c7r,
+            claude_stale: !c_ok,
+            codex_session_pct: None,
+            codex_session_reset_min: None,
+            codex_week_pct: None,
+            codex_week_reset_min: None,
+            codex_stale: true,
+            updated_at: now_sec,
+        };
+        let usage = tokens_agents::build_clean_usage_payload(&snap);
+        if client.put_usage(relay_url, relay_key, &usage).await.is_ok() {
+            *last_usage_at = Some(Instant::now());
+        }
+    }
+
+    Ok(())
 }
 
 fn current_settings(app: &AppHandle) -> settings::Settings {
