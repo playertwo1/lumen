@@ -2,6 +2,19 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.31 — painel "Uso" da placa ESP32 com cota zerada, Claude/Antigravity e selo LAN ao vivo
+
+- [x] Pedido do dono em 2026-11-27 para publicar os ajustes pós-0.7.30 na `main` (`f0dcee7e`, `5498b59f`, `625c7f34`, `ad5eab94`, `ece7a1a0`, `e434bc81`; release em `96610772`): janela de cota já zerada passa a ir como `0%` e reset desconhecido (`—`) em vez de porcentagem antiga e `"zera em 0min"` (Codex, Claude e Antigravity); coleta de cota do Claude (OAuth e uso do plano da ilha) e Antigravity (`agy_plan`, busca de `agy.exe` em `LocalAppData` e maior cota entre grupos); preservação de Sala e URL do Relay ao reabrir ajustes; badge LAN/relay verde com atualização ao vivo.
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.31: 2 items in 1 languages`), `npx tsc --noEmit`, `npm test` (791/791), `npm run build` e `cargo test --lib --locked` (994 passaram, 0 falhas, 10 ignorados).
+- [x] Empacotamento e publicação 100% locais por escolha do dono (sem GitHub Actions; `npm run pack` com `LTO=thin` e `CODEGEN_UNITS=4`). Microsoft Defender em `windows/release/` e nos instaladores baixados da release (`found no threats`). Tag [`windows-v0.7.31`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.31) (`--latest=false`) e [`windows-latest`](https://github.com/playertwo1/lumen/releases/tag/windows-latest) publicados.
+- [x] Digests do GitHub conferidos bit a bit com o SHA-256 local e dos instaladores baixados:
+  - `Lumen-Windows-0.7.31-setup.exe` / `Lumen-Windows-setup.exe`: `1495a7248ed603f953625a2f4ee3e3142841e1718efafa2021cc43b2d4fa2b26`
+  - `Lumen-Windows-0.7.31.msi` / `Lumen-Windows.msi`: `b0da2b255ee6c77e0a6c72790ca46e65515ac3deb92098c015a35978d7018f8e`
+  - `lumen.exe`: `74cd62ac4ef19fbb975835e9f97dc2284a81bc502c1413ae9d998ec3c7737832`
+  - `lumen-hook.exe`: `1dac6cc37ade965d6677a10ce7c60f08d71bfa0e1bd044e348635561fde96b04`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1`).
+- [ ] **NOT_RUN:** instalar no PC e conferir na tela "Uso" da placa ESP32 que o Codex aparece com `0%` e `"zera em —"` enquanto a janela estiver zerada (além de Claude, Antigravity e selo LAN ao vivo).
+
 ### Windows 0.7.30 — ponte nativa com a placa ESP32-S3 AMOLED (L9)
 
 - [x] Pedido do dono em 2026-11-27 ("publique a release") após conclusão da L9 (`L9.1`–`L9.6`) na `main` (`1bcdfb47`). Inclui servidor HTTP LAN (`:8787`), pareamento seguro de 6 dígitos com chaves no Credential Manager e revogação (`401`), ponte de voz (`POST /v1/voice` com STT local e TTS WAV `22050 Hz` `< 96 KiB`), sync bidirecional idempotente de tarefas (`POST /v1/tasks/sync` `<= 3800 B` + outbox L6), relay Cloudflare AES-256-GCM, controle nativo de mídia/volume (`POST /v1/media`) e painel integrado de cotas e aprovação de agentes (`/api/tokens`, `/api/agents*` em `:8787` e `:8737`).
