@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.30",
+      "items": [
+        {
+          "icon": "bolt",
+          "title": { "pt-BR": "Ponte nativa com a placa ESP32-S3" },
+          "detail": { "pt-BR": "Pareie por 6 dígitos para voz, tarefas sem duplicar (LAN e relay), mídia e aprovação de agentes." }
+        }
+      ]
+    },
+    {
       "version": "0.7.29",
       "items": [
         {

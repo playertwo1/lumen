@@ -7,7 +7,7 @@
 **Ilha flutuante inteligente para Windows que acompanha seus agentes de IA, permissões, ditado offline, anotações e integrações sem tirar você do foco.**
 
 <p>
-  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.29"><img src="https://img.shields.io/badge/release-windows--v0.7.29-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.29"></a>
+  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.30"><img src="https://img.shields.io/badge/release-windows--v0.7.30-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.30"></a>
   <a href="https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 e 11"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=black" alt="Tauri 2">
   <img src="https://img.shields.io/badge/Rust-TypeScript-F74C00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust e TypeScript">
@@ -60,10 +60,10 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 
 | Instalador | Escopo | Link direto |
 |---|---|---|
+| [`windows-v0.7.30`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.30) | 27 nov. 2026 | Ponte nativa com a placa ESP32-S3 AMOLED (voz, tarefas LAN/relay, mídia e painel de cotas/agentes) |
 | [`windows-v0.7.29`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.29) | 26 nov. 2026 | Alertas de cota voltam a aparecer depois de um aviso comum |
 | [`windows-v0.7.28`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.28) | 25 nov. 2026 | Cotas de 5h e semana do Codex e do Antigravity voltam a aparecer |
 | [`windows-v0.7.27`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.27) | 25 nov. 2026 | Hook dos agentes atualizado mesmo com sessões abertas |
-| [`windows-v0.7.26`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.26) | 24 nov. 2026 | Personagens voltam a trabalhar com o Claude Code no terminal e no Orca, também com várias sessões na mesma pílula |
 | **Setup do usuário (`.exe`)** | Instala apenas para o usuário atual (sem exigir admin) | [`Lumen-Windows-setup.exe`](https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe) |
 | **Instalador de sistema (`.msi`)** | Instalação padrão Windows Installer | [`Lumen-Windows.msi`](https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows.msi) |
 
@@ -71,10 +71,11 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 > Os instaladores ainda não possuem certificado Authenticode, então o SmartScreen pode exibir aviso de editor desconhecido; clique em **Mais informações → Executar mesmo assim**. Após instalar, novas versões podem ser verificadas em **Ajustes → Geral → Atualizações** com conferência de SHA-256.
 
 <details>
-<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.29</code></summary>
+<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.30</code></summary>
 
 | Versão | Data | Destaques |
 |---|---|---|
+| [`windows-v0.7.26`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.26) | 24 nov. 2026 | Personagens voltam a trabalhar com o Claude Code no terminal e no Orca, também com várias sessões na mesma pílula |
 | [`windows-v0.7.25`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.25) | 24 nov. 2026 | Avisos progressivos de cota (50% a 10% restantes, 5h e semana) com cores de urgência para Claude, Codex e Antigravity |
 | [`windows-v0.7.24`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.24) | 24 nov. 2026 | Triagem do MailCraft: botão Excluir ao lado de Abrir nos e-mails mantidos e prioritários |
 | [`windows-v0.7.23`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.23) | 24 nov. 2026 | Triagem completa e resumo rápido estruturado no MailCraft (Master-Detail); ditado com Whisper sem pedir Parakeet |

@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.30 — 27 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Ponte nativa com a placa ESP32-S3 AMOLED (L9):** pareamento por código de 6 dígitos com chave no Credential Manager e revogação imediata, ponte de voz local (`POST /v1/voice` com STT local e TTS WAV 22050 Hz), sincronização bidirecional idempotente de tarefas sem duplicação ligada à outbox da Segunda Mente (`POST /v1/tasks/sync` na LAN e sala cifrada AES-256-GCM no relay Cloudflare), controle nativo de mídia e volume (`POST /v1/media`) e painel integrado de cotas e aprovação de agentes (`/api/tokens` e `/api/agents`), dispensando `lumen_bridge` e `tokenserver` em Python.
+
 ## Windows 0.7.29 — 26 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Alertas de cota não ficam presos:** quando um aviso comum, como “Nota salva”, interrompia um alerta de cota, o próximo alerta da fila não aparecia mais, mesmo com a ilha livre. Agora a fila retoma quando o aviso expira, na ordem em que os alertas chegaram.
