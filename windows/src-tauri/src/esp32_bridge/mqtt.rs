@@ -12,16 +12,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rumqttc::{
-    AsyncClient, Event, Incoming, LastWill, MqttOptions, Packet, Publish, QoS, SubAck,
-    SubscribeFilter,
-};
+use rumqttc::{AsyncClient, Event, Incoming, LastWill, MqttOptions, QoS, SubscribeFilter};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
-use super::crypto::{
-    extract_broker_host, open_mqtt_envelope, seal_mqtt_envelope,
-};
+use super::crypto::{open_mqtt_envelope, seal_mqtt_envelope};
 
 pub const DEFAULT_SETTLE_DURATION: Duration = Duration::from_secs(3);
 

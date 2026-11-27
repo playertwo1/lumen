@@ -1,4 +1,4 @@
-// ESP32-S3 AMOLED settings UI & validation functions (L9)
+// ESP32-S3 AMOLED settings UI & validation functions (L10 / Q2)
 
 import { Bridge, type Esp32BridgeStatus } from "../core/bridge";
 import { h } from "../views/dom";
@@ -6,21 +6,60 @@ import { h } from "../views/dom";
 type Toggle = (on: boolean, onChange: (v: boolean) => void) => HTMLElement;
 
 // 1. Pure validation functions
-export function isValidPairCode(code: string): boolean {
-  return /^\d{6}$/.test(code);
-}
-
 export function isValidBridgePort(port: number): boolean {
   return Number.isInteger(port) && port >= 1024 && port <= 65535;
-}
-
-export function isValidRoomId(room: string): boolean {
-  return /^[A-Za-z0-9_-]{8,64}$/.test(room);
 }
 
 export function isValidRelayUrl(url: string): boolean {
   if (!url || url.trim() === "") return false;
   return /^https:\/\/.+/.test(url) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/.*)?$/.test(url);
+}
+
+export function validateMqttPairCode(raw: string): { ok: true; host: string; room: string } | { ok: false; error: string } {
+  if (!raw || typeof raw !== "string" || !raw.trim()) {
+    return { ok: false, error: "Código vazio." };
+  }
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw.trim());
+  } catch {
+    return { ok: false, error: "JSON inválido." };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: "Formato inválido." };
+  }
+  if (parsed.t !== "sm-mqtt") {
+    return { ok: false, error: "Tipo inválido (esperado 'sm-mqtt')." };
+  }
+  if (parsed.v !== 1) {
+    return { ok: false, error: "Versão inválida (esperado 1)." };
+  }
+  if (typeof parsed.uri !== "string" || !parsed.uri.startsWith("mqtts://")) {
+    return { ok: false, error: "URI deve começar com 'mqtts://'." };
+  }
+  let host = "";
+  try {
+    const u = new URL(parsed.uri);
+    host = u.hostname;
+    if (!host) {
+      return { ok: false, error: "Host do broker inválido." };
+    }
+  } catch {
+    return { ok: false, error: "URI do broker inválida." };
+  }
+  if (typeof parsed.u !== "string" || parsed.u.trim() === "") {
+    return { ok: false, error: "Usuário não pode ser vazio." };
+  }
+  if (typeof parsed.p !== "string" || parsed.p.trim() === "") {
+    return { ok: false, error: "Senha não pode ser vazia." };
+  }
+  if (typeof parsed.sala !== "string" || !/^[a-z0-9]{12}$/.test(parsed.sala)) {
+    return { ok: false, error: "Sala deve conter exatamente 12 caracteres (a-z, 0-9)." };
+  }
+  if (typeof parsed.k !== "string" || !/^[0-9a-fA-F]{64}$/.test(parsed.k)) {
+    return { ok: false, error: "Chave deve conter exatamente 64 caracteres hexadecimais." };
+  }
+  return { ok: true, host, room: parsed.sala };
 }
 
 // 2. Section UI builder
@@ -63,6 +102,31 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
   const portInput = h("input", { type: "number", value: "8787", class: "path" }) as HTMLInputElement;
   const localUrlDiv = h("div", { class: "hint", text: "URL Local: (carregando...)" });
 
+  // MQTT block controls & displays
+  const mqttCodeInput = h("textarea", {
+    rows: "3",
+    placeholder: 'Cole o código JSON exibido na tela da placa...',
+    class: "path",
+  }) as HTMLTextAreaElement;
+  const connectMqttBtn = h("button", { class: "primary", text: "Conectar placa" }) as HTMLButtonElement;
+  const removeMqttBtn = h("button", { class: "danger", text: "Remover conexão" }) as HTMLButtonElement;
+
+  const mqttHostSpan = h("span", { text: "—" });
+  const mqttRoomSpan = h("span", { text: "—" });
+  const mqttStatusSpan = h("span", { class: "phone-live-pill", text: "Não configurado" });
+  const boardStatusSpan = h("span", { class: "phone-live-pill", text: "Placa offline" });
+
+  // Relay Cloudflare block
+  const relaySwitchInput = h("input", { type: "checkbox" }) as HTMLInputElement;
+  const relayUrlInput = h("input", { type: "text", placeholder: "https://...", class: "path" }) as HTMLInputElement;
+  const relayKeyInput = h("input", { type: "password", placeholder: "Já configurada — deixe vazio para manter", class: "path" }) as HTMLInputElement;
+  const saveRelayBtn = h("button", { class: "primary", text: "Salvar relay" }) as HTMLButtonElement;
+
+  // Agent Panel block (L9.6)
+  const agentPanelSwitch = h("input", { type: "checkbox" }) as HTMLInputElement;
+  const usagePortInput = h("input", { type: "number", value: "8737", class: "path" }) as HTMLInputElement;
+  const saveAgentPanelBtn = h("button", { class: "primary", text: "Salvar Painel de Cota" }) as HTMLButtonElement;
+
   const updateUI = (st: Esp32BridgeStatus | null) => {
     if (!st) return;
 
@@ -82,8 +146,8 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
       if (st.mode === "lan") {
         modeText = "LAN";
         modeOk = true;
-      } else if (st.mode === "relay") {
-        modeText = "Ponte remota";
+      } else if (st.mode === "mqtt") {
+        modeText = "MQTT";
         modeOk = true;
       } else if (st.mode === "alone") {
         modeText = "Sozinha";
@@ -96,6 +160,33 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
       localUrlDiv.textContent = `URL para a placa: ${st.localUrls[0]}`;
     } else {
       localUrlDiv.textContent = `URL para a placa: http://<ip>:${st.port}`;
+    }
+
+    // MQTT display
+    if (st.mqttConfigured) {
+      mqttHostSpan.textContent = st.mqttHost || "—";
+      mqttRoomSpan.textContent = st.mqttRoom || "—";
+      if (st.mqttError) {
+        mqttStatusSpan.textContent = `Erro: ${st.mqttError}`;
+        mqttStatusSpan.className = "phone-live-pill err";
+      } else if (st.mqttConnected) {
+        mqttStatusSpan.textContent = "Conectado";
+        mqttStatusSpan.className = "phone-live-pill ok";
+      } else {
+        mqttStatusSpan.textContent = "Conectando...";
+        mqttStatusSpan.className = "phone-live-pill";
+      }
+      boardStatusSpan.textContent = st.mqttBoardOnline ? "Placa online" : "Placa offline";
+      boardStatusSpan.className = st.mqttBoardOnline ? "phone-live-pill ok" : "phone-live-pill";
+      removeMqttBtn.disabled = false;
+    } else {
+      mqttHostSpan.textContent = "—";
+      mqttRoomSpan.textContent = "—";
+      mqttStatusSpan.textContent = "Não configurado";
+      mqttStatusSpan.className = "phone-live-pill";
+      boardStatusSpan.textContent = "Placa offline";
+      boardStatusSpan.className = "phone-live-pill";
+      removeMqttBtn.disabled = true;
     }
   };
 
@@ -126,37 +217,34 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
     localUrlDiv,
   );
 
-  // Pairing code block
-  const pairCodeInput = h("input", { type: "text", inputmode: "numeric", maxLength: 6, placeholder: "123456", class: "path" }) as HTMLInputElement;
-  const pairStatusHint = h("div", { class: "hint", text: "Nenhum código armado." });
-
-  const armBtn = h("button", { class: "primary", text: "Armar código" }) as HTMLButtonElement;
-  armBtn.addEventListener("click", async () => {
+  // MQTT block event handlers
+  connectMqttBtn.addEventListener("click", async () => {
     clearError();
-    const code = pairCodeInput.value.trim();
-    if (!isValidPairCode(code)) {
-      showError("O código de pareamento deve ter exatamente 6 dígitos.");
+    const raw = mqttCodeInput.value.trim();
+    if (!raw) {
+      showError("Cole o código da placa.");
+      return;
+    }
+    const val = validateMqttPairCode(raw);
+    if (!val.ok) {
+      showError(val.error);
       return;
     }
     try {
-      const st = await Bridge.esp32.armPairCode(code);
+      const st = await Bridge.esp32.saveMqttCode(raw);
+      mqttCodeInput.value = ""; // Limpa o campo após salvar para não deixar credenciais visíveis na tela!
       updateUI(st);
-      if (st?.pairCodeArmed) {
-        pairStatusHint.textContent = `Código armado (expira em ${st.pairCodeExpiresInSecs ?? 60}s).`;
-      }
     } catch (err) {
       showError(String(err));
     }
   });
 
-  const revokeBtn = h("button", { class: "danger", text: "Revogar placa" }) as HTMLButtonElement;
-  revokeBtn.addEventListener("click", async () => {
+  removeMqttBtn.addEventListener("click", async () => {
     clearError();
-    if (!window.confirm("Tem certeza que deseja revogar todas as placas pareadas?")) return;
+    if (!window.confirm("Tem certeza que deseja remover a conexão com a placa?")) return;
     try {
-      const st = await Bridge.esp32.revokeAll();
+      const st = await Bridge.esp32.clearMqtt();
       updateUI(st);
-      pairStatusHint.textContent = "Todas as placas foram revogadas.";
     } catch (err) {
       showError(String(err));
     }
@@ -164,30 +252,38 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
 
   section.append(
     h("div", { class: "phone-divider" }),
-    h("h3", { text: "Pareamento Seguro" }),
+    h("h3", { text: "Conexão MQTT (Código da placa)" }),
+    h("div", { class: "hint", text: "Cole o código exibido na tela da placa para sincronizar tarefas e controlar mídia." }),
     h("div", { class: "row" },
-      pairCodeInput,
-      armBtn,
+      mqttCodeInput,
     ),
-    pairStatusHint,
     h("div", { class: "row" },
-      revokeBtn,
+      connectMqttBtn,
+      removeMqttBtn,
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Host do Broker" }),
+      mqttHostSpan,
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Sala" }),
+      mqttRoomSpan,
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Conexão MQTT" }),
+      mqttStatusSpan,
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Estado da Placa" }),
+      boardStatusSpan,
     ),
   );
 
-  // Relay Cloudflare block
-  const relaySwitchInput = h("input", { type: "checkbox" }) as HTMLInputElement;
-  const relayUrlInput = h("input", { type: "text", placeholder: "https://...", class: "path" }) as HTMLInputElement;
-  const relayRoomInput = h("input", { type: "text", placeholder: "sala-exemplo", class: "path" }) as HTMLInputElement;
-  const relayKeyInput = h("input", { type: "password", placeholder: "Já configurada — deixe vazio para manter", class: "path" }) as HTMLInputElement;
-
-  const saveRelayBtn = h("button", { class: "primary", text: "Salvar relay" }) as HTMLButtonElement;
-  let roomAlreadyConfigured = false;
+  // Relay Cloudflare event handler
   saveRelayBtn.addEventListener("click", async () => {
     clearError();
     const enabled = relaySwitchInput.checked;
     const url = relayUrlInput.value.trim();
-    const room = relayRoomInput.value.trim();
     const key = relayKeyInput.value;
 
     if (enabled) {
@@ -195,19 +291,13 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
         showError("URL do Relay inválida.");
         return;
       }
-      if ((room !== "" || !roomAlreadyConfigured) && !isValidRoomId(room)) {
-        showError("Sala do Relay inválida (8 a 64 caracteres alfanuméricos, _ ou -).");
-        return;
-      }
     }
 
     try {
-      const st = await Bridge.esp32.saveRelay(enabled, url, room, key);
+      const st = await Bridge.esp32.saveRelay(enabled, url, key);
       updateUI(st);
       if (st) {
-        roomAlreadyConfigured = st.relayRoomConfigured;
         relayUrlInput.value = st.relayUrl || "";
-        relayRoomInput.value = st.relayRoom || "";
         relayKeyInput.value = "";
         relayKeyInput.placeholder = st.relayKeyConfigured ? "Já configurada — deixe vazio para manter" : "";
       }
@@ -228,10 +318,6 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
       relayUrlInput,
     ),
     h("div", { class: "row" },
-      h("label", { text: "Sala" }),
-      relayRoomInput,
-    ),
-    h("div", { class: "row" },
       h("label", { text: "Chave Relay" }),
       relayKeyInput,
     ),
@@ -240,11 +326,7 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
     ),
   );
 
-  // Agent Panel block (L9.6)
-  const agentPanelSwitch = h("input", { type: "checkbox" }) as HTMLInputElement;
-  const usagePortInput = h("input", { type: "number", value: "8737", class: "path" }) as HTMLInputElement;
-  const saveAgentPanelBtn = h("button", { class: "primary", text: "Salvar Painel de Cota" }) as HTMLButtonElement;
-
+  // Agent Panel event handler
   saveAgentPanelBtn.addEventListener("click", async () => {
     clearError();
     const enabled = agentPanelSwitch.checked;
@@ -284,10 +366,8 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
       if (!st) return;
       updateUI(st);
       if (initial) {
-        roomAlreadyConfigured = st.relayRoomConfigured;
         relaySwitchInput.checked = st.relayEnabled;
         relayUrlInput.value = st.relayUrl || "";
-        relayRoomInput.value = st.relayRoom || "";
         if (st.relayKeyConfigured) {
           relayKeyInput.placeholder = "Já configurada — deixe vazio para manter";
         }

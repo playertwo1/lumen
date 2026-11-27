@@ -664,11 +664,11 @@ export const Bridge = {
     status: () => call<Esp32BridgeStatus>("esp32_status"),
     setEnabled: (enabled: boolean, port?: number) =>
       callOrThrow<Esp32BridgeStatus>("esp32_set_enabled", { enabled, port: port ?? null }),
-    armPairCode: (code: string) =>
-      callOrThrow<Esp32BridgeStatus>("esp32_arm_pair_code", { code }),
-    revokeAll: () => callOrThrow<Esp32BridgeStatus>("esp32_revoke_all"),
-    saveRelay: (enabled: boolean, url: string, room: string, key: string) =>
-      callOrThrow<Esp32BridgeStatus>("esp32_save_relay", { enabled, url, room, key }),
+    saveMqttCode: (codeJson: string) =>
+      callOrThrow<Esp32BridgeStatus>("esp32_save_mqtt_code", { codeJson }),
+    clearMqtt: () => callOrThrow<Esp32BridgeStatus>("esp32_clear_mqtt"),
+    saveRelay: (enabled: boolean, url: string, key: string) =>
+      callOrThrow<Esp32BridgeStatus>("esp32_save_relay", { enabled, url, key }),
     setAgentPanel: (enabled: boolean, usagePort?: number) =>
       callOrThrow<Esp32BridgeStatus>("esp32_set_agent_panel", { enabled, usagePort: usagePort ?? null }),
   },
@@ -678,20 +678,22 @@ export interface Esp32BridgeStatus {
   enabled: boolean;
   port: number;
   running: boolean;
-  mode: "alone" | "lan" | "relay";
+  mode: "alone" | "lan" | "mqtt";
   localUrls: string[];
-  pairedCount: number;
-  pairCodeArmed: boolean;
-  pairCodeExpiresInSecs: number | null;
   relayEnabled: boolean;
   relayUrl: string;
-  relayRoom?: string;
-  relayRoomConfigured: boolean;
   relayKeyConfigured: boolean;
   agentPanelEnabled: boolean;
   usagePort: number;
   usageRunning: boolean;
   lastError: string | null;
+
+  mqttConfigured: boolean;
+  mqttConnected: boolean;
+  mqttHost: string;
+  mqttRoom: string;
+  mqttBoardOnline: boolean;
+  mqttError: string | null;
 }
 
 /** Tarefas locais do Lumen (src-tauri/src/tasks). */

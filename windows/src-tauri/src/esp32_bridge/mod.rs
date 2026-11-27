@@ -37,6 +37,11 @@ const PAIR_CODE_TTL: Duration = Duration::from_secs(300);
 const SECRET_BRIDGE_KEYS: &str = "esp32-bridge-keys";
 const SECRET_RELAY_KEY: &str = "esp32-relay-key";
 const SECRET_RELAY_ROOM: &str = "esp32-relay-room";
+pub(crate) const SECRET_MQTT_URI: &str = "esp32-mqtt-uri";
+pub(crate) const SECRET_MQTT_USER: &str = "esp32-mqtt-user";
+pub(crate) const SECRET_MQTT_PASS: &str = "esp32-mqtt-pass";
+pub(crate) const SECRET_MQTT_ROOM: &str = "esp32-mqtt-room";
+pub(crate) const SECRET_MQTT_KEY: &str = "esp32-mqtt-key";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PairedDeviceKey {
@@ -56,6 +61,12 @@ pub struct Esp32BridgeStatus {
     pub paired_count: usize,
     pub pair_code_armed: bool,
     pub pair_code_expires_in_secs: Option<u64>,
+    pub mqtt_configured: bool,
+    pub mqtt_connected: bool,
+    pub mqtt_host: String,
+    pub mqtt_room: String,
+    pub mqtt_board_online: bool,
+    pub mqtt_error: Option<String>,
     pub relay_enabled: bool,
     pub relay_url: String,
     pub relay_room: String,
@@ -84,6 +95,8 @@ pub struct Esp32Runtime {
     pub claude_quota: Mutex<ClaudeQuotaCache>,
     pub agy_quota: Mutex<ClaudeQuotaCache>,
     pub agent_panel: Mutex<Esp32AgentPanelState>,
+    pub mqtt_state: Arc<mqtt::MqttRuntimeState>,
+    pub mqtt_handle: Mutex<Option<mqtt::MqttHandle>>,
     shutdown_tx: Mutex<Option<watch::Sender<bool>>>,
     relay_last_ok: Mutex<Option<Instant>>,
     lan_last_ok: Mutex<Option<Instant>>,
@@ -92,6 +105,10 @@ pub struct Esp32Runtime {
 impl Esp32Runtime {
     pub fn new(app: Option<AppHandle>) -> Arc<Self> {
         let initial_keys = load_keys_from_vault();
+        let mqtt_state = Arc::new(mqtt::MqttRuntimeState::new());
+        if let Some(cfg) = load_mqtt_config_from_vault() {
+            mqtt_state.set_configured(crypto::extract_broker_host(&cfg.uri), cfg.room);
+        }
         Arc::new(Self {
             app,
             keys: Mutex::new(initial_keys),
@@ -104,6 +121,8 @@ impl Esp32Runtime {
             claude_quota: Mutex::new(ClaudeQuotaCache::default()),
             agy_quota: Mutex::new(ClaudeQuotaCache::default()),
             agent_panel: Mutex::new(Esp32AgentPanelState::default()),
+            mqtt_state,
+            mqtt_handle: Mutex::new(None),
             shutdown_tx: Mutex::new(None),
             relay_last_ok: Mutex::new(None),
             lan_last_ok: Mutex::new(None),
@@ -239,6 +258,9 @@ impl Esp32Runtime {
         {
             return "lan";
         }
+        if self.mqtt_state.connected.load(Ordering::Relaxed) {
+            return "mqtt";
+        }
         if self
             .relay_last_ok
             .lock()
@@ -254,6 +276,12 @@ impl Esp32Runtime {
         if let Some(tx) = self.shutdown_tx.lock().unwrap().take() {
             let _ = tx.send(true);
         }
+        if let Some(handle) = self.mqtt_handle.lock().unwrap().take() {
+            tauri::async_runtime::spawn(async move {
+                let _ = handle.shutdown().await;
+            });
+        }
+        self.mqtt_state.set_connected(false);
         self.running.store(false, Ordering::SeqCst);
         self.usage_running.store(false, Ordering::SeqCst);
     }
@@ -273,6 +301,7 @@ impl Esp32Runtime {
             }
         }
         let paired_count = self.keys.lock().unwrap().len();
+        let mqtt_snap = self.mqtt_state.snapshot();
         let relay_room = secrets::get_internal(SECRET_RELAY_ROOM).unwrap_or_default();
         let relay_room_configured = crypto::valid_room(&relay_room);
         let relay_key_configured = secrets::get_internal(SECRET_RELAY_KEY)
@@ -289,6 +318,12 @@ impl Esp32Runtime {
             paired_count,
             pair_code_armed: pair_armed,
             pair_code_expires_in_secs: pair_secs,
+            mqtt_configured: mqtt_snap.configured,
+            mqtt_connected: mqtt_snap.connected,
+            mqtt_host: mqtt_snap.host,
+            mqtt_room: mqtt_snap.room,
+            mqtt_board_online: mqtt_snap.board_online,
+            mqtt_error: mqtt_snap.last_error,
             relay_enabled: cfg.esp32_relay_enabled,
             relay_url: cfg.esp32_relay_url.clone(),
             relay_room,
@@ -329,6 +364,55 @@ fn save_keys_to_vault(keys: &[PairedDeviceKey]) -> Result<(), String> {
     }
     let json = serde_json::to_string(keys).map_err(|e| e.to_string())?;
     secrets::set_internal(SECRET_BRIDGE_KEYS, &json)
+}
+
+pub(crate) fn load_mqtt_config_from_vault() -> Option<mqtt::MqttConfig> {
+    let uri = secrets::get_internal(SECRET_MQTT_URI)?;
+    let user = secrets::get_internal(SECRET_MQTT_USER)?;
+    let pass = secrets::get_internal(SECRET_MQTT_PASS)?;
+    let room = secrets::get_internal(SECRET_MQTT_ROOM)?;
+    let key = secrets::get_internal(SECRET_MQTT_KEY)?;
+    if uri.trim().is_empty() || room.trim().is_empty() || key.trim().is_empty() {
+        return None;
+    }
+    Some(mqtt::MqttConfig {
+        uri,
+        user,
+        pass,
+        room,
+        key,
+    })
+}
+
+pub(crate) fn save_mqtt_config_to_vault(code: &crypto::MqttPairCode) -> Result<(), String> {
+    secrets::set_internal(SECRET_MQTT_URI, code.uri.trim())?;
+    secrets::set_internal(SECRET_MQTT_USER, code.u.trim())?;
+    secrets::set_internal(SECRET_MQTT_PASS, code.p.trim())?;
+    secrets::set_internal(SECRET_MQTT_ROOM, code.sala.trim())?;
+    secrets::set_internal(SECRET_MQTT_KEY, code.k.trim())?;
+    Ok(())
+}
+
+pub(crate) fn clear_mqtt_config_from_vault() -> Result<(), String> {
+    let _ = secrets::clear_internal(SECRET_MQTT_URI);
+    let _ = secrets::clear_internal(SECRET_MQTT_USER);
+    let _ = secrets::clear_internal(SECRET_MQTT_PASS);
+    let _ = secrets::clear_internal(SECRET_MQTT_ROOM);
+    let _ = secrets::clear_internal(SECRET_MQTT_KEY);
+    Ok(())
+}
+
+struct RuntimeMqttCallbacks {
+    _rt: Arc<Esp32Runtime>,
+}
+
+impl mqtt::MqttCallbacks for RuntimeMqttCallbacks {
+    fn on_task_upsert(&self, _entity_id: &str, _plain_json: &str) {}
+    fn on_task_delete(&self, _entity_id: &str) {}
+    fn on_settle_prune(&self, _seen_task_ids: &HashSet<String>, _retained_count: usize) {}
+    fn on_media_action(&self, _action: &str) -> Option<mqtt::MediaStatePayload> {
+        None
+    }
 }
 
 fn local_urls_for_port(port: u16) -> Vec<String> {
@@ -426,6 +510,23 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
                 }
             }
         });
+    }
+
+    if let Some(mqtt_cfg) = load_mqtt_config_from_vault() {
+        let cb = Arc::new(RuntimeMqttCallbacks { _rt: rt.clone() });
+        match mqtt::spawn_mqtt_loop(
+            mqtt_cfg,
+            cb,
+            rt.mqtt_state.clone(),
+            mqtt::DEFAULT_SETTLE_DURATION,
+        ) {
+            Ok(handle) => {
+                *rt.mqtt_handle.lock().unwrap() = Some(handle);
+            }
+            Err(err) => {
+                rt.mqtt_state.set_last_error(Some(err));
+            }
+        }
     }
 
     if cfg.esp32_relay_enabled && !cfg.esp32_relay_url.trim().is_empty() {
@@ -803,16 +904,49 @@ pub fn esp32_revoke_all(
 }
 
 #[tauri::command]
+pub fn esp32_save_mqtt_code(
+    app: AppHandle,
+    rt: State<'_, Arc<Esp32Runtime>>,
+    code_json: String,
+) -> Result<Esp32BridgeStatus, String> {
+    let parsed = crypto::parse_mqtt_pair_code(&code_json)?;
+    save_mqtt_config_to_vault(&parsed)?;
+    rt.mqtt_state
+        .set_configured(crypto::extract_broker_host(&parsed.uri), parsed.sala.clone());
+    let next = update_esp32_settings(&app, |s| {
+        s.esp32_bridge_enabled = true;
+    })?;
+    apply_runtime_config(&rt, &next);
+    Ok(rt.status(&next))
+}
+
+#[tauri::command]
+pub fn esp32_clear_mqtt(
+    app: AppHandle,
+    rt: State<'_, Arc<Esp32Runtime>>,
+) -> Result<Esp32BridgeStatus, String> {
+    clear_mqtt_config_from_vault()?;
+    rt.mqtt_state.configured.store(false, Ordering::Relaxed);
+    rt.mqtt_state.set_connected(false);
+    *rt.mqtt_state.host.write().unwrap() = String::new();
+    *rt.mqtt_state.room.write().unwrap() = String::new();
+    rt.mqtt_state.set_last_error(None);
+    let cfg = current_settings(&app);
+    apply_runtime_config(&rt, &cfg);
+    Ok(rt.status(&cfg))
+}
+
+#[tauri::command]
 pub fn esp32_save_relay(
     app: AppHandle,
     rt: State<'_, Arc<Esp32Runtime>>,
     enabled: bool,
     url: String,
-    room: String,
+    room: Option<String>,
     key: String,
 ) -> Result<Esp32BridgeStatus, String> {
     let trimmed_url = url.trim().trim_end_matches('/').to_string();
-    let trimmed_room = room.trim().to_string();
+    let trimmed_room = room.unwrap_or_default().trim().to_string();
     let trimmed_key = key.trim().to_string();
 
     if enabled {

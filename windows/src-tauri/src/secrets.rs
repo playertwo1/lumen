@@ -141,12 +141,17 @@ fn is_google_internal_key(key: &str) -> bool {
     GOOGLE_INTERNAL_KEYS.contains(&key)
 }
 
-/// Segredos da ponte ESP32-S3 AMOLED (L9), mantidos fora de `INTERNAL_KEYS` para
+/// Segredos da ponte ESP32-S3 AMOLED (L9/Q2), mantidos fora de `INTERNAL_KEYS` para
 /// preservar a invariante dos testes do `phone_link` e inacessíveis à webview.
 pub const ESP32_INTERNAL_KEYS: &[&str] = &[
     "esp32-bridge-keys",
     "esp32-relay-key",
     "esp32-relay-room",
+    "esp32-mqtt-uri",
+    "esp32-mqtt-user",
+    "esp32-mqtt-pass",
+    "esp32-mqtt-room",
+    "esp32-mqtt-key",
 ];
 
 fn is_esp32_internal_key(key: &str) -> bool {

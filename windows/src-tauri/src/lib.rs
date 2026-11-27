@@ -1476,6 +1476,8 @@ pub fn run() {
             mochi_mcp_apply,
             esp32_bridge::esp32_status,
             esp32_bridge::esp32_set_enabled,
+            esp32_bridge::esp32_save_mqtt_code,
+            esp32_bridge::esp32_clear_mqtt,
             esp32_bridge::esp32_arm_pair_code,
             esp32_bridge::esp32_revoke_all,
             esp32_bridge::esp32_save_relay,
