@@ -1,6 +1,6 @@
 # STATE do fork — ponto de retomada
 
-**Atualizado:** 2026-11-24 · **Última release:** [`windows-v0.7.29`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.29) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md) e [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) (validação do dono)
+**Atualizado:** 2026-11-27 · **Última release:** [`windows-v0.7.29`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.29) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md), [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) e [L9 — Ponte com a placa ESP32-S3 AMOLED](roadmap/l9-placa-esp32.md) (validação do dono)
 
 Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação. O que cada etapa faz está no [ROADMAP-FORK](ROADMAP-FORK.md); o histórico deste arquivo até a reorganização está em [arquivadas/state/](arquivadas/state/state-ate-2026-11-17.md).
 
@@ -12,6 +12,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 | L8 | Todas as subetapas implementadas e publicadas na `0.7.12`; validação real pendente, uma por vez |
 | M2 | M2.1–M2.6 implementadas e publicadas na `0.7.14` (2026-11-18); a `0.7.15` corrige o ping pelo chat e a `0.7.16` as falhas do 1º relato da M2.7. No 2º relato os 10 comandos funcionaram; a `0.7.17` ajusta "organizar para programar" (Codex, Claude Code e Antigravity lado a lado), confirmado no 3º relato. Faltam os casos de borda da M2.7 |
 | M2b | M2b.1–M2b.4 implementadas na `main` em 2026-11-21 (botões de comando na pílula, escolha e ordem nos Ajustes); fecha a M2b.5 com o teste real do dono. Publicada na `0.7.19` (2026-11-22); teste real pendente |
+| L9 | L9.1–L9.6 implementadas na `main` em 2026-11-27 (servidor `:8787`, pareamento 6 dígitos, `/v1/voice`, `/v1/tasks/sync` + outbox L6, relay AES-256-GCM, `/v1/media` e painel `/api/*` em `:8787`/`:8737`); validação real na placa pendente |
 | L6.5 | A fazer depois do contrato v1.1 da Segunda Mente |
 | 0, 1, 2, 2B, 2C | Pausadas (D-053) |
 
@@ -22,6 +23,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 ## Pendências do dono (validação real)
 
+- **L9 — Ponte nativa com a placa ESP32-S3 AMOLED (`main`, 2026-11-27)**: parear código de 6 dígitos em Configurações → Integrações → Placa ESP32-S3, testar voz (`POST /v1/voice`), tarefas sem duplicar (LAN e relay Cloudflare AES-256-GCM), controle de mídia/volume e painel `/api/tokens` + `/api/agents` na placa física; conferir revogação (`401`).
 - **Alertas de cota depois de um aviso comum (`0.7.29`)**: com dois alertas de cota na fila, salvar uma nota no meio do primeiro e conferir que o segundo aparece quando “Nota salva” some.
 - **Cotas do Codex e do Antigravity (`0.7.28`)**: depois de atualizar, abrir a ilha e ver as pílulas Codex e Antigravity com 5h e semana preenchidos.
 - **Personagens trabalhando (`0.7.26`)**: com a principal em Claude Desktop, rodar o Claude Code no Orca e ver o personagem principal trabalhando; com várias sessões ao mesmo tempo, uma terminar não pode parar o personagem. O hook já está atualizado (`0.7.27`, conferido); com a pílula do Orca ativa, a sessão aberta no Orca deve aparecer nela.
