@@ -327,7 +327,52 @@ pub async fn dispatch_request(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpR
         return handle_voice(req, rt).await;
     }
 
+    if req.method == "POST" && req.path == "/v1/tasks/sync" {
+        return handle_tasks_sync(req, rt).await;
+    }
+
     HttpResponse::json(404, "Not Found", &json!({ "ok": false, "error": "not found" }))
+}
+
+async fn handle_tasks_sync(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpResponse {
+    let Ok(val) = serde_json::from_slice::<Value>(&req.body) else {
+        return HttpResponse::json(
+            400,
+            "Bad Request",
+            &json!({ "ok": false, "error": "invalid_json" }),
+        );
+    };
+    let Some(incoming) = val.get("envelopes").and_then(Value::as_array) else {
+        return HttpResponse::json(
+            400,
+            "Bad Request",
+            &json!({ "ok": false, "error": "missing_envelopes" }),
+        );
+    };
+    let Some(app) = rt.app.as_ref() else {
+        return HttpResponse::json(
+            200,
+            "OK",
+            &json!({ "ok": true, "envelopes": [], "count": 0 }),
+        );
+    };
+    let now_ms = crate::tasks::now_utc_ms_pub();
+    match crate::tasks::sync_esp32_envelopes(app, incoming, now_ms) {
+        Ok(merged) => HttpResponse::json(
+            200,
+            "OK",
+            &json!({
+                "ok": true,
+                "envelopes": merged,
+                "count": merged.len()
+            }),
+        ),
+        Err(err) => HttpResponse::json(
+            500,
+            "Internal Server Error",
+            &json!({ "ok": false, "error": err }),
+        ),
+    }
 }
 
 async fn handle_voice(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpResponse {
