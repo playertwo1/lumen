@@ -816,8 +816,13 @@ mod voice_tests {
     #[tokio::test]
     async fn voice_mock_json_returns_22050_wav_under_96kib() {
         let rt = Esp32Runtime::new(None);
-        rt.arm_pair_code("123456").unwrap();
-        let key = rt.pair_with_code("123456", Some("test-esp")).unwrap().unwrap();
+        rt.keys.lock().unwrap().clear();
+        let key = super::super::crypto::generate_bridge_key_hex().unwrap();
+        rt.keys.lock().unwrap().push(super::super::PairedDeviceKey {
+            device_id: "test-esp".into(),
+            key: key.clone(),
+            created_at: 1,
+        });
 
         let req = HttpRequest {
             method: "POST".into(),
@@ -846,8 +851,13 @@ mod voice_tests {
     #[tokio::test]
     async fn voice_rejects_bad_content_type_and_bad_wav() {
         let rt = Esp32Runtime::new(None);
-        rt.arm_pair_code("654321").unwrap();
-        let key = rt.pair_with_code("654321", Some("test-esp")).unwrap().unwrap();
+        rt.keys.lock().unwrap().clear();
+        let key = super::super::crypto::generate_bridge_key_hex().unwrap();
+        rt.keys.lock().unwrap().push(super::super::PairedDeviceKey {
+            device_id: "test-esp".into(),
+            key: key.clone(),
+            created_at: 1,
+        });
 
         let resp_ct = dispatch_request(
             HttpRequest {

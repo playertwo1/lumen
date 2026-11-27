@@ -77,11 +77,19 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
     }
 
     let modeText = "Desligada";
+    let modeOk = false;
     if (st.enabled) {
-      if (st.mode === "lan") modeText = "LAN";
-      else if (st.mode === "relay") modeText = "Ponte remota";
-      else if (st.mode === "alone") modeText = "Sozinha";
+      if (st.mode === "lan") {
+        modeText = "LAN";
+        modeOk = true;
+      } else if (st.mode === "relay") {
+        modeText = "Ponte remota";
+        modeOk = true;
+      } else if (st.mode === "alone") {
+        modeText = "Sozinha";
+      }
     }
+    modeBadge.className = modeOk ? "phone-live-pill ok" : "phone-live-pill";
     modeBadge.textContent = modeText;
 
     if (st.localUrls && st.localUrls.length > 0) {
@@ -263,20 +271,31 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
     ),
   );
 
-  // Initial load status
-  void Bridge.esp32.status().then((st) => {
-    if (st) {
+  // Initial load status + refresh ao vivo enquanto a aba estiver aberta
+  const refreshStatus = (initial: boolean) => {
+    void Bridge.esp32.status().then((st) => {
+      if (!st) return;
       updateUI(st);
-      relaySwitchInput.checked = st.relayEnabled;
-      relayUrlInput.value = st.relayUrl || "";
-      relayRoomInput.value = "";
-      if (st.relayKeyConfigured) {
-        relayKeyInput.placeholder = "Já configurada — deixe vazio para manter";
+      if (initial) {
+        relaySwitchInput.checked = st.relayEnabled;
+        relayUrlInput.value = st.relayUrl || "";
+        relayRoomInput.value = "";
+        if (st.relayKeyConfigured) {
+          relayKeyInput.placeholder = "Já configurada — deixe vazio para manter";
+        }
+        agentPanelSwitch.checked = st.agentPanelEnabled;
+        usagePortInput.value = String(st.usagePort || 8737);
       }
-      agentPanelSwitch.checked = st.agentPanelEnabled;
-      usagePortInput.value = String(st.usagePort || 8737);
+    });
+  };
+  refreshStatus(true);
+  const timer = setInterval(() => {
+    if (!section.isConnected) {
+      clearInterval(timer);
+      return;
     }
-  });
+    refreshStatus(false);
+  }, 4000);
 
   return section;
 }
