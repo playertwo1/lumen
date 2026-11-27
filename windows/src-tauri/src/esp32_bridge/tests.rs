@@ -43,6 +43,8 @@ async fn spawn_loopback_server(
 
 #[tokio::test]
 async fn loopback_ping_and_voice_auth_contract() {
+    let _guard = PAUSED_GUARD.lock().await;
+    crate::integrations::PAUSED.store(false, Ordering::SeqCst);
     let (base, key, _rt, tx) = spawn_loopback_server(false, true).await;
     let key = key.unwrap();
     let client = reqwest::Client::new();
@@ -229,6 +231,8 @@ async fn loopback_api_panel_gates_tokens_agents_and_replay_409() {
 
 #[tokio::test]
 async fn loopback_voice_accepts_mqtt_hmac_bearer_vector() {
+    let _guard = PAUSED_GUARD.lock().await;
+    crate::integrations::PAUSED.store(false, Ordering::SeqCst);
     let (base, _legacy_key, rt, tx) = spawn_loopback_server(false, false).await;
     let room_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     let expected_bearer = "3717157b1cbcf20a0ec4f22acbbe162bd033066c6528db618d6c7155a67f6e8b";
