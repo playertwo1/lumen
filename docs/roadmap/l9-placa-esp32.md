@@ -2,6 +2,8 @@
 
 # L9 — Ponte nativa com a placa ESP32-S3 AMOLED
 
+> **Atualização 2026-11-27:** desde o firmware Q1 da placa, L9.1 (pareamento de 6 dígitos), L9.3 (`/v1/tasks/sync`), L9.4 (sala `/v1/bridge`) e L9.5 (`/v1/media`) não são mais usados pela placa e passam para a [L10 — Placa por MQTT](l10-placa-mqtt.md). Os checkpoints reais dessas subfases não serão feitos. L9.2 (voz) e L9.6 (painel) continuam valendo.
+
 **Objetivo:** permitir que o Lumen converse nativamente com a placa de mesa `esp32-s3-amoled-2-16` (na mesma rede local ou via relay Cloudflare), substituindo os scripts Python auxiliares (`lumen_bridge` e, opcionalmente, `tokenserver`) para que a placa use a voz e a transcrição do PC, sincronize tarefas sem duplicar e controle mídia/agentes.
 
 **Pré-requisitos:** L4 (Tarefas), L6 (Sync com a Segunda Mente) e M2 (Controle nativo de mídia/volume do Windows). Pode ser desenvolvida em paralelo às fases M sem alterar o protocolo já existente com o app Android.
