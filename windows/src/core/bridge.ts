@@ -685,6 +685,7 @@ export interface Esp32BridgeStatus {
   pairCodeExpiresInSecs: number | null;
   relayEnabled: boolean;
   relayUrl: string;
+  relayRoom?: string;
   relayRoomConfigured: boolean;
   relayKeyConfigured: boolean;
   agentPanelEnabled: boolean;

@@ -57,6 +57,7 @@ pub struct Esp32BridgeStatus {
     pub pair_code_expires_in_secs: Option<u64>,
     pub relay_enabled: bool,
     pub relay_url: String,
+    pub relay_room: String,
     pub relay_room_configured: bool,
     pub relay_key_configured: bool,
     pub agent_panel_enabled: bool,
@@ -269,8 +270,8 @@ impl Esp32Runtime {
             }
         }
         let paired_count = self.keys.lock().unwrap().len();
-        let relay_room_configured = secrets::get_internal(SECRET_RELAY_ROOM)
-            .is_some_and(|r| crypto::valid_room(&r));
+        let relay_room = secrets::get_internal(SECRET_RELAY_ROOM).unwrap_or_default();
+        let relay_room_configured = crypto::valid_room(&relay_room);
         let relay_key_configured = secrets::get_internal(SECRET_RELAY_KEY)
             .is_some_and(|k| !k.trim().is_empty());
         let port = normalize_port(cfg.esp32_bridge_port, DEFAULT_BRIDGE_PORT);
@@ -287,6 +288,7 @@ impl Esp32Runtime {
             pair_code_expires_in_secs: pair_secs,
             relay_enabled: cfg.esp32_relay_enabled,
             relay_url: cfg.esp32_relay_url.clone(),
+            relay_room,
             relay_room_configured,
             relay_key_configured,
             agent_panel_enabled: cfg.esp32_agent_panel_enabled,

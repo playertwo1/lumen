@@ -182,6 +182,7 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
   const relayKeyInput = h("input", { type: "password", placeholder: "Já configurada — deixe vazio para manter", class: "path" }) as HTMLInputElement;
 
   const saveRelayBtn = h("button", { class: "primary", text: "Salvar relay" }) as HTMLButtonElement;
+  let roomAlreadyConfigured = false;
   saveRelayBtn.addEventListener("click", async () => {
     clearError();
     const enabled = relaySwitchInput.checked;
@@ -194,7 +195,7 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
         showError("URL do Relay inválida.");
         return;
       }
-      if (!isValidRoomId(room)) {
+      if ((room !== "" || !roomAlreadyConfigured) && !isValidRoomId(room)) {
         showError("Sala do Relay inválida (8 a 64 caracteres alfanuméricos, _ ou -).");
         return;
       }
@@ -203,7 +204,13 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
     try {
       const st = await Bridge.esp32.saveRelay(enabled, url, room, key);
       updateUI(st);
-      relayKeyInput.placeholder = st?.relayKeyConfigured ? "Já configurada — deixe vazio para manter" : "";
+      if (st) {
+        roomAlreadyConfigured = st.relayRoomConfigured;
+        relayUrlInput.value = st.relayUrl || "";
+        relayRoomInput.value = st.relayRoom || "";
+        relayKeyInput.value = "";
+        relayKeyInput.placeholder = st.relayKeyConfigured ? "Já configurada — deixe vazio para manter" : "";
+      }
     } catch (err) {
       showError(String(err));
     }
@@ -277,9 +284,10 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
       if (!st) return;
       updateUI(st);
       if (initial) {
+        roomAlreadyConfigured = st.relayRoomConfigured;
         relaySwitchInput.checked = st.relayEnabled;
         relayUrlInput.value = st.relayUrl || "";
-        relayRoomInput.value = "";
+        relayRoomInput.value = st.relayRoom || "";
         if (st.relayKeyConfigured) {
           relayKeyInput.placeholder = "Já configurada — deixe vazio para manter";
         }
