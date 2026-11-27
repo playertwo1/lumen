@@ -81,6 +81,7 @@ pub struct Esp32Runtime {
     pub agent_panel_enabled: AtomicBool,
     pub playing: AtomicBool,
     pub claude_quota: Mutex<ClaudeQuotaCache>,
+    pub agy_quota: Mutex<ClaudeQuotaCache>,
     pub agent_panel: Mutex<Esp32AgentPanelState>,
     shutdown_tx: Mutex<Option<watch::Sender<bool>>>,
     relay_last_ok: Mutex<Option<Instant>>,
@@ -100,6 +101,7 @@ impl Esp32Runtime {
             agent_panel_enabled: AtomicBool::new(false),
             playing: AtomicBool::new(false),
             claude_quota: Mutex::new(ClaudeQuotaCache::default()),
+            agy_quota: Mutex::new(ClaudeQuotaCache::default()),
             agent_panel: Mutex::new(Esp32AgentPanelState::default()),
             shutdown_tx: Mutex::new(None),
             relay_last_ok: Mutex::new(None),
@@ -411,6 +413,20 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
         });
     }
 
+    if panel_enabled {
+        let rt_quota = rt.clone();
+        let mut rx_quota = rx.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                refresh_claude_and_agy_quotas(&rt_quota).await;
+                tokio::select! {
+                    _ = rx_quota.changed() => break,
+                    _ = tokio::time::sleep(Duration::from_secs(240)) => {}
+                }
+            }
+        });
+    }
+
     if cfg.esp32_relay_enabled && !cfg.esp32_relay_url.trim().is_empty() {
         let rt_relay = rt.clone();
         let mut rx_relay = rx;
@@ -545,6 +561,7 @@ pub(crate) async fn run_relay_tick(
     }
 
     if panel_enabled && last_usage_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(300)) {
+        refresh_claude_and_agy_quotas(rt).await;
         let snap = build_live_tokens_snapshot(rt);
         let usage = tokens_agents::build_clean_usage_payload(&snap);
         if client.put_usage(relay_url, relay_key, &usage).await.is_ok() {
@@ -555,9 +572,55 @@ pub(crate) async fn run_relay_tick(
     Ok(())
 }
 
+async fn refresh_claude_and_agy_quotas(rt: &Esp32Runtime) {
+    let now_sec = Esp32Runtime::now_secs();
+    let claude_due = {
+        let q = rt.claude_quota.lock().unwrap();
+        q.updated_at == 0 || now_sec.saturating_sub(q.updated_at) >= 240
+    };
+    if claude_due {
+        let cred = crate::platform::home_dir().join(".claude").join(".credentials.json");
+        if let Some(tok) = tokens_agents::read_claude_access_token(&cred) {
+            if let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(5)).build() {
+                if let Ok(resp) = http
+                    .get("https://api.anthropic.com/api/oauth/usage")
+                    .header("Authorization", format!("Bearer {tok}"))
+                    .header("anthropic-beta", "oauth-2025-04-20")
+                    .header("User-Agent", "esp32-assistente/0.1")
+                    .send()
+                    .await
+                {
+                    if resp.status().is_success() {
+                        if let Ok(val) = resp.json::<serde_json::Value>().await {
+                            rt.claude_quota
+                                .lock()
+                                .unwrap()
+                                .update_from_oauth(&val, Esp32Runtime::now_secs());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let agy_due = {
+        let q = rt.agy_quota.lock().unwrap();
+        q.updated_at == 0 || now_sec.saturating_sub(q.updated_at) >= 240
+    };
+    if agy_due {
+        if let Ok(Some(limits)) = tokio::task::spawn_blocking(crate::agy_plan::read).await {
+            rt.agy_quota
+                .lock()
+                .unwrap()
+                .update_from_agy_limits(&limits, Esp32Runtime::now_secs());
+        }
+    }
+}
+
 pub(crate) fn build_live_tokens_snapshot(rt: &Esp32Runtime) -> tokens_agents::TokensSnapshot {
     let now_sec = Esp32Runtime::now_secs();
-    let (c5, c5r, c7, c7r, c_ok) = rt.claude_quota.lock().unwrap().to_fields(now_sec);
+    let (c5, c5r, c7, c7r, c_stale) = rt.claude_quota.lock().unwrap().to_fields(now_sec);
+    let (a5, a5r, a7, a7r, a_stale) = rt.agy_quota.lock().unwrap().to_fields(now_sec);
     let codex_dir = crate::platform::home_dir().join(".codex").join("sessions");
     let codex = tokens_agents::read_codex_rollout_quota(&codex_dir, now_sec);
     tokens_agents::TokensSnapshot {
@@ -565,12 +628,17 @@ pub(crate) fn build_live_tokens_snapshot(rt: &Esp32Runtime) -> tokens_agents::To
         claude_session_reset_min: c5r,
         claude_week_pct: c7,
         claude_week_reset_min: c7r,
-        claude_stale: !c_ok,
+        claude_stale: c_stale,
         codex_session_pct: codex.session_pct,
         codex_session_reset_min: codex.session_reset_min,
         codex_week_pct: codex.week_pct,
         codex_week_reset_min: codex.week_reset_min,
         codex_stale: codex.stale,
+        antigravity_session_pct: a5,
+        antigravity_session_reset_min: a5r,
+        antigravity_week_pct: a7,
+        antigravity_week_reset_min: a7r,
+        antigravity_stale: a_stale,
         updated_at: now_sec,
     }
 }

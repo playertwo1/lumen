@@ -17,8 +17,13 @@ pub struct TokensSnapshot {
     pub codex_session_reset_min: Option<i64>,
     pub codex_week_pct: Option<f64>,
     pub codex_week_reset_min: Option<i64>,
+    pub antigravity_session_pct: Option<f64>,
+    pub antigravity_session_reset_min: Option<i64>,
+    pub antigravity_week_pct: Option<f64>,
+    pub antigravity_week_reset_min: Option<i64>,
     pub claude_stale: bool,
     pub codex_stale: bool,
+    pub antigravity_stale: bool,
     pub updated_at: u64,
 }
 
@@ -54,6 +59,71 @@ impl ClaudeQuotaCache {
             }
         }
         self.updated_at = now_sec;
+    }
+
+    pub fn update_from_oauth(&mut self, payload: &serde_json::Value, now_sec: u64) {
+        if let Some(five) = payload.get("five_hour") {
+            if let Some(u) = five.get("utilization").and_then(|v| v.as_f64()) {
+                self.session_pct = Some(u.clamp(0.0, 100.0).round());
+            }
+            if let Some(sec) = five.get("resets_at").and_then(parse_resets_at) {
+                self.session_resets_at = Some(sec);
+            }
+        }
+        if let Some(seven) = payload.get("seven_day") {
+            if let Some(u) = seven.get("utilization").and_then(|v| v.as_f64()) {
+                self.week_pct = Some(u.clamp(0.0, 100.0).round());
+            }
+            if let Some(sec) = seven.get("resets_at").and_then(parse_resets_at) {
+                self.week_resets_at = Some(sec);
+            }
+        }
+        if self.session_pct.is_some() || self.week_pct.is_some() {
+            self.updated_at = now_sec;
+        }
+    }
+
+    pub fn update_from_agy_limits(&mut self, limits: &serde_json::Value, now_sec: u64) {
+        let Some(groups) = limits.get("groups").and_then(|v| v.as_array()) else {
+            return;
+        };
+        let mut got = false;
+        for g in groups {
+            let Some(buckets) = g.get("buckets").and_then(|v| v.as_array()) else {
+                continue;
+            };
+            for b in buckets {
+                if b.get("disabled").and_then(|v| v.as_bool()) == Some(true) {
+                    continue;
+                }
+                let win = b.get("window").and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
+                let used = b
+                    .get("remaining_fraction")
+                    .and_then(|v| v.as_f64())
+                    .map(|rem| ((1.0 - rem.clamp(0.0, 1.0)) * 100.0).round());
+                let reset = b.get("reset_time").and_then(parse_resets_at);
+                if win.contains("5h") || win.contains("session") {
+                    if let Some(pct) = used {
+                        self.session_pct = Some(pct);
+                        got = true;
+                    }
+                    if let Some(sec) = reset {
+                        self.session_resets_at = Some(sec);
+                    }
+                } else if win.contains("week") {
+                    if let Some(pct) = used {
+                        self.week_pct = Some(pct);
+                        got = true;
+                    }
+                    if let Some(sec) = reset {
+                        self.week_resets_at = Some(sec);
+                    }
+                }
+            }
+        }
+        if got {
+            self.updated_at = now_sec;
+        }
     }
 
     pub fn to_fields(&self, now_sec: u64) -> (Option<f64>, Option<i64>, Option<f64>, Option<i64>, bool) {
@@ -229,6 +299,17 @@ pub fn read_codex_rollout_quota(sessions_dir: &Path, now_sec: u64) -> CodexQuota
     }
 }
 
+pub fn read_claude_access_token(cred_path: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(cred_path).ok()?;
+    let val: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    val.pointer("/claudeAiOauth/accessToken")
+        .or_else(|| val.get("accessToken"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
 pub fn build_clean_usage_payload(snapshot: &TokensSnapshot) -> serde_json::Value {
     json!({
         "claudeSessionPct": snapshot.claude_session_pct,
@@ -239,8 +320,13 @@ pub fn build_clean_usage_payload(snapshot: &TokensSnapshot) -> serde_json::Value
         "codexSessionResetMin": snapshot.codex_session_reset_min,
         "codexWeekPct": snapshot.codex_week_pct,
         "codexWeekResetMin": snapshot.codex_week_reset_min,
+        "antigravitySessionPct": snapshot.antigravity_session_pct,
+        "antigravitySessionResetMin": snapshot.antigravity_session_reset_min,
+        "antigravityWeekPct": snapshot.antigravity_week_pct,
+        "antigravityWeekResetMin": snapshot.antigravity_week_reset_min,
         "claudeStale": snapshot.claude_stale,
         "codexStale": snapshot.codex_stale,
+        "antigravityStale": snapshot.antigravity_stale,
         "updatedAt": snapshot.updated_at
     })
 }
@@ -529,15 +615,50 @@ mod tests {
             codex_session_reset_min: Some(60),
             codex_week_pct: Some(25.0),
             codex_week_reset_min: Some(800),
+            antigravity_session_pct: Some(18.0),
+            antigravity_session_reset_min: Some(280),
+            antigravity_week_pct: Some(32.0),
+            antigravity_week_reset_min: Some(8760),
             claude_stale: false,
             codex_stale: false,
+            antigravity_stale: false,
             updated_at: 1000,
         };
         let payload = build_clean_usage_payload(&snapshot);
         let s = payload.to_string();
         assert!(s.len() <= 512);
         assert!(payload.get("claudeSessionPct").is_some());
+        assert!(payload.get("antigravitySessionPct").is_some());
         assert!(payload.get("updatedAt").is_some());
+    }
+
+    #[test]
+    fn test_claude_oauth_and_agy_limits() {
+        let mut c = ClaudeQuotaCache::default();
+        c.update_from_oauth(
+            &json!({
+                "five_hour": { "utilization": 12.4, "resets_at": "2026-11-27T16:00:00Z" },
+                "seven_day": { "utilization": 81.2, "resets_at": "2026-11-29T16:00:00Z" }
+            }),
+            1795788000,
+        );
+        assert_eq!(c.session_pct, Some(12.0));
+        assert_eq!(c.week_pct, Some(81.0));
+
+        let mut a = ClaudeQuotaCache::default();
+        a.update_from_agy_limits(
+            &json!({
+                "groups": [{
+                    "buckets": [
+                        { "window": "5h", "remaining_fraction": 0.82, "reset_time": "2026-11-27T16:00:00Z" },
+                        { "window": "weekly", "remaining_fraction": 0.68, "reset_time": "2026-12-03T16:00:00Z" }
+                    ]
+                }]
+            }),
+            1795788000,
+        );
+        assert_eq!(a.session_pct, Some(18.0));
+        assert_eq!(a.week_pct, Some(32.0));
     }
 
     #[test]
