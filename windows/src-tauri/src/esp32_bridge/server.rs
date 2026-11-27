@@ -335,7 +335,158 @@ pub async fn dispatch_request(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpR
         return handle_media(req, rt).await;
     }
 
+    if req.path.starts_with("/api/") {
+        return handle_api_route(req, rt).await;
+    }
+
     HttpResponse::json(404, "Not Found", &json!({ "ok": false, "error": "not found" }))
+}
+
+fn query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
+    for pair in query.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == key {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+async fn handle_api_route(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpResponse {
+    if !rt.agent_panel_enabled.load(Ordering::Relaxed) || !rt.has_paired_keys() {
+        return HttpResponse::json(
+            401,
+            "Unauthorized",
+            &json!({ "ok": false, "error": "panel_disabled_or_unpaired" }),
+        );
+    }
+    if req.authorization.is_some() && !rt.verify_bearer(req.authorization.as_deref()) {
+        return HttpResponse::json(
+            401,
+            "Unauthorized",
+            &json!({ "ok": false, "error": "unauthorized" }),
+        );
+    }
+    rt.note_lan_activity();
+
+    match (req.method.as_str(), req.path.as_str()) {
+        ("GET", "/api/tokens") => {
+            let snap = super::build_live_tokens_snapshot(rt);
+            let payload = super::tokens_agents::build_clean_usage_payload(&snap);
+            HttpResponse::json(200, "OK", &payload)
+        }
+        ("GET", "/api/agents") => {
+            let now_sec = Esp32Runtime::now_secs();
+            let snap = rt.agent_panel.lock().unwrap().snapshot(now_sec);
+            HttpResponse::json(200, "OK", &snap)
+        }
+        ("POST", "/api/agents/decide") => {
+            if crate::integrations::PAUSED.load(Ordering::Relaxed) {
+                return HttpResponse::json(
+                    503,
+                    "Service Unavailable",
+                    &json!({ "ok": false, "error": "paused" }),
+                );
+            }
+            let Ok(val) = serde_json::from_slice::<Value>(&req.body) else {
+                return HttpResponse::json(
+                    400,
+                    "Bad Request",
+                    &json!({ "ok": false, "error": "invalid_json" }),
+                );
+            };
+            let id = val.get("id").and_then(Value::as_str).unwrap_or("");
+            let decision = val.get("decision").and_then(Value::as_str).unwrap_or("");
+            let now_sec = Esp32Runtime::now_secs();
+            let res = rt.agent_panel.lock().unwrap().decide(id, decision, now_sec);
+            match res {
+                Ok((body, pipe_id)) => {
+                    if let (Some(app), Some(pid)) = (rt.app.as_ref(), pipe_id) {
+                        crate::resolve_approval(app, &pid, decision);
+                        let _ = tauri::Emitter::emit_to(app, "island", "approval-expired", &pid);
+                    }
+                    HttpResponse::json(200, "OK", &body)
+                }
+                Err((400, msg)) => {
+                    HttpResponse::json(400, "Bad Request", &json!({ "ok": false, "error": msg }))
+                }
+                Err((_, msg)) => {
+                    HttpResponse::json(409, "Conflict", &json!({ "ok": false, "error": msg }))
+                }
+            }
+        }
+        ("GET", "/api/agents/decision") => {
+            let id = query_param(&req.query, "id").unwrap_or("");
+            let now_sec = Esp32Runtime::now_secs();
+            let body = rt.agent_panel.lock().unwrap().get_decision(id, now_sec);
+            HttpResponse::json(200, "OK", &body)
+        }
+        ("POST", "/api/agents/event") => {
+            let Ok(val) = serde_json::from_slice::<Value>(&req.body) else {
+                return HttpResponse::json(
+                    400,
+                    "Bad Request",
+                    &json!({ "ok": false, "error": "invalid_json" }),
+                );
+            };
+            let event = val
+                .get("hook_event_name")
+                .or_else(|| val.get("event"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let agent = val
+                .get("agent")
+                .or_else(|| val.get("coucou_agent"))
+                .and_then(Value::as_str)
+                .unwrap_or("Claude");
+            let cwd = val.get("cwd").and_then(Value::as_str).unwrap_or("");
+            let now_sec = Esp32Runtime::now_secs();
+            match event {
+                "StatusLine" => {
+                    if let Some(rl) = val.get("rate_limits") {
+                        rt.claude_quota
+                            .lock()
+                            .unwrap()
+                            .update_from_statusline(rl, now_sec);
+                    }
+                    HttpResponse::json(200, "OK", &json!({ "ok": true }))
+                }
+                "PermissionRequest" => {
+                    let tool = val.get("tool_name").and_then(Value::as_str).unwrap_or("Tool");
+                    let cmd = val
+                        .get("tool_input")
+                        .and_then(|ti| {
+                            ti.get("command")
+                                .or_else(|| ti.get("file_path"))
+                                .and_then(Value::as_str)
+                        })
+                        .unwrap_or("");
+                    let id = rt.agent_panel.lock().unwrap().on_permission(
+                        None, agent, cwd, tool, cmd, now_sec,
+                    );
+                    HttpResponse::json(200, "OK", &json!({ "ok": true, "id": id }))
+                }
+                "Stop" | "Notification" => {
+                    rt.agent_panel
+                        .lock()
+                        .unwrap()
+                        .on_stop_or_notify(agent, cwd, now_sec);
+                    HttpResponse::json(200, "OK", &json!({ "ok": true }))
+                }
+                "UserPromptSubmit" | "SessionEnd" => {
+                    rt.agent_panel.lock().unwrap().on_clear();
+                    HttpResponse::json(200, "OK", &json!({ "ok": true }))
+                }
+                _ => HttpResponse::json(200, "OK", &json!({ "ok": true })),
+            }
+        }
+        ("POST", "/api/agents/turn/dismiss") => {
+            let body = rt.agent_panel.lock().unwrap().dismiss_turn();
+            HttpResponse::json(200, "OK", &body)
+        }
+        _ => HttpResponse::json(404, "Not Found", &json!({ "ok": false, "error": "not found" })),
+    }
 }
 
 async fn handle_media(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpResponse {

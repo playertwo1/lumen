@@ -10,6 +10,9 @@ pub mod relay;
 pub mod server;
 pub mod tokens_agents;
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -74,6 +77,7 @@ pub struct Esp32Runtime {
     pub last_error: Mutex<Option<String>>,
     pub running: AtomicBool,
     pub usage_running: AtomicBool,
+    pub agent_panel_enabled: AtomicBool,
     pub playing: AtomicBool,
     pub claude_quota: Mutex<ClaudeQuotaCache>,
     pub agent_panel: Mutex<Esp32AgentPanelState>,
@@ -92,6 +96,7 @@ impl Esp32Runtime {
             last_error: Mutex::new(None),
             running: AtomicBool::new(false),
             usage_running: AtomicBool::new(false),
+            agent_panel_enabled: AtomicBool::new(false),
             playing: AtomicBool::new(false),
             claude_quota: Mutex::new(ClaudeQuotaCache::default()),
             agent_panel: Mutex::new(Esp32AgentPanelState::default()),
@@ -358,6 +363,8 @@ pub fn shutdown(app: &AppHandle) {
 pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
     rt.stop_listeners();
     *rt.last_error.lock().unwrap() = None;
+    rt.agent_panel_enabled
+        .store(cfg.esp32_agent_panel_enabled, Ordering::SeqCst);
     if !cfg.esp32_bridge_enabled {
         return;
     }
@@ -536,20 +543,7 @@ pub(crate) async fn run_relay_tick(
     }
 
     if panel_enabled && last_usage_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(300)) {
-        let (c5, c5r, c7, c7r, c_ok) = rt.claude_quota.lock().unwrap().to_fields(now_sec);
-        let snap = tokens_agents::TokensSnapshot {
-            claude_session_pct: c5,
-            claude_session_reset_min: c5r,
-            claude_week_pct: c7,
-            claude_week_reset_min: c7r,
-            claude_stale: !c_ok,
-            codex_session_pct: None,
-            codex_session_reset_min: None,
-            codex_week_pct: None,
-            codex_week_reset_min: None,
-            codex_stale: true,
-            updated_at: now_sec,
-        };
+        let snap = build_live_tokens_snapshot(rt);
         let usage = tokens_agents::build_clean_usage_payload(&snap);
         if client.put_usage(relay_url, relay_key, &usage).await.is_ok() {
             *last_usage_at = Some(Instant::now());
@@ -557,6 +551,79 @@ pub(crate) async fn run_relay_tick(
     }
 
     Ok(())
+}
+
+pub(crate) fn build_live_tokens_snapshot(rt: &Esp32Runtime) -> tokens_agents::TokensSnapshot {
+    let now_sec = Esp32Runtime::now_secs();
+    let (c5, c5r, c7, c7r, c_ok) = rt.claude_quota.lock().unwrap().to_fields(now_sec);
+    let codex_dir = crate::platform::home_dir().join(".codex").join("sessions");
+    let codex = tokens_agents::read_codex_rollout_quota(&codex_dir, now_sec);
+    tokens_agents::TokensSnapshot {
+        claude_session_pct: c5,
+        claude_session_reset_min: c5r,
+        claude_week_pct: c7,
+        claude_week_reset_min: c7r,
+        claude_stale: !c_ok,
+        codex_session_pct: codex.session_pct,
+        codex_session_reset_min: codex.session_reset_min,
+        codex_week_pct: codex.week_pct,
+        codex_week_reset_min: codex.week_reset_min,
+        codex_stale: codex.stale,
+        updated_at: now_sec,
+    }
+}
+
+pub fn note_claude_statusline(app: &AppHandle, rate_limits: &serde_json::Value) {
+    if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
+        rt.claude_quota
+            .lock()
+            .unwrap()
+            .update_from_statusline(rate_limits, Esp32Runtime::now_secs());
+    }
+}
+
+pub fn note_agent_turn(app: &AppHandle, agent: &str, cwd: &str) {
+    if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
+        rt.agent_panel
+            .lock()
+            .unwrap()
+            .on_stop_or_notify(agent, cwd, Esp32Runtime::now_secs());
+    }
+}
+
+pub fn note_agent_clear(app: &AppHandle) {
+    if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
+        rt.agent_panel.lock().unwrap().on_clear();
+    }
+}
+
+pub fn note_permission_request(
+    app: &AppHandle,
+    pipe_request_id: &str,
+    agent: &str,
+    cwd: &str,
+    tool: &str,
+    command: &str,
+) {
+    if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
+        rt.agent_panel.lock().unwrap().on_permission(
+            Some(pipe_request_id.to_string()),
+            agent,
+            cwd,
+            tool,
+            command,
+            Esp32Runtime::now_secs(),
+        );
+    }
+}
+
+pub fn clear_permission_request(app: &AppHandle, pipe_request_id: &str) {
+    if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
+        rt.agent_panel
+            .lock()
+            .unwrap()
+            .clear_by_pipe_id(pipe_request_id);
+    }
 }
 
 fn current_settings(app: &AppHandle) -> settings::Settings {

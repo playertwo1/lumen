@@ -717,6 +717,7 @@ pub(crate) fn resolve_approval(app: &AppHandle, request_id: &str, decision: &str
     let Some(outcome) = pipe::answer_with_outcome(app, request_id, decision) else {
         return false;
     };
+    esp32_bridge::clear_permission_request(app, request_id);
     if !outcome.is_mochi {
         recap::record_decision(app, request_id, decision);
     }
