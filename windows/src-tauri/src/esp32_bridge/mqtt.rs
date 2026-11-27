@@ -487,4 +487,256 @@ mod tests {
         assert!(!snap2.connected);
         assert!(!snap2.board_online);
     }
+
+    fn start_embedded_broker() -> u16 {
+        let sock = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = sock.local_addr().unwrap().port();
+        drop(sock);
+
+        let mut v4 = std::collections::HashMap::new();
+        v4.insert(
+            "v4-1".to_string(),
+            rumqttd::ServerSettings {
+                name: "v4-1".to_string(),
+                listen: format!("127.0.0.1:{port}").parse().unwrap(),
+                tls: None,
+                next_connection_delay_ms: 1,
+                connections: rumqttd::ConnectionSettings {
+                    connection_timeout_ms: 5000,
+                    max_payload_size: 65536,
+                    max_inflight_count: 100,
+                    auth: None,
+                    external_auth: None,
+                    dynamic_filters: false,
+                },
+            },
+        );
+        let config = rumqttd::Config {
+            id: 0,
+            router: rumqttd::RouterConfig {
+                max_connections: 16,
+                max_outgoing_packet_count: 200,
+                max_segment_size: 1024 * 1024,
+                max_segment_count: 4,
+                ..Default::default()
+            },
+            v4: Some(v4),
+            ..Default::default()
+        };
+        std::thread::spawn(move || {
+            let mut broker = rumqttd::Broker::new(config);
+            let _ = broker.start();
+        });
+        // Aguarda porta TCP abrir
+        for _ in 0..50 {
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        port
+    }
+
+    struct RecordingCallbacks {
+        upserts: std::sync::Mutex<Vec<(String, String)>>,
+        deletes: std::sync::Mutex<Vec<String>>,
+        media_actions: std::sync::Mutex<Vec<String>>,
+        settles: std::sync::Mutex<Vec<(HashSet<String>, usize)>>,
+    }
+
+    impl RecordingCallbacks {
+        fn new() -> Self {
+            Self {
+                upserts: std::sync::Mutex::new(Vec::new()),
+                deletes: std::sync::Mutex::new(Vec::new()),
+                media_actions: std::sync::Mutex::new(Vec::new()),
+                settles: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl MqttCallbacks for RecordingCallbacks {
+        fn on_task_upsert(&self, entity_id: &str, plain_json: &str) {
+            self.upserts
+                .lock()
+                .unwrap()
+                .push((entity_id.to_string(), plain_json.to_string()));
+        }
+        fn on_task_delete(&self, entity_id: &str) {
+            self.deletes.lock().unwrap().push(entity_id.to_string());
+        }
+        fn on_settle_prune(&self, seen_task_ids: &HashSet<String>, retained_count: usize) {
+            self.settles
+                .lock()
+                .unwrap()
+                .push((seen_task_ids.clone(), retained_count));
+        }
+        fn on_media_action(&self, action: &str) -> Option<MediaStatePayload> {
+            self.media_actions.lock().unwrap().push(action.to_string());
+            Some(MediaStatePayload {
+                playing: true,
+                title: Some("Faixa Teste".into()),
+                artist: Some("Artista Teste".into()),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn mqtt_end_to_end_with_embedded_rumqttd_broker() {
+        let port = start_embedded_broker();
+        let room = "abc123def456";
+        let key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        // 1. Peer simulando a placa ESP32
+        let mut board_opts = MqttOptions::new(format!("placa-{room}"), "127.0.0.1", port);
+        board_opts.set_keep_alive(Duration::from_secs(30));
+        let (board_client, mut board_el) = AsyncClient::new(board_opts, 64);
+        let board_rx = Arc::new(std::sync::Mutex::new(Vec::<(String, Vec<u8>)>::new()));
+        let board_rx_task = board_rx.clone();
+        let board_loop = tokio::spawn(async move {
+            loop {
+                match board_el.poll().await {
+                    Ok(Event::Incoming(Incoming::Publish(p))) => {
+                        board_rx_task
+                            .lock()
+                            .unwrap()
+                            .push((p.topic, p.payload.to_vec()));
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+        });
+
+        board_client
+            .subscribe(format!("sm/{room}/#"), QoS::AtLeastOnce)
+            .await
+            .unwrap();
+        // Publica presença da placa = "1" e uma tarefa retida antes do Lumen conectar
+        board_client
+            .publish(
+                format!("sm/{room}/presenca/placa"),
+                QoS::AtLeastOnce,
+                true,
+                b"1".to_vec(),
+            )
+            .await
+            .unwrap();
+        let board_task_plain = r#"{"contract_version":1,"entity_type":"todo","entity_id":"esp-1","origin_role":"esp32","updated_at":1764240100,"payload":{"id":"esp-1","text":"Tarefa da placa","done":false}}"#;
+        let board_task_env = seal_mqtt_envelope(key, "placa", board_task_plain).unwrap();
+        board_client
+            .publish(
+                format!("sm/{room}/tarefas/esp-1"),
+                QoS::AtLeastOnce,
+                true,
+                board_task_env.into_bytes(),
+            )
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // 2. Sobe o loop MQTT do Lumen apontando para o broker embutido
+        let state = Arc::new(MqttRuntimeState::new());
+        let cb = Arc::new(RecordingCallbacks::new());
+        let cfg = MqttConfig {
+            uri: format!("mqtt://127.0.0.1:{port}"),
+            user: String::new(),
+            pass: String::new(),
+            room: room.to_string(),
+            key: key.to_string(),
+        };
+        let handle = spawn_mqtt_loop(cfg, cb.clone(), state.clone(), Duration::from_millis(300))
+            .expect("spawn mqtt loop");
+
+        // Aguarda conexão, presença da placa, recebimento da retida e janela de settle
+        for _ in 0..40 {
+            if state.connected.load(Ordering::Relaxed)
+                && state.board_online.load(Ordering::Relaxed)
+                && !cb.settles.lock().unwrap().is_empty()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(state.connected.load(Ordering::Relaxed));
+        assert!(state.board_online.load(Ordering::Relaxed));
+        assert_eq!(cb.upserts.lock().unwrap().len(), 1);
+        assert_eq!(cb.upserts.lock().unwrap()[0].0, "esp-1");
+        let settles = cb.settles.lock().unwrap().clone();
+        assert_eq!(settles.len(), 1);
+        assert!(settles[0].0.contains("esp-1"));
+        assert_eq!(settles[0].1, 1);
+
+        // 3. Tarefa criada no Lumen publicada como retida -> placa recebe e decifra
+        let lumen_task_plain = r#"{"contract_version":1,"entity_type":"todo","entity_id":"lum-1","origin_role":"lumen","updated_at":1764240200,"payload":{"id":"lum-1","text":"Tarefa do PC","done":false}}"#;
+        handle
+            .publish_task("lum-1".into(), lumen_task_plain.into())
+            .await
+            .unwrap();
+
+        // 4. Apagar nos dois sentidos: Lumen apaga lum-1, placa apaga esp-1
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        handle.delete_task("lum-1".into()).await.unwrap();
+        board_client
+            .publish(
+                format!("sm/{room}/tarefas/esp-1"),
+                QoS::AtLeastOnce,
+                true,
+                Vec::<u8>::new(),
+            )
+            .await
+            .unwrap();
+
+        // 5. Mídia: placa envia "next" cifrado -> Lumen chama callback e publica pc/midia/estado
+        let media_cmd = seal_mqtt_envelope(key, "placa", r#"{"action":"next"}"#).unwrap();
+        board_client
+            .publish(
+                format!("sm/{room}/pc/midia"),
+                QoS::AtLeastOnce,
+                false,
+                media_cmd.into_bytes(),
+            )
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert!(cb.deletes.lock().unwrap().contains(&"esp-1".to_string()));
+        assert_eq!(cb.media_actions.lock().unwrap().as_slice(), &["next"]);
+
+        // Verifica mensagens recebidas pelo peer da placa
+        let received = board_rx.lock().unwrap().clone();
+        assert!(received
+            .iter()
+            .any(|(t, p)| t == &format!("sm/{room}/presenca/lumen") && p == b"1"));
+
+        let lum_pub = received
+            .iter()
+            .find(|(t, p)| t == &format!("sm/{room}/tarefas/lum-1") && !p.is_empty())
+            .expect("placa recebeu tarefa retida do Lumen");
+        let (from, plain) =
+            open_mqtt_envelope(key, std::str::from_utf8(&lum_pub.1).unwrap()).unwrap();
+        assert_eq!(from, "lumen");
+        assert!(plain.contains("Tarefa do PC"));
+
+        assert!(received
+            .iter()
+            .any(|(t, p)| t == &format!("sm/{room}/tarefas/lum-1") && p.is_empty()));
+
+        let media_state_msg = received
+            .iter()
+            .find(|(t, p)| t == &format!("sm/{room}/pc/midia/estado") && !p.is_empty())
+            .expect("placa recebeu estado de midia");
+        let (mfrom, mplain) =
+            open_mqtt_envelope(key, std::str::from_utf8(&media_state_msg.1).unwrap()).unwrap();
+        assert_eq!(mfrom, "lumen");
+        assert!(mplain.contains("\"playing\":true"));
+        assert!(mplain.contains("Faixa Teste"));
+
+        // Encerra cliente limpo
+        let _ = handle.shutdown().await;
+        board_loop.abort();
+    }
 }
