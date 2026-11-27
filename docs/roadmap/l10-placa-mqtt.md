@@ -8,7 +8,7 @@
 
 **Fica como está:**
 - a voz pela rede local em `/v1/voice` (L9.2), só com outro bearer;
-- o painel `/api/tokens` e `/api/agents` e o `put_usage` no relay (L9.6), até a L10.7.
+- o painel `/api/tokens` e `/api/agents` e o `put_usage` no relay (L9.6), até a L11.
 
 **Pré-requisitos:** L9 implementada. Broker criado pelo dono (Q0 do `esp32-s3-amoled-2-16`) só para a validação real; o código e os testes não dependem dele.
 
@@ -79,12 +79,9 @@
 - [ ] Conferência de logs e do broker (MQTTX): nenhum texto claro de tarefa e nenhum segredo.
 - [ ] Release seguindo o [checklist](release-checklist.md), com o pedido do dono.
 
-## L10.7 — Uso e agentes por MQTT (opcional, depois da L10.6)
+## L10.7 — Uso e agentes por MQTT
 
-- [ ] Publicar `sm/<sala>/pc/uso` retido e cifrado com os mesmos campos de `/api/tokens`, só quando as cotas mudarem.
-- [ ] Publicar `sm/<sala>/pc/agentes` retido com os pedidos pendentes e assinar `sm/<sala>/pc/agentes/decisao` (`{"id","decision":"allow"|"deny"}`), mantendo uso único e expiração de 115 s.
-- [ ] Combinar com a placa a troca de `poll_usage` e `poll_agents` pela assinatura (Q5 do `esp32-s3-amoled-2-16`). Depois disso, `put_usage` e `/api/*` saem.
-- [ ] Checkpoint L10.7: pedido de aprovação aparece na placa em menos de 2 s e a decisão volta ao Lumen.
+Movida para a [L11 — Agentes e cotas para a placa](l11-agentes-vibepulse.md) (L11.5), que amplia o escopo com monitor de agentes, NEEDS YOU com resposta, previsão e histórico.
 
 ## Aceite (Checkpoint L10)
 
