@@ -7,7 +7,10 @@ pub mod proposal;
 pub mod store;
 pub mod sync;
 
-pub use self::esp32_sync::{export_esp32_envelopes, sync_esp32_envelopes};
+pub use self::esp32_sync::{
+    apply_mqtt_task, delete_mqtt_task, export_esp32_envelopes, export_mqtt_tasks,
+    reconcile_mqtt_retained, sync_esp32_envelopes,
+};
 pub use self::model::now_utc_ms as now_utc_ms_pub;
 
 #[allow(unused_imports)]
@@ -650,6 +653,7 @@ pub fn handle_toast_action(
 
 fn emit_tasks_changed(app: &AppHandle) {
     let _ = app.emit("tasks-changed", ());
+    crate::esp32_bridge::notify_tasks_changed(app);
 }
 
 fn emit_task_sync_state(app: &AppHandle, mgr: &TaskManager) {

@@ -14,7 +14,7 @@ pub mod tokens_agents;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -97,6 +97,8 @@ pub struct Esp32Runtime {
     pub agent_panel: Mutex<Esp32AgentPanelState>,
     pub mqtt_state: Arc<mqtt::MqttRuntimeState>,
     pub mqtt_handle: Mutex<Option<mqtt::MqttHandle>>,
+    pub mqtt_known_synced_ids: Mutex<HashSet<String>>,
+    pub mqtt_last_published: Mutex<HashMap<String, String>>,
     shutdown_tx: Mutex<Option<watch::Sender<bool>>>,
     relay_last_ok: Mutex<Option<Instant>>,
     lan_last_ok: Mutex<Option<Instant>>,
@@ -123,6 +125,8 @@ impl Esp32Runtime {
             agent_panel: Mutex::new(Esp32AgentPanelState::default()),
             mqtt_state,
             mqtt_handle: Mutex::new(None),
+            mqtt_known_synced_ids: Mutex::new(HashSet::new()),
+            mqtt_last_published: Mutex::new(HashMap::new()),
             shutdown_tx: Mutex::new(None),
             relay_last_ok: Mutex::new(None),
             lan_last_ok: Mutex::new(None),
@@ -403,15 +407,156 @@ pub(crate) fn clear_mqtt_config_from_vault() -> Result<(), String> {
 }
 
 struct RuntimeMqttCallbacks {
-    _rt: Arc<Esp32Runtime>,
+    rt: Arc<Esp32Runtime>,
 }
 
 impl mqtt::MqttCallbacks for RuntimeMqttCallbacks {
-    fn on_task_upsert(&self, _entity_id: &str, _plain_json: &str) {}
-    fn on_task_delete(&self, _entity_id: &str) {}
-    fn on_settle_prune(&self, _seen_task_ids: &HashSet<String>, _retained_count: usize) {}
+    fn on_task_upsert(&self, entity_id: &str, plain_json: &str) {
+        self.rt
+            .mqtt_known_synced_ids
+            .lock()
+            .unwrap()
+            .insert(entity_id.to_string());
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(plain_json) else {
+            return;
+        };
+        if let Some(app) = self.rt.app.as_ref() {
+            let now_ms = crate::tasks::now_utc_ms_pub();
+            if crate::tasks::apply_mqtt_task(app, entity_id, &val, now_ms).is_ok() {
+                // Atualiza snapshot publicado para não devolver eco imediato.
+                if let Some((_, env)) = crate::tasks::export_mqtt_tasks(app)
+                    .into_iter()
+                    .find(|(id, _)| id == entity_id)
+                {
+                    if let Ok(s) = serde_json::to_string(&env) {
+                        self.rt
+                            .mqtt_last_published
+                            .lock()
+                            .unwrap()
+                            .insert(entity_id.to_string(), s);
+                    }
+                }
+            }
+        }
+    }
+
+    fn on_task_delete(&self, entity_id: &str) {
+        self.rt
+            .mqtt_known_synced_ids
+            .lock()
+            .unwrap()
+            .remove(entity_id);
+        self.rt
+            .mqtt_last_published
+            .lock()
+            .unwrap()
+            .remove(entity_id);
+        if let Some(app) = self.rt.app.as_ref() {
+            let now_ms = crate::tasks::now_utc_ms_pub();
+            let _ = crate::tasks::delete_mqtt_task(app, entity_id, now_ms);
+        }
+    }
+
+    fn on_settle_prune(&self, seen_task_ids: &HashSet<String>, retained_count: usize) {
+        let Some(app) = self.rt.app.as_ref() else {
+            return;
+        };
+        let known = self.rt.mqtt_known_synced_ids.lock().unwrap().clone();
+        let now_ms = crate::tasks::now_utc_ms_pub();
+        match crate::tasks::reconcile_mqtt_retained(
+            app,
+            &known,
+            seen_task_ids,
+            retained_count,
+            now_ms,
+        ) {
+            Ok(res) => {
+                if !res.deleted_ids.is_empty() {
+                    let mut known_g = self.rt.mqtt_known_synced_ids.lock().unwrap();
+                    let mut pub_g = self.rt.mqtt_last_published.lock().unwrap();
+                    for id in &res.deleted_ids {
+                        known_g.remove(id);
+                        pub_g.remove(id);
+                    }
+                }
+                self.rt.publish_tasks_diff(res.should_republish_all);
+            }
+            Err(_) => {
+                self.rt.publish_tasks_diff(false);
+            }
+        }
+    }
+
     fn on_media_action(&self, _action: &str) -> Option<mqtt::MediaStatePayload> {
         None
+    }
+}
+
+impl Esp32Runtime {
+    pub fn publish_tasks_diff(&self, force_all: bool) {
+        let Some(app) = self.app.as_ref() else {
+            return;
+        };
+        let Some(handle) = self.mqtt_handle.lock().unwrap().clone() else {
+            return;
+        };
+        if !self.mqtt_state.connected.load(Ordering::Relaxed) {
+            return;
+        }
+        let active = crate::tasks::export_mqtt_tasks(app);
+        let mut active_map: HashMap<String, String> = HashMap::with_capacity(active.len());
+        for (id, env) in active {
+            if let Ok(s) = serde_json::to_string(&env) {
+                active_map.insert(id, s);
+            }
+        }
+
+        let mut to_publish: Vec<(String, String)> = Vec::new();
+        let mut to_delete: Vec<String> = Vec::new();
+
+        {
+            let mut last_pub = self.mqtt_last_published.lock().unwrap();
+            let mut known = self.mqtt_known_synced_ids.lock().unwrap();
+            if force_all {
+                last_pub.clear();
+            }
+            for (id, json) in &active_map {
+                if last_pub.get(id).map(String::as_str) != Some(json.as_str()) {
+                    to_publish.push((id.clone(), json.clone()));
+                    last_pub.insert(id.clone(), json.clone());
+                    known.insert(id.clone());
+                }
+            }
+            let removed: Vec<String> = last_pub
+                .keys()
+                .filter(|id| !active_map.contains_key(*id))
+                .cloned()
+                .collect();
+            for id in removed {
+                last_pub.remove(&id);
+                known.remove(&id);
+                to_delete.push(id);
+            }
+        }
+
+        if to_publish.is_empty() && to_delete.is_empty() {
+            return;
+        }
+
+        tauri::async_runtime::spawn(async move {
+            for (entity_id, plain_json) in to_publish {
+                let _ = handle.publish_task(entity_id, plain_json).await;
+            }
+            for entity_id in to_delete {
+                let _ = handle.delete_task(entity_id).await;
+            }
+        });
+    }
+}
+
+pub fn notify_tasks_changed(app: &AppHandle) {
+    if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
+        rt.publish_tasks_diff(false);
     }
 }
 
@@ -513,7 +658,7 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
     }
 
     if let Some(mqtt_cfg) = load_mqtt_config_from_vault() {
-        let cb = Arc::new(RuntimeMqttCallbacks { _rt: rt.clone() });
+        let cb = Arc::new(RuntimeMqttCallbacks { rt: rt.clone() });
         match mqtt::spawn_mqtt_loop(
             mqtt_cfg,
             cb,

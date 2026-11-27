@@ -313,6 +313,310 @@ pub fn export_esp32_envelopes(
     export_from_local(&local, &HashSet::new(), max_items, max_bytes)
 }
 
+// -----------------------------------------------------------------------------
+// Sincronização MQTT (PROTOCOLO.md — um tópico retido por tarefa)
+// -----------------------------------------------------------------------------
+
+pub(crate) fn to_mqtt_envelope(local: &LocalState, item: &TodoItem) -> Value {
+    let updated_secs = (item_updated_ms(local, item) / 1000).max(0);
+    let due_ts = local_to_due_ts(item.due_date.as_deref(), item.due_time.as_deref());
+    let text: String = item.text.chars().take(95).collect();
+    let mut payload = json!({
+        "id": item.id,
+        "text": text,
+        "done": item.done,
+    });
+    if let Some(ts) = due_ts {
+        payload["due_ts"] = json!(ts);
+    }
+    json!({
+        "contract_version": 1,
+        "entity_type": "todo",
+        "entity_id": item.id,
+        "origin_role": "lumen",
+        "updated_at": updated_secs,
+        "payload": payload,
+    })
+}
+
+pub(crate) fn export_mqtt_tasks_local(local: &LocalState) -> Vec<(String, Value)> {
+    local
+        .store
+        .active_items()
+        .into_iter()
+        .map(|item| {
+            let id = item.id.clone();
+            let env = to_mqtt_envelope(local, &item);
+            (id, env)
+        })
+        .collect()
+}
+
+/// Aplica um envelope MQTT de tarefa (`sm/<sala>/tarefas/<entity_id>`).
+/// Conflito: vence estritamente o maior `updated_at` (em segundos Unix); empate mantém o local.
+pub(crate) fn apply_mqtt_task_local(
+    local: &mut LocalState,
+    topic_entity_id: &str,
+    raw: &Value,
+    now_ms: i64,
+) -> Result<bool, String> {
+    let entity_id = raw
+        .get("entity_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| topic_entity_id.trim());
+    if entity_id.is_empty() || entity_id.len() > 128 {
+        return Ok(false);
+    }
+    let Some(payload) = raw.get("payload") else {
+        return Ok(false);
+    };
+    let text: String = payload
+        .get("text")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("")
+        .chars()
+        .take(500)
+        .collect();
+    if text.is_empty() {
+        return Ok(false);
+    }
+    let done = payload.get("done").and_then(Value::as_bool).unwrap_or(false);
+    let due_ts = payload.get("due_ts").and_then(Value::as_i64);
+    let (due_date, due_time) = due_ts_to_local(due_ts);
+    let incoming_updated_ms = parse_updated_ms(raw.get("updated_at"), now_ms);
+    let incoming_secs = incoming_updated_ms / 1000;
+
+    if let Some(existing) = local.store.find_any(entity_id).cloned() {
+        if existing.is_tombstoned() {
+            let deleted_secs = rfc3339_ms(existing.deleted_at.as_deref()).unwrap_or(0) / 1000;
+            if incoming_secs <= deleted_secs {
+                return Ok(false);
+            }
+        } else {
+            if existing.text == text
+                && existing.done == done
+                && existing.due_date == due_date
+                && existing.due_time == due_time
+            {
+                return Ok(false);
+            }
+            let existing_secs = item_updated_ms(local, &existing) / 1000;
+            // Contrato MQTT: vence o maior updated_at; em empate mantém o local.
+            if incoming_secs <= existing_secs {
+                return Ok(false);
+            }
+        }
+
+        let prev_version = existing.version;
+        let mut updated = existing;
+        updated.text = text;
+        updated.done = done;
+        updated.done_at = if done {
+            Some(updated.done_at.unwrap_or_else(|| iso_utc(incoming_updated_ms)))
+        } else {
+            None
+        };
+        updated.due = format_due_label(due_date.as_deref(), due_time.as_deref());
+        updated.due_date = due_date;
+        updated.due_time = due_time;
+        updated.deleted_at = None;
+        updated.version = prev_version.saturating_add(1);
+
+        local.store.upsert_remote(updated.clone())?;
+        local
+            .sync
+            .enqueue_local_mutation(&updated, prev_version, incoming_updated_ms)?;
+        Ok(true)
+    } else {
+        let new_item = TodoItem {
+            id: entity_id.to_string(),
+            text,
+            due: format_due_label(due_date.as_deref(), due_time.as_deref()),
+            due_date,
+            due_time,
+            time_zone: TODO_TIME_ZONE.to_string(),
+            alert_minutes: TODO_DEFAULT_ALERT_MINUTES,
+            priority: TodoPriority::Normal,
+            subtasks: Vec::new(),
+            recurrence: None,
+            series_id: None,
+            done,
+            created_at: iso_utc(incoming_updated_ms),
+            done_at: done.then(|| iso_utc(incoming_updated_ms)),
+            snoozed_until: None,
+            source: None,
+            source_stale: false,
+            version: 1,
+            deleted_at: None,
+        };
+        local.store.upsert_remote(new_item.clone())?;
+        local
+            .sync
+            .enqueue_local_mutation(&new_item, 0, incoming_updated_ms)?;
+        Ok(true)
+    }
+}
+
+/// Apaga localmente uma tarefa quando um payload vazio chega pelo MQTT (sem republicar).
+pub(crate) fn delete_mqtt_task_local(
+    local: &mut LocalState,
+    entity_id: &str,
+    now_ms: i64,
+) -> Result<bool, String> {
+    let id = entity_id.trim();
+    if id.is_empty() {
+        return Ok(false);
+    }
+    let Some(existing) = local.store.get(id).cloned() else {
+        return Ok(false);
+    };
+    let prev_version = existing.version;
+    let deleted = local.store.delete(id, now_ms)?;
+    local
+        .sync
+        .enqueue_local_mutation(&deleted, prev_version, now_ms)?;
+    Ok(true)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MqttReconcileResult {
+    pub deleted_ids: Vec<String>,
+    pub should_republish_all: bool,
+}
+
+/// Limpeza ao reconectar depois da janela de retidas (~3 s), com trava de segurança:
+/// - não apaga nada se `retained_count == 0`, ou se sumiria mais da metade da lista E mais de 3 tarefas;
+/// - nesse caso sinaliza `should_republish_all = true`.
+pub(crate) fn reconcile_mqtt_retained_local(
+    local: &mut LocalState,
+    known_synced_ids: &HashSet<String>,
+    seen_retained_ids: &HashSet<String>,
+    retained_count: usize,
+    now_ms: i64,
+) -> Result<MqttReconcileResult, String> {
+    let known_active: Vec<String> = local
+        .store
+        .active_items()
+        .into_iter()
+        .map(|item| item.id)
+        .filter(|id| known_synced_ids.contains(id))
+        .collect();
+
+    if retained_count == 0 {
+        return Ok(MqttReconcileResult {
+            deleted_ids: Vec::new(),
+            should_republish_all: !known_active.is_empty(),
+        });
+    }
+
+    let missing: Vec<String> = known_active
+        .iter()
+        .filter(|id| !seen_retained_ids.contains(*id))
+        .cloned()
+        .collect();
+
+    if missing.len() * 2 > known_active.len() && missing.len() > 3 {
+        return Ok(MqttReconcileResult {
+            deleted_ids: Vec::new(),
+            should_republish_all: true,
+        });
+    }
+
+    let mut deleted_ids = Vec::new();
+    for id in missing {
+        if delete_mqtt_task_local(local, &id, now_ms)? {
+            deleted_ids.push(id);
+        }
+    }
+
+    Ok(MqttReconcileResult {
+        deleted_ids,
+        should_republish_all: false,
+    })
+}
+
+pub fn export_mqtt_tasks(app: &AppHandle) -> Vec<(String, Value)> {
+    let Some(mgr) = get(app) else {
+        return Vec::new();
+    };
+    let local = mgr.local.lock().unwrap();
+    export_mqtt_tasks_local(&local)
+}
+
+pub fn apply_mqtt_task(
+    app: &AppHandle,
+    topic_entity_id: &str,
+    envelope: &Value,
+    now_ms: i64,
+) -> Result<bool, String> {
+    let Some(mgr) = get(app) else {
+        return Ok(false);
+    };
+    let changed = {
+        let mut local = mgr.local.lock().unwrap();
+        apply_mqtt_task_local(&mut local, topic_entity_id, envelope, now_ms)?
+    };
+    if changed {
+        let _ = mgr.wake_tx.send(());
+        let _ = mgr.sync_wake_tx.send(());
+        let _ = tauri::Emitter::emit(app, "tasks-changed", ());
+        emit_task_sync_state(app, &mgr);
+    }
+    Ok(changed)
+}
+
+pub fn delete_mqtt_task(app: &AppHandle, entity_id: &str, now_ms: i64) -> Result<bool, String> {
+    let Some(mgr) = get(app) else {
+        return Ok(false);
+    };
+    let deleted = {
+        let mut local = mgr.local.lock().unwrap();
+        delete_mqtt_task_local(&mut local, entity_id, now_ms)?
+    };
+    if deleted {
+        let _ = mgr.wake_tx.send(());
+        let _ = mgr.sync_wake_tx.send(());
+        let _ = tauri::Emitter::emit(app, "tasks-changed", ());
+        emit_task_sync_state(app, &mgr);
+    }
+    Ok(deleted)
+}
+
+pub fn reconcile_mqtt_retained(
+    app: &AppHandle,
+    known_synced_ids: &HashSet<String>,
+    seen_retained_ids: &HashSet<String>,
+    retained_count: usize,
+    now_ms: i64,
+) -> Result<MqttReconcileResult, String> {
+    let Some(mgr) = get(app) else {
+        return Ok(MqttReconcileResult {
+            deleted_ids: Vec::new(),
+            should_republish_all: false,
+        });
+    };
+    let res = {
+        let mut local = mgr.local.lock().unwrap();
+        reconcile_mqtt_retained_local(
+            &mut local,
+            known_synced_ids,
+            seen_retained_ids,
+            retained_count,
+            now_ms,
+        )?
+    };
+    if !res.deleted_ids.is_empty() {
+        let _ = mgr.wake_tx.send(());
+        let _ = mgr.sync_wake_tx.send(());
+        let _ = tauri::Emitter::emit(app, "tasks-changed", ());
+        emit_task_sync_state(app, &mgr);
+    }
+    Ok(res)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,5 +722,117 @@ mod tests {
         assert!(out.len() <= ESP32_HTTP_MAX_TASKS);
         let wire = serde_json::to_vec(&json!({"ok":true,"envelopes":out,"count":out.len()})).unwrap();
         assert!(wire.len() <= ESP32_HTTP_MAX_BYTES);
+    }
+
+    #[test]
+    fn mqtt_envelope_format_and_lww_conflict_rules() {
+        let (_dir, mut local) = temp_local();
+        let initial = json!({
+            "contract_version": 1,
+            "entity_type": "todo",
+            "entity_id": "esp-lww-1",
+            "origin_role": "esp32",
+            "updated_at": 1_764_240_100i64,
+            "payload": {
+                "id": "esp-lww-1",
+                "text": "Versao local",
+                "done": false,
+                "due_ts": 1_764_280_800i64
+            }
+        });
+        assert!(apply_mqtt_task_local(&mut local, "esp-lww-1", &initial, 1_764_240_100_000).unwrap());
+
+        let exported = export_mqtt_tasks_local(&local);
+        assert_eq!(exported.len(), 1);
+        assert_eq!(exported[0].0, "esp-lww-1");
+        assert_eq!(exported[0].1["contract_version"], 1);
+        assert_eq!(exported[0].1["entity_type"], "todo");
+        assert_eq!(exported[0].1["origin_role"], "lumen");
+        assert_eq!(exported[0].1["updated_at"], 1_764_240_100i64);
+
+        // Velho perde
+        let older = json!({
+            "contract_version": 1,
+            "entity_type": "todo",
+            "entity_id": "esp-lww-1",
+            "origin_role": "esp32",
+            "updated_at": 1_764_240_050i64,
+            "payload": { "id": "esp-lww-1", "text": "Antiga", "done": true }
+        });
+        assert!(!apply_mqtt_task_local(&mut local, "esp-lww-1", &older, 1_764_240_200_000).unwrap());
+        assert_eq!(local.store.get("esp-lww-1").unwrap().text, "Versao local");
+
+        // Empate mantém o local
+        let tie = json!({
+            "contract_version": 1,
+            "entity_type": "todo",
+            "entity_id": "esp-lww-1",
+            "origin_role": "esp32",
+            "updated_at": 1_764_240_100i64,
+            "payload": { "id": "esp-lww-1", "text": "Empate remoto", "done": true }
+        });
+        assert!(!apply_mqtt_task_local(&mut local, "esp-lww-1", &tie, 1_764_240_200_000).unwrap());
+        assert_eq!(local.store.get("esp-lww-1").unwrap().text, "Versao local");
+
+        // Mais novo vence
+        let newer = json!({
+            "contract_version": 1,
+            "entity_type": "todo",
+            "entity_id": "esp-lww-1",
+            "origin_role": "esp32",
+            "updated_at": 1_764_240_200i64,
+            "payload": { "id": "esp-lww-1", "text": "Versao nova", "done": true }
+        });
+        assert!(apply_mqtt_task_local(&mut local, "esp-lww-1", &newer, 1_764_240_200_000).unwrap());
+        let item = local.store.get("esp-lww-1").unwrap();
+        assert_eq!(item.text, "Versao nova");
+        assert!(item.done);
+    }
+
+    #[test]
+    fn mqtt_delete_and_reconcile_prune_with_safety_guards() {
+        let (_dir, mut local) = temp_local();
+        let mut known = HashSet::new();
+        for i in 1..=6 {
+            let id = format!("t-{i}");
+            let env = json!({
+                "contract_version": 1,
+                "entity_type": "todo",
+                "entity_id": id,
+                "origin_role": "esp32",
+                "updated_at": 1_764_240_000i64 + i,
+                "payload": { "id": format!("t-{i}"), "text": format!("Tarefa {i}"), "done": false }
+            });
+            apply_mqtt_task_local(&mut local, &format!("t-{i}"), &env, 1_764_240_000_000).unwrap();
+            known.insert(format!("t-{i}"));
+        }
+
+        // Trava 1: nenhuma retida chegou -> não apaga e pede republicação
+        let empty_seen = HashSet::new();
+        let r0 = reconcile_mqtt_retained_local(&mut local, &known, &empty_seen, 0, 1_764_240_500_000).unwrap();
+        assert!(r0.deleted_ids.is_empty());
+        assert!(r0.should_republish_all);
+        assert_eq!(local.store.active_items().len(), 6);
+
+        // Trava 2: sumiria 4 de 6 (> metade e > 3) -> não apaga e pede republicação
+        let seen_two: HashSet<String> = ["t-1", "t-2"].into_iter().map(String::from).collect();
+        let r_guard = reconcile_mqtt_retained_local(&mut local, &known, &seen_two, 2, 1_764_240_500_000).unwrap();
+        assert!(r_guard.deleted_ids.is_empty());
+        assert!(r_guard.should_republish_all);
+        assert_eq!(local.store.active_items().len(), 6);
+
+        // Sem trava: sumiram apenas 2 de 6 -> apaga t-5 e t-6
+        let seen_four: HashSet<String> = ["t-1", "t-2", "t-3", "t-4"].into_iter().map(String::from).collect();
+        let r_ok = reconcile_mqtt_retained_local(&mut local, &known, &seen_four, 4, 1_764_240_600_000).unwrap();
+        assert!(!r_ok.should_republish_all);
+        assert_eq!(r_ok.deleted_ids.len(), 2);
+        assert!(local.store.get("t-5").is_none());
+        assert!(local.store.get("t-6").is_none());
+        assert_eq!(local.store.active_items().len(), 4);
+
+        // Delete remoto direto (payload vazio)
+        assert!(delete_mqtt_task_local(&mut local, "t-4", 1_764_240_700_000).unwrap());
+        assert!(local.store.get("t-4").is_none());
+        assert!(!delete_mqtt_task_local(&mut local, "t-4", 1_764_240_700_000).unwrap());
     }
 }
