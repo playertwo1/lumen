@@ -487,9 +487,53 @@ impl mqtt::MqttCallbacks for RuntimeMqttCallbacks {
         }
     }
 
-    fn on_media_action(&self, _action: &str) -> Option<mqtt::MediaStatePayload> {
-        None
+    fn on_media_action(&self, action: &str) -> Option<mqtt::MediaStatePayload> {
+        handle_mqtt_media_action(&self.rt, action)
     }
+}
+
+pub(crate) fn handle_mqtt_media_action(
+    rt: &Esp32Runtime,
+    action: &str,
+) -> Option<mqtt::MediaStatePayload> {
+    if crate::integrations::PAUSED.load(Ordering::Relaxed) {
+        return None;
+    }
+    let act = action.trim();
+    if !matches!(act, "play_pause" | "next" | "prev" | "vol_up" | "vol_down") {
+        return None;
+    }
+    let playing = match act {
+        "vol_up" | "vol_down" => {
+            let delta = if act == "vol_up" { 6 } else { -6 };
+            let _ = std::thread::spawn(move || {
+                crate::mochi::tools::audio::esp32_step_volume(delta)
+            })
+            .join();
+            rt.playing.load(Ordering::Relaxed)
+        }
+        _ => {
+            let owned = act.to_string();
+            let res = std::thread::spawn(move || {
+                crate::mochi::tools::media::esp32_media_control(&owned)
+            })
+            .join()
+            .ok()
+            .and_then(|r| r.ok());
+            match res {
+                Some(p) => {
+                    rt.playing.store(p, Ordering::Relaxed);
+                    p
+                }
+                None => rt.playing.load(Ordering::Relaxed),
+            }
+        }
+    };
+    Some(mqtt::MediaStatePayload {
+        playing,
+        title: Some(String::new()),
+        artist: Some(String::new()),
+    })
 }
 
 impl Esp32Runtime {
