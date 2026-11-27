@@ -2,6 +2,19 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.30 — ponte nativa com a placa ESP32-S3 AMOLED (L9)
+
+- [x] Pedido do dono em 2026-11-27 ("publique a release") após conclusão da L9 (`L9.1`–`L9.6`) na `main` (`1bcdfb47`). Inclui servidor HTTP LAN (`:8787`), pareamento seguro de 6 dígitos com chaves no Credential Manager e revogação (`401`), ponte de voz (`POST /v1/voice` com STT local e TTS WAV `22050 Hz` `< 96 KiB`), sync bidirecional idempotente de tarefas (`POST /v1/tasks/sync` `<= 3800 B` + outbox L6), relay Cloudflare AES-256-GCM, controle nativo de mídia/volume (`POST /v1/media`) e painel integrado de cotas e aprovação de agentes (`/api/tokens`, `/api/agents*` em `:8787` e `:8737`).
+- [x] Validações locais: `npx tsc --noEmit`, `npm test` (791/791), `npm run build`, `cargo test --lib --locked` (992 passaram, 0 falhas, 10 ignorados — incluindo 22/22 em `esp32_bridge` e 3/3 em `tasks::esp32_sync`), `cargo check --bins --locked`, `python scripts/test-whats-new.py windows` e `cargo test --lib --locked version` (8/8).
+- [x] Empacotamento e publicação locais (`npx tauri build && node scripts/pack.mjs`, `LTO=thin`, `CODEGEN_UNITS=4`). Microsoft Defender em `windows/release/` (`found no threats`). Tag [`windows-v0.7.30`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.30) (`--latest=false`) e [`windows-latest`](https://github.com/playertwo1/lumen/releases/tag/windows-latest) publicados.
+- [x] Digests do GitHub conferidos bit a bit com o SHA-256 local:
+  - `Lumen-Windows-0.7.30-setup.exe` / `Lumen-Windows-setup.exe`: `f908fe0ad46ac0ac1a59c5a85089efa4f0481927a14cd3d5ccff00fd755e247c`
+  - `Lumen-Windows-0.7.30.msi` / `Lumen-Windows.msi`: `6299131d55be211d7896c501eae4f78784d7e3d85c3766e7366317cbdc22ce73`
+  - `lumen.exe`: `269ceae00e253aa18e4f70138e4e38cc109d91cbc6ec8584a6a4141b2eed418e`
+  - `lumen-hook.exe`: `e4d67885f16b9d5465287bfa1bcfc4e31554778db3900d3c3991e67c7ecef231`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1`).
+- [ ] **NOT_RUN:** validação real na placa ESP32-S3 AMOLED física (pareamento 6 dígitos, voz, sync de tarefas LAN/relay, mídia/volume, painel `/api/tokens` + `/api/agents` e revogação).
+
 ### Windows 0.7.29 — alertas de cota não ficam presos depois de um aviso comum
 
 - [x] Pedido do dono em 2026-11-26 ("faça merge das que tiver prontas … faça exe release"), depois do PR [#1](https://github.com/playertwo1/lumen/pull/1). Causa: `pushCompactNotice` limpava o alerta ativo, e ao expirar a fila só era drenada se ainda houvesse alerta ativo. Correção em [`00d13744`](https://github.com/playertwo1/lumen/commit/00d13744): a fila retoma quando a área de aviso libera, alertas novos entram atrás dos que esperam e a pausa descarta a fila.
