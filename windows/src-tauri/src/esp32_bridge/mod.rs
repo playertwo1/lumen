@@ -4,6 +4,7 @@
 //! armazenamento de chaves no cofre do Windows (`secrets.rs`), ponte de voz, sync de tarefas,
 //! relay Cloudflare criptografado (AES-256-GCM), controle nativo de mídia e painel de cotas/agentes.
 
+pub mod agent_status;
 pub mod audio_wav;
 pub mod crypto;
 pub mod mqtt;
@@ -81,6 +82,7 @@ pub struct Esp32Runtime {
     pub claude_quota: Mutex<ClaudeQuotaCache>,
     pub agy_quota: Mutex<ClaudeQuotaCache>,
     pub agent_panel: Mutex<Esp32AgentPanelState>,
+    pub agent_monitor: Arc<agent_status::AgentStatusMonitor>,
     pub mqtt_state: Arc<mqtt::MqttRuntimeState>,
     pub mqtt_handle: Mutex<Option<mqtt::MqttHandle>>,
     pub mqtt_voice_bearer: Mutex<Option<String>>,
@@ -114,6 +116,7 @@ impl Esp32Runtime {
             claude_quota: Mutex::new(ClaudeQuotaCache::default()),
             agy_quota: Mutex::new(ClaudeQuotaCache::default()),
             agent_panel: Mutex::new(Esp32AgentPanelState::default()),
+            agent_monitor: Arc::new(agent_status::AgentStatusMonitor::new()),
             mqtt_state,
             mqtt_handle: Mutex::new(None),
             mqtt_voice_bearer: Mutex::new(initial_voice_bearer),
@@ -707,6 +710,13 @@ async fn refresh_claude_and_agy_quotas(rt: &Esp32Runtime) {
                 .update_from_agy_limits(&limits, Esp32Runtime::now_secs());
         }
     }
+}
+
+pub(crate) fn build_agent_status_snapshot(rt: &Esp32Runtime) -> serde_json::Value {
+    let claude_dir = agent_status::default_claude_projects_dir();
+    let codex_dir = agent_status::default_codex_sessions_dir();
+    let now_ms = crate::tasks::now_utc_ms_pub();
+    rt.agent_monitor.snapshot(&claude_dir, &codex_dir, now_ms)
 }
 
 pub(crate) fn build_live_tokens_snapshot(rt: &Esp32Runtime) -> tokens_agents::TokensSnapshot {

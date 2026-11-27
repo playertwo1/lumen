@@ -336,6 +336,15 @@ async fn handle_api_route(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpRespo
             let payload = super::tokens_agents::build_clean_usage_payload(&snap);
             HttpResponse::json(200, "OK", &payload)
         }
+        ("GET", "/api/agent-status") => {
+            let rt_bg = rt.clone();
+            let snap = tokio::task::spawn_blocking(move || {
+                super::build_agent_status_snapshot(&rt_bg)
+            })
+            .await
+            .unwrap_or_else(|_| json!({ "v": 2, "seq": 0, "agents": { "claude": { "active_count": 0, "jobs": [] }, "codex": { "active_count": 0, "jobs": [] } } }));
+            HttpResponse::json(200, "OK", &snap)
+        }
         ("GET", "/api/agents") => {
             let now_sec = Esp32Runtime::now_secs();
             let snap = rt.agent_panel.lock().unwrap().snapshot(now_sec);

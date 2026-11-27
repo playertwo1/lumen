@@ -229,3 +229,32 @@ async fn loopback_voice_accepts_mqtt_hmac_bearer_vector() {
     assert_eq!(ok.status(), 200);
     let _ = tx.send(true);
 }
+
+#[tokio::test]
+async fn loopback_agent_status_v2_endpoint() {
+    let (base, _key, _rt, tx) = spawn_loopback_server(true, true).await;
+    let client = reqwest::Client::new();
+
+    let r1 = client
+        .get(format!("{base}/api/agent-status"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r1.status(), 200);
+    let j1: Value = r1.json().await.unwrap();
+    assert_eq!(j1["v"], 2);
+    let seq1 = j1["seq"].as_u64().unwrap();
+    assert!(j1["agents"]["claude"]["jobs"].is_array());
+    assert!(j1["agents"]["codex"]["jobs"].is_array());
+
+    let r2 = client
+        .get(format!("{base}/api/agent-status"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r2.status(), 200);
+    let j2: Value = r2.json().await.unwrap();
+    assert!(j2["seq"].as_u64().unwrap() > seq1);
+
+    let _ = tx.send(true);
+}
