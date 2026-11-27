@@ -143,21 +143,15 @@ impl ClaudeQuotaCache {
 
     pub fn to_fields(&self, now_sec: u64) -> (Option<f64>, Option<i64>, Option<f64>, Option<i64>, bool) {
         let stale = self.updated_at == 0 || (now_sec.saturating_sub(self.updated_at) > 3600);
-        let sess_min = self.session_resets_at.map(|r| {
-            if r > now_sec {
-                ((r - now_sec) as i64 + 59) / 60
-            } else {
-                0
-            }
-        });
-        let week_min = self.week_resets_at.map(|r| {
-            if r > now_sec {
-                ((r - now_sec) as i64 + 59) / 60
-            } else {
-                0
-            }
-        });
-        (self.session_pct, sess_min, self.week_pct, week_min, stale)
+        // Janela que já zerou depois da última leitura: uso 0% e próximo reset desconhecido.
+        let window = |pct: Option<f64>, reset: Option<u64>| match reset {
+            Some(r) if r <= now_sec => (pct.map(|_| 0.0), None),
+            Some(r) => (pct, Some(((r - now_sec) as i64 + 59) / 60)),
+            None => (pct, None),
+        };
+        let (sess_pct, sess_min) = window(self.session_pct, self.session_resets_at);
+        let (week_pct, week_min) = window(self.week_pct, self.week_resets_at);
+        (sess_pct, sess_min, week_pct, week_min, stale)
     }
 }
 
@@ -225,6 +219,20 @@ fn collect_jsonl_files(dir: &Path, files: &mut Vec<(std::time::SystemTime, PathB
     }
 }
 
+/// Uma janela de cota do Codex (`primary` = 5 h, `secondary` = semana) do último registro.
+/// Se o `resets_at` já passou, a janela zerou depois desse registro: o uso real é 0% e o próximo
+/// reset só existe quando o Codex for usado de novo (por isso `None`, a placa mostra "—").
+fn codex_window(w: &serde_json::Value, now_sec: u64) -> Option<(Option<f64>, Option<i64>)> {
+    let pct = w.get("used_percent").and_then(|x| x.as_f64());
+    let reset = w.get("resets_at").and_then(parse_resets_at);
+    match reset {
+        Some(res) if res <= now_sec => Some((Some(0.0), None)),
+        Some(res) => Some((pct, Some(((res - now_sec) as i64 + 59) / 60))),
+        None if pct.is_some() => Some((pct, None)),
+        None => None,
+    }
+}
+
 pub fn read_codex_rollout_quota(sessions_dir: &Path, now_sec: u64) -> CodexQuotaPart {
     let mut files = Vec::new();
     collect_jsonl_files(sessions_dir, &mut files);
@@ -259,34 +267,20 @@ pub fn read_codex_rollout_quota(sessions_dir: &Path, now_sec: u64) -> CodexQuota
                         };
 
                         if !found_primary {
-                            if let Some(prim) = rl.get("primary").or_else(|| rl.get("5h")) {
-                                if let Some(p) = prim.get("used_percent").and_then(|x| x.as_f64()) {
-                                    session_pct = Some(p);
-                                    found_primary = true;
-                                }
-                                if let Some(res) = prim.get("resets_at").and_then(parse_resets_at) {
-                                    if res > now_sec {
-                                        session_reset_min = Some(((res - now_sec) as i64 + 59) / 60);
-                                    } else {
-                                        session_reset_min = Some(0);
-                                    }
+                            if let Some(w) = rl.get("primary").or_else(|| rl.get("5h")) {
+                                if let Some((p, r)) = codex_window(w, now_sec) {
+                                    session_pct = p;
+                                    session_reset_min = r;
                                     found_primary = true;
                                 }
                             }
                         }
 
                         if !found_secondary {
-                            if let Some(sec) = rl.get("secondary").or_else(|| rl.get("7d")) {
-                                if let Some(p) = sec.get("used_percent").and_then(|x| x.as_f64()) {
-                                    week_pct = Some(p);
-                                    found_secondary = true;
-                                }
-                                if let Some(res) = sec.get("resets_at").and_then(parse_resets_at) {
-                                    if res > now_sec {
-                                        week_reset_min = Some(((res - now_sec) as i64 + 59) / 60);
-                                    } else {
-                                        week_reset_min = Some(0);
-                                    }
+                            if let Some(w) = rl.get("secondary").or_else(|| rl.get("7d")) {
+                                if let Some((p, r)) = codex_window(w, now_sec) {
+                                    week_pct = p;
+                                    week_reset_min = r;
                                     found_secondary = true;
                                 }
                             }
@@ -697,6 +691,29 @@ mod tests {
         let quota = read_codex_rollout_quota(&dir.0, 1000);
         assert_eq!(quota.session_pct, Some(12.3));
         assert_eq!(quota.week_pct, Some(45.6));
+        assert!(!quota.stale);
+    }
+
+    #[test]
+    fn test_codex_rollout_quota_janela_ja_zerada() {
+        // Registro antigo: a janela de 5 h já zerou, a semanal ainda não.
+        let dir = ScratchDir::new("codex-quota-expired");
+        std::fs::create_dir_all(&dir.0).unwrap();
+        let line = json!({
+            "payload": {
+                "rate_limits": {
+                    "primary": { "used_percent": 52.0, "resets_at": 1_000_u64 },
+                    "secondary": { "used_percent": 28.0, "resets_at": 1_000_000_u64 }
+                }
+            }
+        });
+        std::fs::write(dir.0.join("s.jsonl"), line.to_string() + "\n").unwrap();
+
+        let quota = read_codex_rollout_quota(&dir.0, 5_000);
+        assert_eq!(quota.session_pct, Some(0.0));
+        assert_eq!(quota.session_reset_min, None);
+        assert_eq!(quota.week_pct, Some(28.0));
+        assert_eq!(quota.week_reset_min, Some((1_000_000 - 5_000 + 59) / 60));
         assert!(!quota.stale);
     }
 
