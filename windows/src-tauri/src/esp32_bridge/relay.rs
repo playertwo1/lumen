@@ -27,9 +27,9 @@ impl RelayClient {
         let serialized = serde_json::to_string(payload)
             .map_err(|e| format!("Failed to serialize usage payload: {:?}", e))?;
 
-        if serialized.len() > 512 {
+        if serialized.len() > 2048 {
             return Err(format!(
-                "Usage payload exceeds 512 bytes: {} > 512",
+                "Usage payload exceeds 2048 bytes: {} > 2048",
                 serialized.len()
             ));
         }
@@ -120,7 +120,7 @@ mod tests {
         let usage_payload = serde_json::json!({"active": true});
         client.put_usage(&base_url, relay_key, &usage_payload).await.unwrap();
 
-        let big_payload = serde_json::json!({"data": "a".repeat(600)});
+        let big_payload = serde_json::json!({"data": "a".repeat(2100)});
         assert!(client.put_usage(&base_url, relay_key, &big_payload).await.is_err());
 
         assert!(client.put_usage(&base_url, "wrong-token", &usage_payload).await.is_err());

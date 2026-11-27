@@ -139,6 +139,9 @@ async fn loopback_api_panel_gates_tokens_agents_and_replay_409() {
     assert!(tok_json.get("claudeSessionPct").is_some());
     assert!(tok_json.get("codexSessionPct").is_some());
     assert!(tok_json.get("updatedAt").is_some());
+    assert!(tok_json.get("claudeForecastState").is_some());
+    assert!(tok_json.get("codexForecastState").is_some());
+    assert!(tok_json.get("claudeModelWeekPct").is_some());
 
     let ev_resp = client
         .post(format!("{base}/api/agents/event"))

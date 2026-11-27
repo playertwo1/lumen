@@ -11,6 +11,7 @@ pub mod mqtt;
 pub mod relay;
 pub mod server;
 pub mod tokens_agents;
+pub mod usage_history;
 
 #[cfg(test)]
 mod tests;
@@ -80,7 +81,9 @@ pub struct Esp32Runtime {
     pub agent_panel_enabled: AtomicBool,
     pub playing: AtomicBool,
     pub claude_quota: Mutex<ClaudeQuotaCache>,
+    pub claude_model_week: Mutex<usage_history::ClaudeModelWeekQuota>,
     pub agy_quota: Mutex<ClaudeQuotaCache>,
+    pub usage_history: Arc<usage_history::UsageHistoryStore>,
     pub agent_panel: Mutex<Esp32AgentPanelState>,
     pub agent_monitor: Arc<agent_status::AgentStatusMonitor>,
     pub mqtt_state: Arc<mqtt::MqttRuntimeState>,
@@ -105,6 +108,16 @@ impl Esp32Runtime {
         } else {
             load_legacy_keys_from_vault()
         };
+        let history_path = if app.is_some() {
+            usage_history::default_history_path()
+        } else {
+            static TEST_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let n = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+            std::env::temp_dir().join(format!(
+                "lumen-esp32-rt-history-{}-{n}.json",
+                std::process::id()
+            ))
+        };
         Arc::new(Self {
             app,
             keys: Mutex::new(initial_keys),
@@ -114,7 +127,9 @@ impl Esp32Runtime {
             agent_panel_enabled: AtomicBool::new(false),
             playing: AtomicBool::new(false),
             claude_quota: Mutex::new(ClaudeQuotaCache::default()),
+            claude_model_week: Mutex::new(usage_history::ClaudeModelWeekQuota::default()),
             agy_quota: Mutex::new(ClaudeQuotaCache::default()),
+            usage_history: Arc::new(usage_history::UsageHistoryStore::new(history_path)),
             agent_panel: Mutex::new(Esp32AgentPanelState::default()),
             agent_monitor: Arc::new(agent_status::AgentStatusMonitor::new()),
             mqtt_state,
@@ -658,8 +673,7 @@ pub(crate) async fn run_usage_relay_tick(
     }
     if last_usage_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(300)) {
         refresh_claude_and_agy_quotas(rt).await;
-        let snap = build_live_tokens_snapshot(rt);
-        let usage = tokens_agents::build_clean_usage_payload(&snap);
+        let usage = build_enriched_usage_payload(rt);
         if client.put_usage(relay_url, relay_key, &usage).await.is_ok() {
             *last_usage_at = Some(Instant::now());
         }
@@ -687,10 +701,13 @@ async fn refresh_claude_and_agy_quotas(rt: &Esp32Runtime) {
                 {
                     if resp.status().is_success() {
                         if let Ok(val) = resp.json::<serde_json::Value>().await {
+                            let ts = Esp32Runtime::now_secs();
                             rt.claude_quota
                                 .lock()
                                 .unwrap()
-                                .update_from_oauth(&val, Esp32Runtime::now_secs());
+                                .update_from_oauth(&val, ts);
+                            *rt.claude_model_week.lock().unwrap() =
+                                usage_history::ClaudeModelWeekQuota::from_oauth_payload(&val, ts);
                         }
                     }
                 }
@@ -717,6 +734,59 @@ pub(crate) fn build_agent_status_snapshot(rt: &Esp32Runtime) -> serde_json::Valu
     let codex_dir = agent_status::default_codex_sessions_dir();
     let now_ms = crate::tasks::now_utc_ms_pub();
     rt.agent_monitor.snapshot(&claude_dir, &codex_dir, now_ms)
+}
+
+pub(crate) fn build_enriched_usage_payload(rt: &Esp32Runtime) -> serde_json::Value {
+    let snap = build_live_tokens_snapshot(rt);
+    let now_sec = snap.updated_at;
+    let mut samples: Vec<(&str, &str, f64, u64)> = Vec::new();
+
+    let claude_week_reset = snap
+        .claude_week_reset_min
+        .filter(|&m| m > 0)
+        .map(|m| now_sec + (m as u64) * 60);
+    if let (Some(pct), Some(reset_at)) = (snap.claude_week_pct, claude_week_reset) {
+        samples.push(("claude", "week", pct, reset_at));
+    }
+    if let (Some(pct), Some(m)) = (snap.claude_session_pct, snap.claude_session_reset_min.filter(|&m| m > 0)) {
+        samples.push(("claude", "session", pct, now_sec + (m as u64) * 60));
+    }
+
+    let codex_week_reset = snap
+        .codex_week_reset_min
+        .filter(|&m| m > 0)
+        .map(|m| now_sec + (m as u64) * 60);
+    if let (Some(pct), Some(reset_at)) = (snap.codex_week_pct, codex_week_reset) {
+        samples.push(("codex", "week", pct, reset_at));
+    }
+    if let (Some(pct), Some(m)) = (snap.codex_session_pct, snap.codex_session_reset_min.filter(|&m| m > 0)) {
+        samples.push(("codex", "session", pct, now_sec + (m as u64) * 60));
+    }
+
+    if !samples.is_empty() {
+        let _ = rt.usage_history.record_many(&samples, Some(now_sec));
+    }
+
+    let claude_fc = match claude_week_reset {
+        Some(reset_at) => rt.usage_history.forecast("claude", "week", reset_at, now_sec),
+        None => usage_history::ProviderForecast {
+            state: "unavailable".to_string(),
+            ..Default::default()
+        },
+    };
+    let codex_fc = match codex_week_reset {
+        Some(reset_at) => rt.usage_history.forecast("codex", "week", reset_at, now_sec),
+        None => usage_history::ProviderForecast {
+            state: "unavailable".to_string(),
+            ..Default::default()
+        },
+    };
+
+    let mut payload = tokens_agents::build_clean_usage_payload(&snap);
+    usage_history::merge_forecasts_into_usage(&mut payload, &claude_fc, &codex_fc);
+    let model_week = rt.claude_model_week.lock().unwrap().clone();
+    usage_history::merge_model_week_into_usage(&mut payload, &model_week);
+    payload
 }
 
 pub(crate) fn build_live_tokens_snapshot(rt: &Esp32Runtime) -> tokens_agents::TokensSnapshot {

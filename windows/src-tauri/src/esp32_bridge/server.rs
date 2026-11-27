@@ -332,8 +332,15 @@ async fn handle_api_route(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpRespo
 
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/api/tokens") => {
-            let snap = super::build_live_tokens_snapshot(rt);
-            let payload = super::tokens_agents::build_clean_usage_payload(&snap);
+            let rt_bg = rt.clone();
+            let payload = tokio::task::spawn_blocking(move || {
+                super::build_enriched_usage_payload(&rt_bg)
+            })
+            .await
+            .unwrap_or_else(|_| {
+                let snap = super::build_live_tokens_snapshot(rt);
+                super::tokens_agents::build_clean_usage_payload(&snap)
+            });
             HttpResponse::json(200, "OK", &payload)
         }
         ("GET", "/api/agent-status") => {

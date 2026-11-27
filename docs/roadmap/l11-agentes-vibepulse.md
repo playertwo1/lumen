@@ -2,7 +2,7 @@
 
 # L11 — Agentes e cotas para a placa (ideias do VibePulse)
 
-**Estado:** Não iniciada. Atualizado em 2026-11-27.
+**Estado:** Em andamento (L11.1 e L11.3 concluídas). Atualizado em 2026-11-27.
 
 **Objetivo:** o Lumen faz no Windows o que o tokenserver do VibePulse faz no Mac:
 - sabe quais agentes (Claude Code, Codex) estão trabalhando, com modelo e esforço;
@@ -24,13 +24,13 @@ Entrega isso pela rede local (`/api/*`, porta 8787/8737, como na L9.6) e pelo MQ
 
 ## L11.1 — Monitor de agentes
 
-- [ ] Ler os JSONL do Claude Code (`~/.claude/projects/**/*.jsonl`) e os rollouts do Codex (`~/.codex/sessions/**/rollout-*.jsonl`), juntando com o que o `pipe.rs` já recebe dos hooks. Estados como em `agent_status.py`:
+- [x] Ler os JSONL do Claude Code (`~/.claude/projects/**/*.jsonl`) e os rollouts do Codex (`~/.codex/sessions/**/rollout-*.jsonl`), juntando com o que o `pipe.rs` já recebe dos hooks (`esp32_bridge/agent_status.rs`, commit `90ddf601`). Estados como em `agent_status.py`:
   - **Claude:** `user` → trabalhando; `tool_use` → atividade (lendo, editando, buscando, rodando, testando, compilando, esperando); `end_turn` → esperando; `result` → feito ou erro.
   - **Codex:** `turn_context`/`task_started` → trabalhando; `function_call` → atividade; `task_complete` → feito ou erro.
   - **Modelo e esforço:** no Claude, `message.model` e `effort` no topo do registro; no Codex, `turn_context.payload`.
-- [ ] Prazos: `working` sem notícia há mais de 120 s vira `unknown`; `waiting`/`error` com mais de 2 h, também. No máximo 16 tarefas por provedor e 4 no snapshot; só o nome da pasta do projeto.
-- [ ] `GET /api/agent-status` com o snapshot v2 do contrato (`seq` crescente, `updated_ms` como idade).
-- [ ] Checkpoint L11.1: testes com fixtures de JSONL (Claude e Codex) cobrindo estados, prazos, modelo e esforço.
+- [x] Prazos: `working` sem notícia há mais de 120 s vira `unknown`; `waiting`/`error` com mais de 2 h, também. No máximo 16 tarefas por provedor e 4 no snapshot; só o nome da pasta do projeto. *(commit `90ddf601`)*
+- [x] `GET /api/agent-status` com o snapshot v2 do contrato (`seq` crescente, `updated_ms` como idade). *(commit `90ddf601`, `loopback_agent_status_v2_endpoint`)*
+- [x] Checkpoint L11.1: testes com fixtures de JSONL (Claude e Codex) cobrindo estados, prazos, modelo e esforço. *(`cargo test --lib esp32_bridge::agent_status`: 9/9 + `loopback_agent_status_v2_endpoint`)*
 
 ## L11.2 — Segurar e responder perguntas e permissões
 
@@ -61,17 +61,17 @@ Entrega isso pela rede local (`/api/*`, porta 8787/8737, como na L9.6) e pelo MQ
 
 ## L11.3 — Previsão de ritmo e semanal do modelo
 
-- [ ] Histórico de amostras como `usage_history.py`:
+- [x] Histórico de amostras como `usage_history.py` (`esp32_bridge/usage_history.rs`):
   - no máximo uma por provedor, janela e ciclo de reset a cada 15 min;
   - 8 dias de retenção, em `%LOCALAPPDATA%\Lumen\usage-history.json`, com escrita atômica.
-- [ ] Previsão por regressão linear nas amostras do ciclo nas últimas 24 h:
+- [x] Previsão por regressão linear nas amostras do ciclo nas últimas 24 h:
   - precisa de ≥ 3 amostras, 90 min e 1 ponto de variação; senão, `collecting`;
   - inclinação ≤ 0 → `unavailable`;
   - projeção ≥ 100 → `exhausts` (`...At` e `...OffsetMin`);
   - senão → `at_reset` (`...PctAtReset` e `...PaceFactor`).
-- [ ] Semanal do modelo mais pesado do Claude (`claudeModelWeekPct/ResetMin/Label`) a partir do OAuth usage que o Lumen já lê.
-- [ ] Campos novos em `/api/tokens` e no `put_usage` do relay (a placa antiga ignora campos que não conhece).
-- [ ] Checkpoint L11.3: testes portados de `test_usage_history.py`.
+- [x] Semanal do modelo mais pesado do Claude (`claudeModelWeekPct/ResetMin/Label`) a partir do OAuth usage que o Lumen já lê.
+- [x] Campos novos em `/api/tokens` e no `put_usage` do relay (a placa antiga ignora campos que não conhece).
+- [x] Checkpoint L11.3: testes portados de `test_usage_history.py`. *(`cargo test --lib esp32_bridge::usage_history` + `cargo test --lib`, `npx tsc --noEmit`, `npm test` 795/795, `npm run build`)*
 
 ## L11.4 — Max Tracker
 
