@@ -97,6 +97,7 @@ pub struct Esp32Runtime {
     pub agent_panel: Mutex<Esp32AgentPanelState>,
     pub mqtt_state: Arc<mqtt::MqttRuntimeState>,
     pub mqtt_handle: Mutex<Option<mqtt::MqttHandle>>,
+    pub mqtt_voice_bearer: Mutex<Option<String>>,
     pub mqtt_known_synced_ids: Mutex<HashSet<String>>,
     pub mqtt_last_published: Mutex<HashMap<String, String>>,
     shutdown_tx: Mutex<Option<watch::Sender<bool>>>,
@@ -108,8 +109,10 @@ impl Esp32Runtime {
     pub fn new(app: Option<AppHandle>) -> Arc<Self> {
         let initial_keys = load_keys_from_vault();
         let mqtt_state = Arc::new(mqtt::MqttRuntimeState::new());
+        let mut initial_voice_bearer = None;
         if let Some(cfg) = load_mqtt_config_from_vault() {
             mqtt_state.set_configured(crypto::extract_broker_host(&cfg.uri), cfg.room);
+            initial_voice_bearer = Some(crypto::voice_bearer_hex(&cfg.key));
         }
         Arc::new(Self {
             app,
@@ -125,6 +128,7 @@ impl Esp32Runtime {
             agent_panel: Mutex::new(Esp32AgentPanelState::default()),
             mqtt_state,
             mqtt_handle: Mutex::new(None),
+            mqtt_voice_bearer: Mutex::new(initial_voice_bearer),
             mqtt_known_synced_ids: Mutex::new(HashSet::new()),
             mqtt_last_published: Mutex::new(HashMap::new()),
             shutdown_tx: Mutex::new(None),
@@ -213,6 +217,7 @@ impl Esp32Runtime {
         if !scheme.eq_ignore_ascii_case("bearer") {
             return false;
         }
+        let voice_bearer = self.mqtt_voice_bearer.lock().unwrap().clone();
         let keys: Vec<String> = self
             .keys
             .lock()
@@ -222,6 +227,11 @@ impl Esp32Runtime {
             .collect();
         // Percorre todas as chaves sem curto-circuito para evitar vazamento por tempo.
         let mut matched = false;
+        if let Some(expected) = voice_bearer.as_deref() {
+            if constant_time_str_eq(token, expected) {
+                matched = true;
+            }
+        }
         for stored in &keys {
             if constant_time_str_eq(token, stored) {
                 matched = true;
@@ -231,7 +241,8 @@ impl Esp32Runtime {
     }
 
     pub fn has_paired_keys(&self) -> bool {
-        !self.keys.lock().unwrap().is_empty()
+        self.mqtt_voice_bearer.lock().unwrap().is_some()
+            || !self.keys.lock().unwrap().is_empty()
     }
 
     pub fn key_strings(&self) -> Vec<String> {
@@ -1100,6 +1111,7 @@ pub fn esp32_save_mqtt_code(
 ) -> Result<Esp32BridgeStatus, String> {
     let parsed = crypto::parse_mqtt_pair_code(&code_json)?;
     save_mqtt_config_to_vault(&parsed)?;
+    *rt.mqtt_voice_bearer.lock().unwrap() = Some(crypto::voice_bearer_hex(&parsed.k));
     rt.mqtt_state
         .set_configured(crypto::extract_broker_host(&parsed.uri), parsed.sala.clone());
     let next = update_esp32_settings(&app, |s| {
@@ -1115,6 +1127,7 @@ pub fn esp32_clear_mqtt(
     rt: State<'_, Arc<Esp32Runtime>>,
 ) -> Result<Esp32BridgeStatus, String> {
     clear_mqtt_config_from_vault()?;
+    *rt.mqtt_voice_bearer.lock().unwrap() = None;
     rt.mqtt_state.configured.store(false, Ordering::Relaxed);
     rt.mqtt_state.set_connected(false);
     *rt.mqtt_state.host.write().unwrap() = String::new();

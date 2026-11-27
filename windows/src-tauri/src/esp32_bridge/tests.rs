@@ -226,3 +226,32 @@ async fn loopback_api_panel_gates_tokens_agents_and_replay_409() {
 
     let _ = tx.send(true);
 }
+
+#[tokio::test]
+async fn loopback_voice_accepts_mqtt_hmac_bearer_vector() {
+    let (base, _legacy_key, rt, tx) = spawn_loopback_server(false, false).await;
+    let room_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let expected_bearer = "3717157b1cbcf20a0ec4f22acbbe162bd033066c6528db618d6c7155a67f6e8b";
+    assert_eq!(crypto::voice_bearer_hex(room_key), expected_bearer);
+    *rt.mqtt_voice_bearer.lock().unwrap() = Some(crypto::voice_bearer_hex(room_key));
+
+    let client = reqwest::Client::new();
+    let bad = client
+        .post(format!("{base}/v1/voice"))
+        .bearer_auth("0000000000000000000000000000000000000000000000000000000000000000")
+        .json(&json!({ "text": "oi", "mock": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 401);
+
+    let ok = client
+        .post(format!("{base}/v1/voice"))
+        .bearer_auth(expected_bearer)
+        .json(&json!({ "text": "oi via hmac", "mock": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), 200);
+    let _ = tx.send(true);
+}
