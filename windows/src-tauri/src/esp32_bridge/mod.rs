@@ -32,11 +32,8 @@ use self::tokens_agents::{ClaudeQuotaCache, Esp32AgentPanelState};
 
 pub const DEFAULT_BRIDGE_PORT: u16 = 8787;
 pub const DEFAULT_USAGE_PORT: u16 = 8737;
-const PAIR_CODE_TTL: Duration = Duration::from_secs(300);
 
-const SECRET_BRIDGE_KEYS: &str = "esp32-bridge-keys";
 const SECRET_RELAY_KEY: &str = "esp32-relay-key";
-const SECRET_RELAY_ROOM: &str = "esp32-relay-room";
 pub(crate) const SECRET_MQTT_URI: &str = "esp32-mqtt-uri";
 pub(crate) const SECRET_MQTT_USER: &str = "esp32-mqtt-user";
 pub(crate) const SECRET_MQTT_PASS: &str = "esp32-mqtt-pass";
@@ -58,9 +55,6 @@ pub struct Esp32BridgeStatus {
     pub running: bool,
     pub mode: String,
     pub local_urls: Vec<String>,
-    pub paired_count: usize,
-    pub pair_code_armed: bool,
-    pub pair_code_expires_in_secs: Option<u64>,
     pub mqtt_configured: bool,
     pub mqtt_connected: bool,
     pub mqtt_host: String,
@@ -69,8 +63,6 @@ pub struct Esp32BridgeStatus {
     pub mqtt_error: Option<String>,
     pub relay_enabled: bool,
     pub relay_url: String,
-    pub relay_room: String,
-    pub relay_room_configured: bool,
     pub relay_key_configured: bool,
     pub agent_panel_enabled: bool,
     pub usage_port: u16,
@@ -78,15 +70,9 @@ pub struct Esp32BridgeStatus {
     pub last_error: Option<String>,
 }
 
-struct ArmedPairCode {
-    code: String,
-    expires_at: Instant,
-}
-
 pub struct Esp32Runtime {
     pub app: Option<AppHandle>,
     pub keys: Mutex<Vec<PairedDeviceKey>>,
-    pair_code: Mutex<Option<ArmedPairCode>>,
     pub last_error: Mutex<Option<String>>,
     pub running: AtomicBool,
     pub usage_running: AtomicBool,
@@ -101,23 +87,25 @@ pub struct Esp32Runtime {
     pub mqtt_known_synced_ids: Mutex<HashSet<String>>,
     pub mqtt_last_published: Mutex<HashMap<String, String>>,
     shutdown_tx: Mutex<Option<watch::Sender<bool>>>,
-    relay_last_ok: Mutex<Option<Instant>>,
     lan_last_ok: Mutex<Option<Instant>>,
 }
 
 impl Esp32Runtime {
     pub fn new(app: Option<AppHandle>) -> Arc<Self> {
-        let initial_keys = load_keys_from_vault();
         let mqtt_state = Arc::new(mqtt::MqttRuntimeState::new());
         let mut initial_voice_bearer = None;
-        if let Some(cfg) = load_mqtt_config_from_vault() {
+        let initial_keys = if let Some(cfg) = load_mqtt_config_from_vault() {
             mqtt_state.set_configured(crypto::extract_broker_host(&cfg.uri), cfg.room);
             initial_voice_bearer = Some(crypto::voice_bearer_hex(&cfg.key));
-        }
+            // Migração limpa (Q2.6): MQTT já configurado, limpa secrets legados do cofre.
+            secrets::clear_legacy_esp32_secrets();
+            Vec::new()
+        } else {
+            load_legacy_keys_from_vault()
+        };
         Arc::new(Self {
             app,
             keys: Mutex::new(initial_keys),
-            pair_code: Mutex::new(None),
             last_error: Mutex::new(None),
             running: AtomicBool::new(false),
             usage_running: AtomicBool::new(false),
@@ -132,7 +120,6 @@ impl Esp32Runtime {
             mqtt_known_synced_ids: Mutex::new(HashSet::new()),
             mqtt_last_published: Mutex::new(HashMap::new()),
             shutdown_tx: Mutex::new(None),
-            relay_last_ok: Mutex::new(None),
             lan_last_ok: Mutex::new(None),
         })
     }
@@ -142,65 +129,6 @@ impl Esp32Runtime {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0)
-    }
-
-    pub fn arm_pair_code(&self, code: &str) -> Result<(), String> {
-        let trimmed = code.trim();
-        if trimmed.len() != 6 || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
-            return Err("O código de pareamento deve ter exatamente 6 dígitos numéricos.".into());
-        }
-        let mut guard = self.pair_code.lock().unwrap();
-        *guard = Some(ArmedPairCode {
-            code: trimmed.to_string(),
-            expires_at: Instant::now() + PAIR_CODE_TTL,
-        });
-        Ok(())
-    }
-
-    pub fn pair_with_code(&self, code: &str, device_id: Option<&str>) -> Result<Option<String>, String> {
-        let mut guard = self.pair_code.lock().unwrap();
-        let Some(armed) = guard.as_ref() else {
-            return Ok(None);
-        };
-        if Instant::now() > armed.expires_at {
-            *guard = None;
-            return Ok(None);
-        }
-        let matched = constant_time_str_eq(code.trim(), &armed.code);
-        if !matched {
-            return Ok(None);
-        }
-        // Uso único: limpa imediatamente após acerto.
-        *guard = None;
-        drop(guard);
-
-        let key = crypto::generate_bridge_key_hex()?;
-        let dev = device_id
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("esp32-s3")
-            .chars()
-            .take(48)
-            .collect::<String>();
-        let entry = PairedDeviceKey {
-            device_id: dev,
-            key: key.clone(),
-            created_at: Self::now_secs(),
-        };
-        let mut keys = self.keys.lock().unwrap();
-        keys.push(entry);
-        save_keys_to_vault(&keys)?;
-        Ok(Some(key))
-    }
-
-    pub fn revoke_all(&self) -> Result<(), String> {
-        {
-            let mut keys = self.keys.lock().unwrap();
-            keys.clear();
-            save_keys_to_vault(&keys)?;
-        }
-        *self.pair_code.lock().unwrap() = None;
-        Ok(())
     }
 
     pub fn verify_bearer(&self, auth_header: Option<&str>) -> bool {
@@ -245,22 +173,8 @@ impl Esp32Runtime {
             || !self.keys.lock().unwrap().is_empty()
     }
 
-    pub fn key_strings(&self) -> Vec<String> {
-        self.keys
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|k| k.key.clone())
-            .collect()
-    }
-
     pub fn note_lan_activity(&self) {
         *self.lan_last_ok.lock().unwrap() = Some(Instant::now());
-    }
-
-    #[allow(dead_code)]
-    pub fn note_relay_activity(&self) {
-        *self.relay_last_ok.lock().unwrap() = Some(Instant::now());
     }
 
     pub fn current_mode(&self) -> &'static str {
@@ -275,14 +189,6 @@ impl Esp32Runtime {
         }
         if self.mqtt_state.connected.load(Ordering::Relaxed) {
             return "mqtt";
-        }
-        if self
-            .relay_last_ok
-            .lock()
-            .unwrap()
-            .is_some_and(|t| now.duration_since(t) < Duration::from_secs(90))
-        {
-            return "relay";
         }
         "alone"
     }
@@ -302,23 +208,7 @@ impl Esp32Runtime {
     }
 
     pub fn status(&self, cfg: &settings::Settings) -> Esp32BridgeStatus {
-        let mut pair_armed = false;
-        let mut pair_secs = None;
-        {
-            let mut guard = self.pair_code.lock().unwrap();
-            if let Some(armed) = guard.as_ref() {
-                if let Some(rem) = armed.expires_at.checked_duration_since(Instant::now()) {
-                    pair_armed = true;
-                    pair_secs = Some(rem.as_secs().max(1));
-                } else {
-                    *guard = None;
-                }
-            }
-        }
-        let paired_count = self.keys.lock().unwrap().len();
         let mqtt_snap = self.mqtt_state.snapshot();
-        let relay_room = secrets::get_internal(SECRET_RELAY_ROOM).unwrap_or_default();
-        let relay_room_configured = crypto::valid_room(&relay_room);
         let relay_key_configured = secrets::get_internal(SECRET_RELAY_KEY)
             .is_some_and(|k| !k.trim().is_empty());
         let port = normalize_port(cfg.esp32_bridge_port, DEFAULT_BRIDGE_PORT);
@@ -330,9 +220,6 @@ impl Esp32Runtime {
             running: self.running.load(Ordering::SeqCst),
             mode: self.current_mode().to_string(),
             local_urls: local_urls_for_port(port),
-            paired_count,
-            pair_code_armed: pair_armed,
-            pair_code_expires_in_secs: pair_secs,
             mqtt_configured: mqtt_snap.configured,
             mqtt_connected: mqtt_snap.connected,
             mqtt_host: mqtt_snap.host,
@@ -341,8 +228,6 @@ impl Esp32Runtime {
             mqtt_error: mqtt_snap.last_error,
             relay_enabled: cfg.esp32_relay_enabled,
             relay_url: cfg.esp32_relay_url.clone(),
-            relay_room,
-            relay_room_configured,
             relay_key_configured,
             agent_panel_enabled: cfg.esp32_agent_panel_enabled,
             usage_port,
@@ -366,19 +251,11 @@ fn normalize_port(port: u16, fallback: u16) -> u16 {
     }
 }
 
-fn load_keys_from_vault() -> Vec<PairedDeviceKey> {
-    let Some(raw) = secrets::get_internal(SECRET_BRIDGE_KEYS) else {
+fn load_legacy_keys_from_vault() -> Vec<PairedDeviceKey> {
+    let Some(raw) = secrets::read_legacy_esp32_secret("esp32-bridge-keys") else {
         return Vec::new();
     };
     serde_json::from_str::<Vec<PairedDeviceKey>>(&raw).unwrap_or_default()
-}
-
-fn save_keys_to_vault(keys: &[PairedDeviceKey]) -> Result<(), String> {
-    if keys.is_empty() {
-        return secrets::clear_internal(SECRET_BRIDGE_KEYS);
-    }
-    let json = serde_json::to_string(keys).map_err(|e| e.to_string())?;
-    secrets::set_internal(SECRET_BRIDGE_KEYS, &json)
 }
 
 pub(crate) fn load_mqtt_config_from_vault() -> Option<mqtt::MqttConfig> {
@@ -729,7 +606,7 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
         }
     }
 
-    if cfg.esp32_relay_enabled && !cfg.esp32_relay_url.trim().is_empty() {
+    if panel_enabled && cfg.esp32_relay_enabled && !cfg.esp32_relay_url.trim().is_empty() {
         let rt_relay = rt.clone();
         let mut rx_relay = rx;
         let relay_url = cfg.esp32_relay_url.trim().to_string();
@@ -737,9 +614,7 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
             let Ok(client) = relay::RelayClient::new() else {
                 return;
             };
-            let mut last_export_digest: Option<String> = None;
             let mut last_usage_at: Option<Instant> = None;
-            // Primeiro tick breve após subir a ponte.
             tokio::select! {
                 _ = rx_relay.changed() => return,
                 _ = tokio::time::sleep(Duration::from_secs(2)) => {}
@@ -748,121 +623,37 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
                 if *rx_relay.borrow() {
                     break;
                 }
-                let room = secrets::get_internal(SECRET_RELAY_ROOM).unwrap_or_default();
                 let relay_key = secrets::get_internal(SECRET_RELAY_KEY).unwrap_or_default();
-                if crypto::valid_room(&room) && !relay_key.trim().is_empty() {
-                    let _ = run_relay_tick(
+                if !relay_key.trim().is_empty() {
+                    let _ = run_usage_relay_tick(
                         &client,
                         &rt_relay,
                         &relay_url,
                         &relay_key,
-                        &room,
-                        panel_enabled,
-                        &mut last_export_digest,
                         &mut last_usage_at,
                     )
                     .await;
                 }
                 tokio::select! {
                     _ = rx_relay.changed() => break,
-                    _ = tokio::time::sleep(Duration::from_secs(20)) => {}
+                    _ = tokio::time::sleep(Duration::from_secs(60)) => {}
                 }
             }
         });
     }
 }
 
-pub(crate) fn digest_hex(bytes: &[u8]) -> String {
-    let d = ring::digest::digest(&ring::digest::SHA256, bytes);
-    let mut s = String::with_capacity(64);
-    for b in d.as_ref() {
-        s.push_str(&format!("{b:02x}"));
-    }
-    s
-}
-
-pub(crate) async fn run_relay_tick(
+pub(crate) async fn run_usage_relay_tick(
     client: &relay::RelayClient,
     rt: &Arc<Esp32Runtime>,
     relay_url: &str,
     relay_key: &str,
-    room: &str,
-    panel_enabled: bool,
-    last_export_digest: &mut Option<String>,
     last_usage_at: &mut Option<Instant>,
 ) -> Result<(), String> {
     if crate::integrations::PAUSED.load(Ordering::Relaxed) {
         return Ok(());
     }
-    let keys = rt.key_strings();
-    if keys.is_empty() {
-        return Ok(());
-    }
-
-    let now_sec = Esp32Runtime::now_secs();
-    let msgs = client.pull_bridge(relay_url, relay_key, room).await?;
-    rt.note_relay_activity();
-
-    let mut need_repost_pc = false;
-    let mut incoming_esp32: Vec<serde_json::Value> = Vec::new();
-
-    for msg in msgs {
-        let Ok(plain) = crypto::decrypt_bridge_payload(&keys, &msg.body) else {
-            continue;
-        };
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&plain) else {
-            continue;
-        };
-        let origin = val
-            .get("origin_role")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        if origin == "pc" {
-            if now_sec.saturating_sub(msg.ts) < 3600 {
-                need_repost_pc = true;
-            }
-            continue;
-        }
-        if let Some(arr) = val.get("envelopes").and_then(serde_json::Value::as_array) {
-            incoming_esp32.extend(arr.iter().cloned());
-        } else if val.get("entity_id").is_some() {
-            incoming_esp32.push(val);
-        }
-    }
-
-    if !incoming_esp32.is_empty() {
-        if let Some(app) = rt.app.as_ref() {
-            let now_ms = crate::tasks::now_utc_ms_pub();
-            let _ = crate::tasks::sync_esp32_envelopes(app, &incoming_esp32, now_ms);
-        }
-    }
-
-    let exported = rt
-        .app
-        .as_ref()
-        .map(|app| crate::tasks::export_esp32_envelopes(app, 20, 48_000))
-        .unwrap_or_default();
-
-    if !exported.is_empty() {
-        let digest = digest_hex(&serde_json::to_vec(&exported).unwrap_or_default());
-        if need_repost_pc || last_export_digest.as_deref() != Some(digest.as_str()) {
-            let envelope = serde_json::json!({
-                "contract_version": 1,
-                "origin_role": "pc",
-                "sent_at": now_sec,
-                "envelopes": exported,
-            });
-            let plain = serde_json::to_string(&envelope).map_err(|e| e.to_string())?;
-            if let Some(newest_key) = keys.last() {
-                let wire = crypto::encrypt_bridge_payload(newest_key, &plain)?;
-                client.post_bridge(relay_url, relay_key, room, &wire).await?;
-                *last_export_digest = Some(digest);
-                rt.note_relay_activity();
-            }
-        }
-    }
-
-    if panel_enabled && last_usage_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(300)) {
+    if last_usage_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(300)) {
         refresh_claude_and_agy_quotas(rt).await;
         let snap = build_live_tokens_snapshot(rt);
         let usage = tokens_agents::build_clean_usage_payload(&snap);
@@ -870,7 +661,6 @@ pub(crate) async fn run_relay_tick(
             *last_usage_at = Some(Instant::now());
         }
     }
-
     Ok(())
 }
 
@@ -1083,27 +873,6 @@ pub fn esp32_set_enabled(
 }
 
 #[tauri::command]
-pub fn esp32_arm_pair_code(
-    app: AppHandle,
-    rt: State<'_, Arc<Esp32Runtime>>,
-    code: String,
-) -> Result<Esp32BridgeStatus, String> {
-    rt.arm_pair_code(&code)?;
-    let cfg = current_settings(&app);
-    Ok(rt.status(&cfg))
-}
-
-#[tauri::command]
-pub fn esp32_revoke_all(
-    app: AppHandle,
-    rt: State<'_, Arc<Esp32Runtime>>,
-) -> Result<Esp32BridgeStatus, String> {
-    rt.revoke_all()?;
-    let cfg = current_settings(&app);
-    Ok(rt.status(&cfg))
-}
-
-#[tauri::command]
 pub fn esp32_save_mqtt_code(
     app: AppHandle,
     rt: State<'_, Arc<Esp32Runtime>>,
@@ -1112,6 +881,9 @@ pub fn esp32_save_mqtt_code(
     let parsed = crypto::parse_mqtt_pair_code(&code_json)?;
     save_mqtt_config_to_vault(&parsed)?;
     *rt.mqtt_voice_bearer.lock().unwrap() = Some(crypto::voice_bearer_hex(&parsed.k));
+    // Migração limpa (Q2.6): remove secrets legados depois de configurar o MQTT.
+    rt.keys.lock().unwrap().clear();
+    secrets::clear_legacy_esp32_secrets();
     rt.mqtt_state
         .set_configured(crypto::extract_broker_host(&parsed.uri), parsed.sala.clone());
     let next = update_esp32_settings(&app, |s| {
@@ -1144,11 +916,9 @@ pub fn esp32_save_relay(
     rt: State<'_, Arc<Esp32Runtime>>,
     enabled: bool,
     url: String,
-    room: Option<String>,
     key: String,
 ) -> Result<Esp32BridgeStatus, String> {
     let trimmed_url = url.trim().trim_end_matches('/').to_string();
-    let trimmed_room = room.unwrap_or_default().trim().to_string();
     let trimmed_key = key.trim().to_string();
 
     if enabled {
@@ -1158,14 +928,8 @@ pub fn esp32_save_relay(
         if !valid_url {
             return Err("URL do Relay inválida (use https://...).".into());
         }
-        if !trimmed_room.is_empty() && !crypto::valid_room(&trimmed_room) {
-            return Err("Sala do Relay deve ter 8 a 64 caracteres [A-Za-z0-9_-].".into());
-        }
     }
 
-    if !trimmed_room.is_empty() {
-        secrets::set_internal(SECRET_RELAY_ROOM, &trimmed_room)?;
-    }
     if !trimmed_key.is_empty() {
         secrets::set_internal(SECRET_RELAY_KEY, &trimmed_key)?;
     }

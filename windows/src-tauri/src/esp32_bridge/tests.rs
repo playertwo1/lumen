@@ -87,55 +87,25 @@ async fn loopback_ping_and_voice_auth_contract() {
 }
 
 #[tokio::test]
-async fn loopback_media_dry_run_and_paused_guard() {
-    let _guard = PAUSED_GUARD.lock().await;
-    crate::integrations::PAUSED.store(false, Ordering::SeqCst);
-
+async fn loopback_removed_routes_return_404() {
     let (base, key, _rt, tx) = spawn_loopback_server(false, true).await;
     let key = key.unwrap();
     let client = reqwest::Client::new();
 
-    let r1 = client
-        .post(format!("{base}/v1/media"))
-        .bearer_auth(&key)
-        .json(&json!({ "action": "play_pause", "dry_run": true }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r1.status(), 200);
-    let j1: Value = r1.json().await.unwrap();
-    assert_eq!(j1["playing"], true);
-
-    let r2 = client
-        .post(format!("{base}/v1/media"))
-        .bearer_auth(&key)
-        .json(&json!({ "action": "play_pause", "dry_run": true }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r2.status(), 200);
-    let j2: Value = r2.json().await.unwrap();
-    assert_eq!(j2["playing"], false);
-
-    let bad = client
-        .post(format!("{base}/v1/media"))
-        .bearer_auth(&key)
-        .json(&json!({ "action": "explode" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(bad.status(), 400);
-
-    crate::integrations::PAUSED.store(true, Ordering::SeqCst);
-    let paused = client
-        .post(format!("{base}/v1/media"))
-        .bearer_auth(&key)
-        .json(&json!({ "action": "play_pause", "dry_run": true }))
-        .send()
-        .await
-        .unwrap();
-    crate::integrations::PAUSED.store(false, Ordering::SeqCst);
-    assert_eq!(paused.status(), 503);
+    for (path, body) in [
+        ("/v1/pair", json!({ "code": "123456" })),
+        ("/v1/tasks/sync", json!({ "envelopes": [] })),
+        ("/v1/media", json!({ "action": "play_pause" })),
+    ] {
+        let r = client
+            .post(format!("{base}{path}"))
+            .bearer_auth(&key)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 404, "expected 404 for removed route {path}");
+    }
 
     let _ = tx.send(true);
 }

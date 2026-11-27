@@ -141,18 +141,37 @@ fn is_google_internal_key(key: &str) -> bool {
     GOOGLE_INTERNAL_KEYS.contains(&key)
 }
 
-/// Segredos da ponte ESP32-S3 AMOLED (L9/Q2), mantidos fora de `INTERNAL_KEYS` para
+/// Segredos da ponte ESP32-S3 AMOLED (Q2 MQTT + relay usage), mantidos fora de `INTERNAL_KEYS` para
 /// preservar a invariante dos testes do `phone_link` e inacessíveis à webview.
 pub const ESP32_INTERNAL_KEYS: &[&str] = &[
-    "esp32-bridge-keys",
     "esp32-relay-key",
-    "esp32-relay-room",
     "esp32-mqtt-uri",
     "esp32-mqtt-user",
     "esp32-mqtt-pass",
     "esp32-mqtt-room",
     "esp32-mqtt-key",
 ];
+
+/// Leitura somente para migração de chaves legadas da ponte ESP32 (Q2.6).
+pub fn read_legacy_esp32_secret(key: &str) -> Option<String> {
+    if !matches!(key, "esp32-bridge-keys" | "esp32-relay-room") {
+        return None;
+    }
+    Entry::new(SERVICE, key)
+        .ok()?
+        .get_password()
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
+/// Remove secrets legados da ponte ESP32 do cofre do sistema (Q2.6).
+pub fn clear_legacy_esp32_secrets() {
+    for key in ["esp32-bridge-keys", "esp32-relay-room"] {
+        if let Ok(entry) = Entry::new(SERVICE, key) {
+            let _ = entry.delete_credential();
+        }
+    }
+}
 
 fn is_esp32_internal_key(key: &str) -> bool {
     ESP32_INTERNAL_KEYS.contains(&key)

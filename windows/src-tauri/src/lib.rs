@@ -1478,8 +1478,6 @@ pub fn run() {
             esp32_bridge::esp32_set_enabled,
             esp32_bridge::esp32_save_mqtt_code,
             esp32_bridge::esp32_clear_mqtt,
-            esp32_bridge::esp32_arm_pair_code,
-            esp32_bridge::esp32_revoke_all,
             esp32_bridge::esp32_save_relay,
             esp32_bridge::esp32_set_agent_panel,
         ])

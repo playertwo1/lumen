@@ -102,7 +102,6 @@ impl HttpResponse {
 fn max_body_for_path(path: &str) -> usize {
     match path {
         "/v1/voice" => MAX_VOICE_BODY_BYTES,
-        "/v1/tasks/sync" => MAX_JSON_BODY_BYTES,
         p if p.starts_with("/api/") => MAX_JSON_BODY_BYTES,
         _ => MAX_SMALL_BODY_BYTES,
     }
@@ -284,35 +283,7 @@ pub async fn dispatch_request(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpR
         return HttpResponse::json(200, "OK", &json!({ "ok": true, "service": "lumen-bridge" }));
     }
 
-    if req.method == "POST" && req.path == "/v1/pair" {
-        let Ok(val) = serde_json::from_slice::<Value>(&req.body) else {
-            return HttpResponse::json(400, "Bad Request", &json!({ "ok": false, "error": "invalid json" }));
-        };
-        let code = val.get("code").and_then(Value::as_str).unwrap_or("");
-        let device_id = val.get("device_id").and_then(Value::as_str);
-        match rt.pair_with_code(code, device_id) {
-            Ok(Some(key)) => {
-                rt.note_lan_activity();
-                return HttpResponse::json(200, "OK", &json!({ "ok": true, "key": key }));
-            }
-            Ok(None) => {
-                return HttpResponse::json(
-                    401,
-                    "Unauthorized",
-                    &json!({ "ok": false, "error": "invalid or unarmed code" }),
-                );
-            }
-            Err(_) => {
-                return HttpResponse::json(
-                    500,
-                    "Internal Server Error",
-                    &json!({ "ok": false, "error": "pairing failed" }),
-                );
-            }
-        }
-    }
-
-    if req.path.starts_with("/v1/") {
+    if req.method == "POST" && req.path == "/v1/voice" {
         if !rt.verify_bearer(req.authorization.as_deref()) {
             return HttpResponse::json(
                 401,
@@ -321,18 +292,7 @@ pub async fn dispatch_request(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpR
             );
         }
         rt.note_lan_activity();
-    }
-
-    if req.method == "POST" && req.path == "/v1/voice" {
         return handle_voice(req, rt).await;
-    }
-
-    if req.method == "POST" && req.path == "/v1/tasks/sync" {
-        return handle_tasks_sync(req, rt).await;
-    }
-
-    if req.method == "POST" && req.path == "/v1/media" {
-        return handle_media(req, rt).await;
     }
 
     if req.path.starts_with("/api/") {
@@ -486,169 +446,6 @@ async fn handle_api_route(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpRespo
             HttpResponse::json(200, "OK", &body)
         }
         _ => HttpResponse::json(404, "Not Found", &json!({ "ok": false, "error": "not found" })),
-    }
-}
-
-async fn handle_media(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpResponse {
-    if crate::integrations::PAUSED.load(Ordering::Relaxed) {
-        return HttpResponse::json(
-            503,
-            "Service Unavailable",
-            &json!({ "ok": false, "error": "paused" }),
-        );
-    }
-    let Ok(val) = serde_json::from_slice::<Value>(&req.body) else {
-        return HttpResponse::json(
-            400,
-            "Bad Request",
-            &json!({ "ok": false, "error": "invalid_json" }),
-        );
-    };
-    let action = val
-        .get("action")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    if !matches!(
-        action.as_str(),
-        "play_pause" | "next" | "prev" | "vol_up" | "vol_down"
-    ) {
-        return HttpResponse::json(
-            400,
-            "Bad Request",
-            &json!({ "ok": false, "error": "invalid_action" }),
-        );
-    }
-
-    let dry_run = val.get("dry_run").and_then(Value::as_bool).unwrap_or(false);
-    if dry_run {
-        let playing = if action == "play_pause" {
-            let prev = rt.playing.load(Ordering::Relaxed);
-            let next = !prev;
-            rt.playing.store(next, Ordering::Relaxed);
-            next
-        } else {
-            rt.playing.load(Ordering::Relaxed)
-        };
-        return HttpResponse::json(
-            200,
-            "OK",
-            &json!({
-                "ok": true,
-                "action": action,
-                "playing": playing,
-                "dry_run": true
-            }),
-        );
-    }
-
-    let act = action.clone();
-    match act.as_str() {
-        "vol_up" | "vol_down" => {
-            let delta = if act == "vol_up" { 6 } else { -6 };
-            let res = tokio::task::spawn_blocking(move || {
-                crate::mochi::tools::audio::esp32_step_volume(delta)
-            })
-            .await
-            .unwrap_or_else(|e| Err(e.to_string()));
-            let playing = rt.playing.load(Ordering::Relaxed);
-            match res {
-                Ok(volume) => HttpResponse::json(
-                    200,
-                    "OK",
-                    &json!({
-                        "ok": true,
-                        "action": action,
-                        "playing": playing,
-                        "volume": volume
-                    }),
-                ),
-                Err(reason) => HttpResponse::json(
-                    200,
-                    "OK",
-                    &json!({
-                        "ok": false,
-                        "action": action,
-                        "playing": playing,
-                        "error": reason
-                    }),
-                ),
-            }
-        }
-        _ => {
-            let act_inner = act.clone();
-            let res = tokio::task::spawn_blocking(move || {
-                crate::mochi::tools::media::esp32_media_control(&act_inner)
-            })
-            .await
-            .unwrap_or_else(|e| Err(e.to_string()));
-            match res {
-                Ok(playing) => {
-                    rt.playing.store(playing, Ordering::Relaxed);
-                    HttpResponse::json(
-                        200,
-                        "OK",
-                        &json!({
-                            "ok": true,
-                            "action": action,
-                            "playing": playing
-                        }),
-                    )
-                }
-                Err(reason) => HttpResponse::json(
-                    200,
-                    "OK",
-                    &json!({
-                        "ok": false,
-                        "action": action,
-                        "playing": false,
-                        "error": reason
-                    }),
-                ),
-            }
-        }
-    }
-}
-
-async fn handle_tasks_sync(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpResponse {
-    let Ok(val) = serde_json::from_slice::<Value>(&req.body) else {
-        return HttpResponse::json(
-            400,
-            "Bad Request",
-            &json!({ "ok": false, "error": "invalid_json" }),
-        );
-    };
-    let Some(incoming) = val.get("envelopes").and_then(Value::as_array) else {
-        return HttpResponse::json(
-            400,
-            "Bad Request",
-            &json!({ "ok": false, "error": "missing_envelopes" }),
-        );
-    };
-    let Some(app) = rt.app.as_ref() else {
-        return HttpResponse::json(
-            200,
-            "OK",
-            &json!({ "ok": true, "envelopes": [], "count": 0 }),
-        );
-    };
-    let now_ms = crate::tasks::now_utc_ms_pub();
-    match crate::tasks::sync_esp32_envelopes(app, incoming, now_ms) {
-        Ok(merged) => HttpResponse::json(
-            200,
-            "OK",
-            &json!({
-                "ok": true,
-                "envelopes": merged,
-                "count": merged.len()
-            }),
-        ),
-        Err(err) => HttpResponse::json(
-            500,
-            "Internal Server Error",
-            &json!({ "ok": false, "error": err }),
-        ),
     }
 }
 
