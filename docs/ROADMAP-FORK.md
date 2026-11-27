@@ -20,6 +20,7 @@ Em ordem de execução. Uma etapa por vez; etapas pausadas só voltam com decis�
 | 9 | [M9 — Memória, gateway e observabilidade](roadmap/m9-memoria-gateway.md) | Pendente | Avaliar e, se valer, adicionar memória por significado, LiteLLM e Langfuse. |
 | 10 | [M10 — Release do assistente](roadmap/m10-release.md) | Pendente | Conferência final de segurança, recursos, documentação e instalação limpa antes de publicar. |
 | — | [L6.5 — Fotos nas tarefas](roadmap/l6-5-fotos-tarefas.md) | A fazer depois; depende do contrato v1.1 da Segunda Mente | Levar ao Lumen as fotos que as tarefas ganharam no celular, sem perder anexos desconhecidos. |
+| — | [L9 — Ponte com a placa ESP32-S3 AMOLED](roadmap/l9-placa-esp32.md) | Pendente (firmware da placa já pronto em `esp32-s3-amoled-2-16`) | Pareamento por 6 dígitos, ponte de voz (STT/TTS WAV), sync de tarefas (LAN e relay AES-256-GCM), mídia do Windows e painel opcional de cota/agentes para a placa. |
 | — | [Fase 0 — Validar o que já existe](roadmap/fase-0-validacao.md) | Pausada (D-053) | Validação real dos recursos do upstream 0.6 no Windows; faltam os registros por cenário. |
 | — | [Fase 1 — Recursos do Mac](roadmap/fase-1-recursos-mac.md) | Pausada (D-053) | Trazer recursos do Mac: arrastar sobre janela, anexar janela da frente, captura de tela, "sente o PC". |
 | — | [Fase 2 — Melhorias do Windows](roadmap/fase-2-melhorias-windows.md) | Pausada (D-053) | Notificações nativas, modo jogo, custo por sessão, pílula do Git, aba do terminal, histórico, lançador, vigia de builds e outras. |
