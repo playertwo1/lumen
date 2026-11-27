@@ -141,9 +141,24 @@ fn is_google_internal_key(key: &str) -> bool {
     GOOGLE_INTERNAL_KEYS.contains(&key)
 }
 
+/// Segredos da ponte ESP32-S3 AMOLED (L9), mantidos fora de `INTERNAL_KEYS` para
+/// preservar a invariante dos testes do `phone_link` e inacessíveis à webview.
+pub const ESP32_INTERNAL_KEYS: &[&str] = &[
+    "esp32-bridge-keys",
+    "esp32-relay-key",
+    "esp32-relay-room",
+];
+
+fn is_esp32_internal_key(key: &str) -> bool {
+    ESP32_INTERNAL_KEYS.contains(&key)
+}
+
 /// Whether the keystore would accept this key through `get_internal` / `set_internal`.
 pub fn is_internal(key: &str) -> bool {
-    INTERNAL_KEYS.contains(&key) || is_siwc_profile_key(key) || is_google_internal_key(key)
+    INTERNAL_KEYS.contains(&key)
+        || is_siwc_profile_key(key)
+        || is_google_internal_key(key)
+        || is_esp32_internal_key(key)
 }
 
 fn is_lower_hex(s: &str, len: usize) -> bool {
@@ -320,6 +335,18 @@ mod tests {
     #[test]
     fn google_internal_keys_are_accepted_by_internal_store_and_hidden_from_webview() {
         for key in GOOGLE_INTERNAL_KEYS {
+            assert!(is_internal(key), "{key}");
+            assert!(!KNOWN_KEYS.contains(key), "{key}");
+            assert!(entry(key).is_none(), "{key}");
+            assert!(set(key, "x").is_err(), "{key}");
+            assert!(clear(key).is_err(), "{key}");
+            assert!(!present(key), "{key}");
+        }
+    }
+
+    #[test]
+    fn esp32_internal_keys_are_accepted_by_internal_store_and_hidden_from_webview() {
+        for key in ESP32_INTERNAL_KEYS {
             assert!(is_internal(key), "{key}");
             assert!(!KNOWN_KEYS.contains(key), "{key}");
             assert!(entry(key).is_none(), "{key}");

@@ -220,6 +220,13 @@ export interface Settings {
     onDesktop: boolean;
     spot: { x: number; y: number; space: string } | null;
   };
+  /** Ponte nativa com a placa ESP32-S3 AMOLED (L9). Gerenciada pelo Rust. */
+  esp32BridgeEnabled?: boolean;
+  esp32BridgePort?: number;
+  esp32RelayEnabled?: boolean;
+  esp32RelayUrl?: string;
+  esp32AgentPanelEnabled?: boolean;
+  esp32UsagePort?: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

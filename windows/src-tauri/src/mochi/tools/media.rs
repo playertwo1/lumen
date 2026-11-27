@@ -161,6 +161,41 @@ pub(crate) fn run_with(backend: &dyn MidiaBackend, op: Op) -> Result<Value, Tool
     }))
 }
 
+pub(crate) fn esp32_media_with(backend: &dyn MidiaBackend, action: &str) -> Result<bool, String> {
+    let sessao = backend
+        .atual()
+        .ok_or_else(|| "no_active_player".to_string())?;
+    let antes = sessao
+        .leitura()
+        .ok_or_else(|| "player_unreadable".to_string())?;
+    let (op, target_playing) = match action {
+        "play_pause" => {
+            if antes.estado == Estado::Tocando {
+                (Op::Pausar, false)
+            } else {
+                (Op::Tocar, true)
+            }
+        }
+        "next" => (Op::Proxima, antes.estado == Estado::Tocando),
+        "prev" => (Op::Anterior, antes.estado == Estado::Tocando),
+        _ => return Err("invalid_action".into()),
+    };
+    if !sessao.controle(op) {
+        return Err("player_rejected".into());
+    }
+    Ok(target_playing)
+}
+
+#[cfg(all(windows, not(test)))]
+pub(crate) fn esp32_media_control(action: &str) -> Result<bool, String> {
+    esp32_media_with(&win::Os, action)
+}
+
+#[cfg(not(all(windows, not(test))))]
+pub(crate) fn esp32_media_control(_action: &str) -> Result<bool, String> {
+    Err("no_active_player".into())
+}
+
 fn execute(args: Value, ctx: ExecutionContext) -> ToolFuture {
     Box::pin(async move {
         let op = plano(&args)?;
@@ -538,6 +573,15 @@ mod tests {
         let mut chaves: Vec<&str> = out.as_object().unwrap().keys().map(String::as_str).collect();
         chaves.sort();
         assert_eq!(chaves, vec!["acao", "faixa_mudou", "pedido", "status"]);
+    }
+
+    #[test]
+    fn esp32_media_with_toggles_play_pause() {
+        let f = falso(vec![Player::com(Estado::Tocando, Some(1))]);
+        assert_eq!(esp32_media_with(&f, "play_pause").unwrap(), false);
+        assert_eq!(esp32_media_with(&f, "play_pause").unwrap(), true);
+        assert_eq!(esp32_media_with(&f, "next").unwrap(), true);
+        assert_eq!(esp32_media_with(&f, "prev").unwrap(), true);
     }
 
     #[test]

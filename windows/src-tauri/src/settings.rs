@@ -134,6 +134,13 @@ pub struct Settings {
     /// (agy_approvals.rs). Off by default; owned by the Rust side like `phone_link`, so
     /// what a webview sends back is ignored. The Mac's key is the same.
     pub agy_approvals_enabled: bool,
+    /// Ponte nativa com a placa ESP32-S3 AMOLED (L9). Gerenciada pelo Rust.
+    pub esp32_bridge_enabled: bool,
+    pub esp32_bridge_port: u16,
+    pub esp32_relay_enabled: bool,
+    pub esp32_relay_url: String,
+    pub esp32_agent_panel_enabled: bool,
+    pub esp32_usage_port: u16,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -211,6 +218,12 @@ impl Default for Settings {
             closed_island: "mochi".into(),
             island_corner: "top".into(),
             agy_approvals_enabled: false,
+            esp32_bridge_enabled: false,
+            esp32_bridge_port: 8787,
+            esp32_relay_enabled: false,
+            esp32_relay_url: String::new(),
+            esp32_agent_panel_enabled: false,
+            esp32_usage_port: 8737,
         }
     }
 }
@@ -518,7 +531,13 @@ mod tests {
   "mochiReactsToPc": false,
   "closedIsland": "music",
   "islandCorner": "bottomRight",
-  "agyApprovalsEnabled": true
+  "agyApprovalsEnabled": true,
+  "esp32BridgeEnabled": true,
+  "esp32BridgePort": 8788,
+  "esp32RelayEnabled": true,
+  "esp32RelayUrl": "https://esp32-relay.example.workers.dev",
+  "esp32AgentPanelEnabled": true,
+  "esp32UsagePort": 8738
 }"##;
 
     fn custom() -> Value {
@@ -1060,6 +1079,12 @@ mod tests {
                 "closedIsland",
                 "islandCorner",
                 "agyApprovalsEnabled",
+                "esp32BridgeEnabled",
+                "esp32BridgePort",
+                "esp32RelayEnabled",
+                "esp32RelayUrl",
+                "esp32AgentPanelEnabled",
+                "esp32UsagePort",
             ]
         );
         let _ = std::fs::remove_dir_all(&dir);

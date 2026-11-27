@@ -160,6 +160,28 @@ fn run_os(op: Op) -> Result<Value, ToolError> {
     run_with(&SemDispositivo, op)
 }
 
+pub(crate) fn step_volume_with(backend: &dyn AudioBackend, delta: i8) -> Result<u8, String> {
+    let current = backend
+        .read()?
+        .ok_or_else(|| SEM_DISPOSITIVO.to_string())?;
+    let next = (current.nivel as i16 + delta as i16).clamp(0, 100) as u8;
+    if !backend.write(Op::Volume(next))? {
+        return Err(SEM_DISPOSITIVO.to_string());
+    }
+    Ok(backend.read()?.map(|r| r.nivel).unwrap_or(next))
+}
+
+#[cfg(all(windows, not(test)))]
+pub(crate) fn esp32_step_volume(delta: i8) -> Result<u8, String> {
+    let _com = win::Com::init();
+    step_volume_with(&win::Os, delta)
+}
+
+#[cfg(not(all(windows, not(test))))]
+pub(crate) fn esp32_step_volume(delta: i8) -> Result<u8, String> {
+    step_volume_with(&SemDispositivo, delta)
+}
+
 /// Fora do Windows e nos testes: não há endpoint, e nada é tocado.
 struct SemDispositivo;
 
@@ -505,5 +527,12 @@ mod tests {
             audit_summary(&json!({}), &Err(ToolError::ExecutionFailed("x".into()))),
             "falha no controle de volume"
         );
+    }
+
+    #[test]
+    fn step_volume_with_clamps_and_steps() {
+        let f = Falso::com(96, false);
+        assert_eq!(step_volume_with(&f, 6).unwrap(), 100);
+        assert_eq!(step_volume_with(&f, -6).unwrap(), 94);
     }
 }

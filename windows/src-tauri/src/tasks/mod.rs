@@ -1,10 +1,14 @@
 //! Gerenciamento de Tarefas do Lumen (L4): loja local, captura por voz/texto com proposta
 //! editável, scheduler de lembretes e integração com notificações nativas do Windows.
 
+pub mod esp32_sync;
 pub mod model;
 pub mod proposal;
 pub mod store;
 pub mod sync;
+
+pub use self::esp32_sync::{export_esp32_envelopes, sync_esp32_envelopes};
+pub use self::model::now_utc_ms as now_utc_ms_pub;
 
 #[allow(unused_imports)]
 pub use self::sync::{TaskSyncState, TaskSyncStatus, TaskTextConflict};

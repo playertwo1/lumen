@@ -22,6 +22,7 @@ mod agy_plan;
 mod codex_plan;
 mod config_file;
 mod desktop;
+mod esp32_bridge;
 mod files;
 #[cfg(windows)]
 mod fullscreen;
@@ -148,6 +149,13 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
         settings.phone_chat_models = current.phone_chat_models.clone();
         // Antigravity approvals: only their own switch changes them (agy_approvals.rs).
         settings.agy_approvals_enabled = current.agy_approvals_enabled;
+        // ESP32 bridge: gerenciada apenas pelos comandos esp32_* (esp32_bridge/mod.rs).
+        settings.esp32_bridge_enabled = current.esp32_bridge_enabled;
+        settings.esp32_bridge_port = current.esp32_bridge_port;
+        settings.esp32_relay_enabled = current.esp32_relay_enabled;
+        settings.esp32_relay_url = current.esp32_relay_url.clone();
+        settings.esp32_agent_panel_enabled = current.esp32_agent_panel_enabled;
+        settings.esp32_usage_port = current.esp32_usage_port;
         *current = settings;
         (current.clone(), screen_changed, autostart_changed, shortcuts_changed)
     };
@@ -709,6 +717,7 @@ pub(crate) fn resolve_approval(app: &AppHandle, request_id: &str, decision: &str
     let Some(outcome) = pipe::answer_with_outcome(app, request_id, decision) else {
         return false;
     };
+    esp32_bridge::clear_permission_request(app, request_id);
     if !outcome.is_mochi {
         recap::record_decision(app, request_id, decision);
     }
@@ -1465,6 +1474,12 @@ pub fn run() {
             mochi_mcp_status,
             mochi_mcp_preview,
             mochi_mcp_apply,
+            esp32_bridge::esp32_status,
+            esp32_bridge::esp32_set_enabled,
+            esp32_bridge::esp32_arm_pair_code,
+            esp32_bridge::esp32_revoke_all,
+            esp32_bridge::esp32_save_relay,
+            esp32_bridge::esp32_set_agent_panel,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1484,6 +1499,7 @@ pub fn run() {
             tasks::setup(&handle);
             google::setup(&handle);
             mochi::setup(&handle);
+            esp32_bridge::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
                 // Where Tauri takes the drop itself (Linux), its paths are the
@@ -1544,6 +1560,7 @@ pub fn run() {
                 }
                 phone_link::stop_on_exit(app);
                 mochi::shutdown(app);
+                esp32_bridge::shutdown(app);
                 google::shutdown(app);
                 notes::shutdown(app);
                 tasks::shutdown(app);

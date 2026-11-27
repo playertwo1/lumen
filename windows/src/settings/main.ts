@@ -40,6 +40,7 @@ import { mcpSection } from "./mcp";
 import { chatGptAccountSection } from "./chatgpt";
 import { phoneSection } from "./phone";
 import { whatsappSection } from "./whatsapp";
+import { esp32Section } from "./esp32";
 import { WHATSAPP_ID } from "../core/whatsapp";
 import { updateRows, updatesListener } from "./updates";
 import { colorDot } from "./colors";
@@ -2175,7 +2176,7 @@ async function render() {
       localSection(customKey),
     ],
     integrations: () => [
-      ...(LUMEN_WINDOWS ? [googleSection(googleStatus, googleError)] : []),
+      ...(LUMEN_WINDOWS ? [googleSection(googleStatus, googleError), esp32Section(toggle)] : []),
       integrationsSection(present),
       ...whatsappSections(),
     ],

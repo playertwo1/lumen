@@ -251,8 +251,23 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
 
     if event != "PermissionRequest" {
         // The status line relay calls in with every Claude Code update: not log-worthy.
-        if event != "StatusLine" {
+        if event == "StatusLine" {
+            if let Some(rl) = payload.get("rate_limits") {
+                crate::esp32_bridge::note_claude_statusline(&app, rl);
+            }
+        } else {
             log::line(format!("hook {event}"));
+            let agent = payload
+                .get("agent")
+                .or_else(|| payload.get("coucou_agent"))
+                .and_then(Value::as_str)
+                .unwrap_or("Claude");
+            let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or("");
+            if matches!(event.as_str(), "Stop" | "Notification") {
+                crate::esp32_bridge::note_agent_turn(&app, agent, cwd);
+            } else if matches!(event.as_str(), "UserPromptSubmit" | "SessionEnd") {
+                crate::esp32_bridge::note_agent_clear(&app);
+            }
         }
         let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
         pipe.finish();
@@ -270,6 +285,27 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
         });
     }
     crate::recap::note_request(&app, &id, &payload);
+    {
+        let agent = payload
+            .get("agent")
+            .or_else(|| payload.get("coucou_agent"))
+            .and_then(Value::as_str)
+            .unwrap_or("Claude");
+        let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or("");
+        let tool = payload.get("tool_name").and_then(Value::as_str).unwrap_or("Tool");
+        let cmd: String = payload
+            .get("tool_input")
+            .and_then(|ti| {
+                ti.get("command")
+                    .or_else(|| ti.get("file_path"))
+                    .and_then(Value::as_str)
+            })
+            .unwrap_or("")
+            .chars()
+            .take(100)
+            .collect();
+        crate::esp32_bridge::note_permission_request(&app, &id, agent, cwd, tool, &cmd);
+    }
     payload["request_id"] = json!(id);
     log::line(format!("hook PermissionRequest id={id}"));
     let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
@@ -286,6 +322,7 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
         }
     };
     app.state::<Pending>().0.lock().unwrap().remove(&id);
+    crate::esp32_bridge::clear_permission_request(&app, &id);
     #[cfg(windows)]
     if let Some(toasts) = app.try_state::<crate::permission_notifications::PermissionToasts>() {
         crate::permission_notifications::clear(&toasts, &id);
@@ -333,6 +370,12 @@ async fn agy_pre_tool(app: AppHandle, mut pipe: impl Relay, payload: Value) {
         kind: PendingKind::ExternalHook,
     });
     crate::recap::note_request(&app, &id, &payload);
+    {
+        let cwd = payload.get("cwd").and_then(Value::as_str).unwrap_or("");
+        let tool = payload.get("tool_name").and_then(Value::as_str).unwrap_or("Bash");
+        let cmd: String = gate.command.chars().take(100).collect();
+        crate::esp32_bridge::note_permission_request(&app, &id, "Antigravity", cwd, tool, &cmd);
+    }
     let mut card = payload;
     card["hook_event_name"] = json!("PermissionRequest");
     card["request_id"] = json!(id);
@@ -372,6 +415,7 @@ async fn agy_pre_tool(app: AppHandle, mut pipe: impl Relay, payload: Value) {
         Some(Reply::Decline) | None => None,
     };
     app.state::<Pending>().0.lock().unwrap().remove(&id);
+    crate::esp32_bridge::clear_permission_request(&app, &id);
     #[cfg(windows)]
     if let Some(toasts) = app.try_state::<crate::permission_notifications::PermissionToasts>() {
         crate::permission_notifications::clear(&toasts, &id);
@@ -396,6 +440,7 @@ async fn agy_pre_tool(app: AppHandle, mut pipe: impl Relay, payload: Value) {
 fn agy_settled(app: &AppHandle, id: &str, why: &str) {
     log::line(format!("hook id={id} {why}"));
     app.state::<Pending>().0.lock().unwrap().remove(id);
+    crate::esp32_bridge::clear_permission_request(app, id);
     #[cfg(windows)]
     if let Some(toasts) = app.try_state::<crate::permission_notifications::PermissionToasts>() {
         crate::permission_notifications::clear(&toasts, id);

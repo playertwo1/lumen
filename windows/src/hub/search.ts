@@ -144,6 +144,10 @@ export const SETTINGS_ENTRIES: SettingsSearchEntry[] = [
       "Google", "Google Drive", "Google Calendar", "Backup",
     ],
   },
+  ...(HOST_OS === "windows" ? [{
+    id: "integrations.esp32", page: "integrations", title: "Placa ESP32-S3 AMOLED",
+    terms: ["ESP32", "Pareamento", "Relay", "Tokenserver", "Ponte"],
+  } satisfies SettingsSearchEntry] : []),
   { id: "phone.android", page: "phone", title: "phone.title", terms: ["phone.status", "phone.pairing", "phone.approvals"] },
   { id: "voice.wake", page: "voice", title: "«\u202FOK Coucou\u202F» — voice wake word", terms: ["Enable voice command", "Request permissions"] },
   { id: "voice.language", page: "voice", title: "Language", terms: ["voice.listen-language", "voice.language"] },
