@@ -582,6 +582,43 @@ pub fn note_claude_statusline(app: &AppHandle, rate_limits: &serde_json::Value) 
     }
 }
 
+pub fn note_claude_plan_usage(
+    app: &AppHandle,
+    five_hour: Option<(f64, u64)>,
+    seven_day: Option<(f64, u64)>,
+) {
+    if five_hour.is_none() && seven_day.is_none() {
+        return;
+    }
+    let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() else { return };
+    let mut guard = rt.claude_quota.lock().unwrap();
+    if let Some((used_pct, resets_at)) = five_hour {
+        if used_pct.is_finite() {
+            guard.session_pct = Some(used_pct.clamp(0.0, 100.0));
+        }
+        if resets_at > 0 {
+            guard.session_resets_at = Some(if resets_at > 10_000_000_000 {
+                resets_at / 1000
+            } else {
+                resets_at
+            });
+        }
+    }
+    if let Some((used_pct, resets_at)) = seven_day {
+        if used_pct.is_finite() {
+            guard.week_pct = Some(used_pct.clamp(0.0, 100.0));
+        }
+        if resets_at > 0 {
+            guard.week_resets_at = Some(if resets_at > 10_000_000_000 {
+                resets_at / 1000
+            } else {
+                resets_at
+            });
+        }
+    }
+    guard.updated_at = Esp32Runtime::now_secs();
+}
+
 pub fn note_agent_turn(app: &AppHandle, agent: &str, cwd: &str) {
     if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
         rt.agent_panel

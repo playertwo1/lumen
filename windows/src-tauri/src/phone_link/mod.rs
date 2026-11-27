@@ -825,6 +825,13 @@ pub fn phone_link_publish_services(window: WebviewWindow, link: State<PhoneLink>
 #[tauri::command]
 pub fn phone_link_publish_usage(window: WebviewWindow, link: State<PhoneLink>, usage: hub::UsageIn) -> Result<(), String> {
     only_island(&window)?;
+    if let Some(ref c) = usage.claude {
+        crate::esp32_bridge::note_claude_plan_usage(
+            window.app_handle(),
+            c.five_hour.as_ref().map(|w| (w.used_pct, w.resets_at)),
+            c.seven_day.as_ref().map(|w| (w.used_pct, w.resets_at)),
+        );
+    }
     if link.running.lock().unwrap().is_none() {
         return Ok(());
     }
