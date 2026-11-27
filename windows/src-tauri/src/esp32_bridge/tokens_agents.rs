@@ -87,7 +87,8 @@ impl ClaudeQuotaCache {
         let Some(groups) = limits.get("groups").and_then(|v| v.as_array()) else {
             return;
         };
-        let mut got = false;
+        let mut best_5h: Option<(f64, Option<u64>)> = None;
+        let mut best_wk: Option<(f64, Option<u64>)> = None;
         for g in groups {
             let Some(buckets) = g.get("buckets").and_then(|v| v.as_array()) else {
                 continue;
@@ -97,31 +98,45 @@ impl ClaudeQuotaCache {
                     continue;
                 }
                 let win = b.get("window").and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
-                let used = b
+                let Some(pct) = b
                     .get("remaining_fraction")
                     .and_then(|v| v.as_f64())
-                    .map(|rem| ((1.0 - rem.clamp(0.0, 1.0)) * 100.0).round());
-                let reset = b.get("reset_time").and_then(parse_resets_at);
+                    .map(|rem| ((1.0 - rem.clamp(0.0, 1.0)) * 100.0).round())
+                else {
+                    continue;
+                };
+                let reset = b
+                    .get("reset_time")
+                    .and_then(parse_resets_at)
+                    .filter(|&s| s > 1_000_000_000);
                 if win.contains("5h") || win.contains("session") {
-                    if let Some(pct) = used {
-                        self.session_pct = Some(pct);
-                        got = true;
-                    }
-                    if let Some(sec) = reset {
-                        self.session_resets_at = Some(sec);
+                    let take = match best_5h {
+                        None => true,
+                        Some((p, r)) => pct > p || (pct == p && r.is_none() && reset.is_some()),
+                    };
+                    if take {
+                        best_5h = Some((pct, reset));
                     }
                 } else if win.contains("week") {
-                    if let Some(pct) = used {
-                        self.week_pct = Some(pct);
-                        got = true;
-                    }
-                    if let Some(sec) = reset {
-                        self.week_resets_at = Some(sec);
+                    let take = match best_wk {
+                        None => true,
+                        Some((p, r)) => pct > p || (pct == p && r.is_none() && reset.is_some()),
+                    };
+                    if take {
+                        best_wk = Some((pct, reset));
                     }
                 }
             }
         }
-        if got {
+        if let Some((pct, reset)) = best_5h {
+            self.session_pct = Some(pct);
+            self.session_resets_at = reset;
+        }
+        if let Some((pct, reset)) = best_wk {
+            self.week_pct = Some(pct);
+            self.week_resets_at = reset;
+        }
+        if best_5h.is_some() || best_wk.is_some() {
             self.updated_at = now_sec;
         }
     }

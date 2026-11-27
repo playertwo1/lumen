@@ -204,6 +204,7 @@ pub fn cli_candidates(name: &str) -> Vec<PathBuf> {
         out.push(appdata.join("npm").join(format!("{name}.cmd")));
     }
     if let Some(local) = var("LOCALAPPDATA") {
+        out.push(local.join("agy").join("bin").join(format!("{name}.exe")));
         out.push(local.join("Volta").join("bin").join(format!("{name}.exe")));
         out.push(local.join("pnpm").join(format!("{name}.cmd")));
     }
