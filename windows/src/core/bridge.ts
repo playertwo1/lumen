@@ -658,7 +658,40 @@ export const Bridge = {
   updateInstall: () => call<void>("update_install"),
   /** The release's page on github.com. */
   updateOpenPage: () => call<void>("update_open_page"),
+
+  // ── Ponte nativa ESP32-S3 AMOLED (src-tauri/src/esp32_bridge) ───────────────
+  esp32: {
+    status: () => call<Esp32BridgeStatus>("esp32_status"),
+    setEnabled: (enabled: boolean, port?: number) =>
+      callOrThrow<Esp32BridgeStatus>("esp32_set_enabled", { enabled, port: port ?? null }),
+    armPairCode: (code: string) =>
+      callOrThrow<Esp32BridgeStatus>("esp32_arm_pair_code", { code }),
+    revokeAll: () => callOrThrow<Esp32BridgeStatus>("esp32_revoke_all"),
+    saveRelay: (enabled: boolean, url: string, room: string, key: string) =>
+      callOrThrow<Esp32BridgeStatus>("esp32_save_relay", { enabled, url, room, key }),
+    setAgentPanel: (enabled: boolean, usagePort?: number) =>
+      callOrThrow<Esp32BridgeStatus>("esp32_set_agent_panel", { enabled, usagePort: usagePort ?? null }),
+  },
 };
+
+export interface Esp32BridgeStatus {
+  enabled: boolean;
+  port: number;
+  running: boolean;
+  mode: "alone" | "lan" | "relay";
+  localUrls: string[];
+  pairedCount: number;
+  pairCodeArmed: boolean;
+  pairCodeExpiresInSecs: number | null;
+  relayEnabled: boolean;
+  relayUrl: string;
+  relayRoomConfigured: boolean;
+  relayKeyConfigured: boolean;
+  agentPanelEnabled: boolean;
+  usagePort: number;
+  usageRunning: boolean;
+  lastError: string | null;
+}
 
 /** Tarefas locais do Lumen (src-tauri/src/tasks). */
 export const TasksBridge = {
