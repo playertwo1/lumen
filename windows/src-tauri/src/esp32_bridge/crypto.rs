@@ -1,6 +1,7 @@
 use base64::Engine;
 use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
 use ring::digest;
+use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 
@@ -150,6 +151,202 @@ pub fn decrypt_bridge_payload(bridge_keys: &[String], wire_json: &str) -> Result
     Err(last_err)
 }
 
+// -----------------------------------------------------------------------------
+// MQTT protocol crypto and pairing types (docs/roadmap/mqtt/PROTOCOLO.md)
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MqttPairCode {
+    pub t: String,
+    pub v: u32,
+    pub uri: String,
+    pub u: String,
+    pub p: String,
+    pub sala: String,
+    pub k: String,
+}
+
+pub fn extract_broker_host(uri: &str) -> String {
+    let without_scheme = if let Some(s) = uri.strip_prefix("mqtts://") {
+        s
+    } else if let Some(s) = uri.strip_prefix("mqtt://") {
+        s
+    } else {
+        uri
+    };
+    let host_and_port = without_scheme.split('/').next().unwrap_or("");
+    let host = host_and_port.split(':').next().unwrap_or("");
+    host.to_string()
+}
+
+pub fn parse_mqtt_pair_code(raw: &str) -> Result<MqttPairCode, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Código MQTT vazio".into());
+    }
+    let code: MqttPairCode = serde_json::from_str(trimmed)
+        .map_err(|e| format!("JSON do código MQTT inválido: {e}"))?;
+
+    if code.t != "sm-mqtt" {
+        return Err(format!("Tipo esperado 'sm-mqtt', recebido '{}'", code.t));
+    }
+    if code.v != 1 {
+        return Err(format!("Versão esperada 1, recebida {}", code.v));
+    }
+
+    let uri = code.uri.trim();
+    let is_mqtts = uri.starts_with("mqtts://");
+    let is_local_test = uri.starts_with("mqtt://127.0.0.1") || uri.starts_with("mqtt://localhost");
+    if !is_mqtts && !is_local_test {
+        return Err("URI do broker deve usar o protocolo mqtts://".into());
+    }
+    let host = extract_broker_host(uri);
+    if host.is_empty() {
+        return Err("URI do broker inválida (host vazio)".into());
+    }
+
+    if code.u.trim().is_empty() {
+        return Err("Usuário do broker vazio".into());
+    }
+    if code.p.trim().is_empty() {
+        return Err("Senha do broker vazia".into());
+    }
+
+    if code.sala.len() != 12
+        || !code
+            .sala
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    {
+        return Err("Identificador de sala deve conter exatamente 12 caracteres [a-z0-9]".into());
+    }
+
+    if code.k.len() != 64 || !code.k.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Chave da sala deve conter exatamente 64 caracteres hexadecimais".into());
+    }
+
+    Ok(code)
+}
+
+#[derive(Serialize, Deserialize)]
+struct MqttEnvelopeJson {
+    v: u32,
+    from: String,
+    iv: String,
+    ct: String,
+    tag: String,
+}
+
+pub fn seal_mqtt_envelope(
+    key_text: &str,
+    from: &str,
+    plain_json: &str,
+) -> Result<String, String> {
+    if from.trim().is_empty() {
+        return Err("Campo 'from' não pode ser vazio".into());
+    }
+    let aes_key_bytes = derive_aes_key(key_text);
+    let unbound_key = UnboundKey::new(&AES_256_GCM, &aes_key_bytes)
+        .map_err(|e| format!("Failed to create unbound key: {:?}", e))?;
+    let key = LessSafeKey::new(unbound_key);
+
+    let rng = SystemRandom::new();
+    let mut iv_bytes = [0u8; 12];
+    rng.fill(&mut iv_bytes)
+        .map_err(|e| format!("Failed to generate IV: {:?}", e))?;
+
+    let nonce = Nonce::assume_unique_for_key(iv_bytes);
+
+    let mut in_out = plain_json.as_bytes().to_vec();
+    let aad = Aad::from(from.as_bytes());
+
+    key.seal_in_place_append_tag(nonce, aad, &mut in_out)
+        .map_err(|e| format!("Failed to encrypt MQTT payload: {:?}", e))?;
+
+    let split_idx = in_out.len() - 16;
+    let ct = &in_out[..split_idx];
+    let tag = &in_out[split_idx..];
+
+    let iv_b64 = base64::engine::general_purpose::STANDARD.encode(iv_bytes);
+    let ct_b64 = base64::engine::general_purpose::STANDARD.encode(ct);
+    let tag_b64 = base64::engine::general_purpose::STANDARD.encode(tag);
+
+    let env = MqttEnvelopeJson {
+        v: 1,
+        from: from.to_string(),
+        iv: iv_b64,
+        ct: ct_b64,
+        tag: tag_b64,
+    };
+
+    serde_json::to_string(&env).map_err(|e| format!("Failed to serialize MQTT envelope: {e}"))
+}
+
+pub fn open_mqtt_envelope(
+    key_text: &str,
+    env_json: &str,
+) -> Result<(String, String), String> {
+    let env: MqttEnvelopeJson = serde_json::from_str(env_json)
+        .map_err(|e| format!("Failed to parse MQTT envelope JSON: {e}"))?;
+
+    if env.v != 1 {
+        return Err(format!("Unsupported envelope version: {}", env.v));
+    }
+    if env.from.trim().is_empty() {
+        return Err("Missing or empty 'from' field in envelope".into());
+    }
+
+    let iv_bytes = base64::engine::general_purpose::STANDARD
+        .decode(env.iv.as_bytes())
+        .map_err(|e| format!("Failed to decode IV base64: {e}"))?;
+    if iv_bytes.len() != 12 {
+        return Err(format!("Invalid IV length: {}", iv_bytes.len()));
+    }
+
+    let mut ct_bytes = base64::engine::general_purpose::STANDARD
+        .decode(env.ct.as_bytes())
+        .map_err(|e| format!("Failed to decode CT base64: {e}"))?;
+
+    let tag_bytes = base64::engine::general_purpose::STANDARD
+        .decode(env.tag.as_bytes())
+        .map_err(|e| format!("Failed to decode Tag base64: {e}"))?;
+    if tag_bytes.len() != 16 {
+        return Err(format!("Invalid Tag length: {}", tag_bytes.len()));
+    }
+
+    let mut iv_arr = [0u8; 12];
+    iv_arr.copy_from_slice(&iv_bytes);
+    ct_bytes.extend_from_slice(&tag_bytes);
+
+    let aes_key_bytes = derive_aes_key(key_text);
+    let unbound_key = UnboundKey::new(&AES_256_GCM, &aes_key_bytes)
+        .map_err(|e| format!("Failed to create unbound key: {:?}", e))?;
+    let key = LessSafeKey::new(unbound_key);
+
+    let nonce = Nonce::assume_unique_for_key(iv_arr);
+    let aad = Aad::from(env.from.as_bytes());
+
+    let mut work_buf = ct_bytes;
+    match key.open_in_place(nonce, aad, &mut work_buf) {
+        Ok(plaintext_slice) => {
+            let plain = String::from_utf8(plaintext_slice.to_vec())
+                .map_err(|e| format!("Decrypted bytes are not valid UTF-8: {:?}", e))?;
+            Ok((env.from, plain))
+        }
+        Err(e) => Err(format!("Decryption failed: {:?}", e)),
+    }
+}
+
+pub fn voice_bearer_hex(key_text: &str) -> String {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, key_text.as_bytes());
+    let tag = hmac::sign(&key, b"voice");
+    let mut out = String::with_capacity(64);
+    for b in tag.as_ref() {
+        out.push_str(&format!("{:02x}", b));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +418,74 @@ mod tests {
         let huge_plaintext = "a".repeat(MAX_BRIDGE_BYTES + 100);
         let res = encrypt_bridge_payload(&key, &huge_plaintext);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_parse_mqtt_pair_code() {
+        let valid_json = r#"{
+            "t": "sm-mqtt",
+            "v": 1,
+            "uri": "mqtts://broker.example.com:8883",
+            "u": "user123",
+            "p": "pass456",
+            "sala": "abc123def456",
+            "k": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }"#;
+        let parsed = parse_mqtt_pair_code(valid_json).expect("valid code");
+        assert_eq!(parsed.sala, "abc123def456");
+        assert_eq!(extract_broker_host(&parsed.uri), "broker.example.com");
+
+        // Test rejection: wrong t
+        assert!(parse_mqtt_pair_code(&valid_json.replace("sm-mqtt", "other")).is_err());
+        // Test rejection: wrong v
+        assert!(parse_mqtt_pair_code(&valid_json.replace("\"v\": 1", "\"v\": 2")).is_err());
+        // Test rejection: non-mqtts (and not local)
+        assert!(parse_mqtt_pair_code(&valid_json.replace("mqtts://", "http://")).is_err());
+        // Test rejection: sala length != 12
+        assert!(parse_mqtt_pair_code(&valid_json.replace("abc123def456", "short")).is_err());
+        // Test rejection: sala uppercase
+        assert!(parse_mqtt_pair_code(&valid_json.replace("abc123def456", "ABC123DEF456")).is_err());
+        // Test rejection: k length != 64
+        assert!(parse_mqtt_pair_code(&valid_json.replace("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "shortkey")).is_err());
+    }
+
+    #[test]
+    fn test_mqtt_envelope_roundtrip_and_tampering() {
+        let key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let wrong_key = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let plain = r#"{"contract_version":1,"entity_id":"t1","payload":{"text":"Comprar leite"}}"#;
+
+        let env_json = seal_mqtt_envelope(key, "lumen", plain).expect("seal");
+        let (from, decrypted) = open_mqtt_envelope(key, &env_json).expect("open");
+        assert_eq!(from, "lumen");
+        assert_eq!(decrypted, plain);
+
+        // Wrong key failure
+        assert!(open_mqtt_envelope(wrong_key, &env_json).is_err());
+
+        // Tamper from (AAD mismatch)
+        let tampered_from = env_json.replace("\"from\":\"lumen\"", "\"from\":\"placa\"");
+        assert!(open_mqtt_envelope(key, &tampered_from).is_err());
+
+        // Missing from
+        let mut no_from: serde_json::Value = serde_json::from_str(&env_json).unwrap();
+        no_from.as_object_mut().unwrap().remove("from");
+        assert!(open_mqtt_envelope(key, &no_from.to_string()).is_err());
+
+        // Tamper ciphertext
+        let mut v: serde_json::Value = serde_json::from_str(&env_json).unwrap();
+        v["ct"] = serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(b"corrupted"));
+        assert!(open_mqtt_envelope(key, &v.to_string()).is_err());
+    }
+
+    #[test]
+    fn test_voice_bearer_hex() {
+        let key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let bearer = voice_bearer_hex(key);
+        // Verified with node / RFC HMAC-SHA256
+        assert_eq!(
+            bearer,
+            "3717157b1cbcf20a0ec4f22acbbe162bd033066c6528db618d6c7155a67f6e8b"
+        );
     }
 }

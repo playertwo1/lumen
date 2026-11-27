@@ -6,6 +6,7 @@
 
 pub mod audio_wav;
 pub mod crypto;
+pub mod mqtt;
 pub mod relay;
 pub mod server;
 pub mod tokens_agents;

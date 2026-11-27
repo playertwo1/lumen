@@ -63,6 +63,13 @@ miniz_oxide = "0.8"
 # Rust, default features (clock, rayon) off.
 lopdf = { version = "0.46", default-features = false }
 
+# MQTT link for ESP32 bridge (esp32_bridge/mqtt.rs; docs/roadmap/mqtt/PROTOCOLO.md).
+# Uses rustls with ring (already present in the tree), without duplicate crypto providers.
+rumqttc = { version = "0.25", default-features = false, features = ["use-rustls-no-provider"] }
+
+[dev-dependencies]
+rumqttd = "0.20"
+
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
 # The island's file drop reads paths straight from WebView2 (webview_drop.rs).
