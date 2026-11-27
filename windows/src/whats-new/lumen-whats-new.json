@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.7.31",
+      "items": [
+        {
+          "icon": "clock",
+          "title": { "pt-BR": "Uso zerado na placa ESP32" },
+          "detail": { "pt-BR": "Quando a cota de Codex, Claude ou Antigravity já zerou, a placa mostra 0% em vez de números antigos." }
+        },
+        {
+          "icon": "bolt",
+          "title": { "pt-BR": "Claude, Antigravity e LAN na placa" },
+          "detail": { "pt-BR": "A placa agora mostra as cotas dos três agentes, mantém Sala/Relay salvos e atualiza o selo LAN ao vivo." }
+        }
+      ]
+    },
+    {
       "version": "0.7.30",
       "items": [
         {

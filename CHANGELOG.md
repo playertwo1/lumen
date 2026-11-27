@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows 0.7.31 — 27 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Uso zerado na placa ESP32:** quando a janela de cota do Codex, Claude ou Antigravity já zerou, o painel "Uso" da placa passa a mostrar 0% e tempo zerado (`—`) em vez de porcentagens antigas e "zera em 0min".
+- **Cotas dos três agentes na placa:** o Lumen coleta e envia para a placa o uso do Claude (OAuth e uso do plano da ilha) e do Antigravity (incluindo busca do `agy.exe` em `LocalAppData` e maior cota entre grupos).
+- **Conexão e ajustes da placa:** o indicador LAN/Relay fica verde com atualização ao vivo nos ajustes e os campos Sala e URL do Relay são preservados ao reabrir a janela.
+
 ## Windows 0.7.30 — 27 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Ponte nativa com a placa ESP32-S3 AMOLED (L9):** pareamento por código de 6 dígitos com chave no Credential Manager e revogação imediata, ponte de voz local (`POST /v1/voice` com STT local e TTS WAV 22050 Hz), sincronização bidirecional idempotente de tarefas sem duplicação ligada à outbox da Segunda Mente (`POST /v1/tasks/sync` na LAN e sala cifrada AES-256-GCM no relay Cloudflare), controle nativo de mídia e volume (`POST /v1/media`) e painel integrado de cotas e aprovação de agentes (`/api/tokens` e `/api/agents`), dispensando `lumen_bridge` e `tokenserver` em Python.
