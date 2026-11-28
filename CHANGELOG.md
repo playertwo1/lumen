@@ -1,5 +1,10 @@
 # Changelog
 
+## Windows 0.7.33 — 28 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Lumen não fecha mais ao parear a placa por MQTT:** na 0.7.32, colar o código da placa (e todo início depois disso) fechava o app. O cliente MQTT agora sobe no runtime do app.
+- **Placa para de mostrar agentes depois de fechar o Lumen:** ao fechar, o status vazio, a presença e a desconexão passam a ser enviados de fato ao broker.
+
 ## Windows 0.7.32 — 28 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Placa ESP32 por MQTT (L10):** o Lumen conversa com a placa e com a Segunda Mente por um broker MQTT na nuvem, com TLS e conteúdo cifrado (AES-GCM), em casa e fora. O pareamento é feito colando o código da placa em Integrações → Placa ESP32-S3. Tarefas sincronizam por tópicos retidos, a mídia é controlada pelo MQTT e `/v1/voice` exige bearer HMAC da chave da sala.
