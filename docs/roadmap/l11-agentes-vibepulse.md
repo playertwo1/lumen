@@ -88,11 +88,11 @@ Entrega isso pela rede local (`/api/*`, porta 8787/8737, como na L9.6) e pelo MQ
 
 ## L11.6 — Instalar os hooks com consentimento
 
-- [ ] Tela em Integrações → Placa: "Responder agentes pela placa", desligado por padrão. Ao ligar, mostra exatamente o que será escrito e:
+- [x] Tela em Integrações → Placa: "Responder agentes pela placa", desligado por padrão. Ao ligar, mostra exatamente o que será escrito e:
   - grava os hooks HTTP no `~/.claude/settings.json` (com backup e remoção limpa ao desligar);
   - instala o plugin/hook do Codex.
-- [ ] Desligado: nenhum hook segura nada, e os agentes perguntam no terminal como hoje.
-- [ ] Checkpoint L11.6: teste de instalação e remoção num diretório de usuário temporário, sem tocar no real.
+- [x] Desligado: nenhum hook segura nada, e os agentes perguntam no terminal como hoje.
+- [x] Checkpoint L11.6: teste de instalação e remoção num diretório de usuário temporário, sem tocar no real.
 
 ## L11.7 — Validação real
 

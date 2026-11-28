@@ -156,6 +156,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
         settings.esp32_relay_url = current.esp32_relay_url.clone();
         settings.esp32_agent_panel_enabled = current.esp32_agent_panel_enabled;
         settings.esp32_usage_port = current.esp32_usage_port;
+        settings.esp32_respond_agents_enabled = current.esp32_respond_agents_enabled;
         *current = settings;
         (current.clone(), screen_changed, autostart_changed, shortcuts_changed)
     };
@@ -1480,6 +1481,8 @@ pub fn run() {
             esp32_bridge::esp32_clear_mqtt,
             esp32_bridge::esp32_save_relay,
             esp32_bridge::esp32_set_agent_panel,
+            esp32_bridge::esp32_hooks_preview,
+            esp32_bridge::esp32_hooks_apply,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

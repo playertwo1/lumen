@@ -62,6 +62,7 @@ const MAX_FIELD_LEN: usize = 2_000;
 
 mod mcp;
 mod statusline;
+mod esp32_codex;
 
 /// The live diff needs the whole text of a file edit, once it has happened:
 /// PostToolUse of these tools keeps its edit strings far longer than the rest.
@@ -115,6 +116,17 @@ struct Event {
 }
 
 fn main() {
+    let mut raw_args = std::env::args().skip(1);
+    while let Some(arg) = raw_args.next() {
+        if arg == "--esp32-codex-permission" {
+            let port: u16 = raw_args.next().and_then(|p| p.parse().ok()).unwrap_or(8787);
+            std::process::exit(esp32_codex::run_permission(port));
+        }
+        if arg == "--esp32-codex-mcp" {
+            let port: u16 = raw_args.next().and_then(|p| p.parse().ok()).unwrap_or(8787);
+            std::process::exit(esp32_codex::run_mcp(port));
+        }
+    }
     if std::env::args().skip(1).any(|a| a == "--mcp") {
         std::process::exit(mcp::run());
     }

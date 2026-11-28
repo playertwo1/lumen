@@ -7,6 +7,7 @@
 pub mod agent_status;
 pub mod audio_wav;
 pub mod crypto;
+pub mod hooks_installer;
 pub mod interactions;
 pub mod max_tracker;
 pub mod mqtt;
@@ -69,6 +70,8 @@ pub struct Esp32BridgeStatus {
     pub relay_url: String,
     pub relay_key_configured: bool,
     pub agent_panel_enabled: bool,
+    pub respond_agents_enabled: bool,
+    pub respond_agents_installed: bool,
     pub usage_port: u16,
     pub usage_running: bool,
     pub last_error: Option<String>,
@@ -81,6 +84,7 @@ pub struct Esp32Runtime {
     pub running: AtomicBool,
     pub usage_running: AtomicBool,
     pub agent_panel_enabled: AtomicBool,
+    pub respond_agents_enabled: AtomicBool,
     pub playing: AtomicBool,
     pub claude_quota: Mutex<ClaudeQuotaCache>,
     pub claude_model_week: Mutex<usage_history::ClaudeModelWeekQuota>,
@@ -134,6 +138,7 @@ impl Esp32Runtime {
                 std::process::id()
             ))
         };
+        let test_mode = app.is_none();
         Arc::new(Self {
             app,
             keys: Mutex::new(initial_keys),
@@ -141,6 +146,7 @@ impl Esp32Runtime {
             running: AtomicBool::new(false),
             usage_running: AtomicBool::new(false),
             agent_panel_enabled: AtomicBool::new(false),
+            respond_agents_enabled: AtomicBool::new(test_mode),
             playing: AtomicBool::new(false),
             claude_quota: Mutex::new(ClaudeQuotaCache::default()),
             claude_model_week: Mutex::new(usage_history::ClaudeModelWeekQuota::default()),
@@ -291,6 +297,8 @@ impl Esp32Runtime {
             relay_url: cfg.esp32_relay_url.clone(),
             relay_key_configured,
             agent_panel_enabled: cfg.esp32_agent_panel_enabled,
+            respond_agents_enabled: cfg.esp32_respond_agents_enabled,
+            respond_agents_installed: hooks_installer::is_installed(&crate::platform::home_dir()),
             usage_port,
             usage_running: self.usage_running.load(Ordering::SeqCst),
             last_error: self.last_error.lock().unwrap().clone(),
@@ -748,6 +756,8 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
     *rt.last_error.lock().unwrap() = None;
     rt.agent_panel_enabled
         .store(cfg.esp32_agent_panel_enabled, Ordering::SeqCst);
+    rt.respond_agents_enabled
+        .store(cfg.esp32_respond_agents_enabled, Ordering::SeqCst);
     if !cfg.esp32_bridge_enabled {
         return;
     }
@@ -1110,6 +1120,9 @@ pub fn note_permission_request(
     command: &str,
 ) {
     if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
+        if !rt.respond_agents_enabled.load(Ordering::Relaxed) {
+            return;
+        }
         rt.interactions.park_pipe_or_legacy(
             Some(pipe_request_id.to_string()),
             agent,
@@ -1262,4 +1275,36 @@ pub fn esp32_set_agent_panel(
     })?;
     apply_runtime_config(&rt, &next);
     Ok(rt.status(&next))
+}
+
+#[tauri::command]
+pub fn esp32_hooks_preview(
+    app: AppHandle,
+    _rt: State<'_, Arc<Esp32Runtime>>,
+    enable: bool,
+) -> Result<hooks_installer::Esp32HooksPreview, String> {
+    let cfg = current_settings(&app);
+    let port = normalize_port(cfg.esp32_bridge_port, DEFAULT_BRIDGE_PORT);
+    let home = crate::platform::home_dir();
+    let hook_exe = settings::hook_exe_path();
+    hooks_installer::preview_hooks(&home, &hook_exe, port, enable)
+}
+
+#[tauri::command]
+pub fn esp32_hooks_apply(
+    app: AppHandle,
+    rt: State<'_, Arc<Esp32Runtime>>,
+    enable: bool,
+    fingerprints: HashMap<String, String>,
+) -> Result<Vec<String>, String> {
+    let cfg = current_settings(&app);
+    let port = normalize_port(cfg.esp32_bridge_port, DEFAULT_BRIDGE_PORT);
+    let home = crate::platform::home_dir();
+    let hook_exe = settings::hook_exe_path();
+    let applied = hooks_installer::apply_hooks(&home, &hook_exe, port, enable, &fingerprints)?;
+    let next = update_esp32_settings(&app, |s| {
+        s.esp32_respond_agents_enabled = enable;
+    })?;
+    apply_runtime_config(&rt, &next);
+    Ok(applied.into_iter().map(|p| p.display().to_string()).collect())
 }

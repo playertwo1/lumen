@@ -633,6 +633,13 @@ fn validate_hook_ingress(req: &HttpRequest, rt: &Esp32Runtime) -> Option<HttpRes
             &json!({ "error": "interactions are not enabled" }),
         ));
     }
+    if !rt.respond_agents_enabled.load(Ordering::Relaxed) {
+        return Some(if req.path == "/api/codex/question" {
+            HttpResponse::json(200, "OK", &json!({ "status": "computer", "reason": "disabled" }))
+        } else {
+            HttpResponse::empty_ok()
+        });
+    }
     if !is_loopback_ip(req.peer_ip) {
         return Some(HttpResponse::json(
             403,

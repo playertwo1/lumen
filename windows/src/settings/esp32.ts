@@ -1,6 +1,6 @@
 // ESP32-S3 AMOLED settings UI & validation functions (L10 / Q2)
 
-import { Bridge, type Esp32BridgeStatus } from "../core/bridge";
+import { Bridge, esp32HooksPreview, esp32HooksApply, type Esp32BridgeStatus } from "../core/bridge";
 import { h } from "../views/dom";
 
 type Toggle = (on: boolean, onChange: (v: boolean) => void) => HTMLElement;
@@ -127,6 +127,21 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
   const usagePortInput = h("input", { type: "number", value: "8737", class: "path" }) as HTMLInputElement;
   const saveAgentPanelBtn = h("button", { class: "primary", text: "Salvar Painel de Cota" }) as HTMLButtonElement;
 
+  // Responder agentes pela placa (L11.6)
+  const respondAgentsStatusSpan = h("span", { class: "phone-live-pill", text: "Não instalado" });
+  const toggleRespondBtn = h("button", { class: "primary", text: "Habilitar na placa" }) as HTMLButtonElement;
+  const removeRespondBtn = h("button", { class: "danger", text: "Remover da placa", hidden: true }) as HTMLButtonElement;
+
+  const previewContainer = h("div", { class: "hooks-preview-box", hidden: true });
+  const previewLoadingSpan = h("div", { class: "hint", text: "Carregando pré-visualização...", hidden: true });
+  const previewFilesContainer = h("div", { class: "preview-files" });
+  const backupNoticeP = h("div", { class: "hint", style: "margin-top: 8px; font-style: italic;" });
+  const confirmApplyBtn = h("button", { class: "primary", text: "Confirmar e gravar", hidden: true }) as HTMLButtonElement;
+  const cancelPreviewBtn = h("button", { text: "Cancelar", hidden: true }) as HTMLButtonElement;
+
+  let currentTargetEnable = true;
+  let currentPreviewFingerprints: Record<string, string> = {};
+
   const updateUI = (st: Esp32BridgeStatus | null) => {
     if (!st) return;
 
@@ -190,6 +205,19 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
       boardStatusSpan.textContent = "Placa offline";
       boardStatusSpan.className = "phone-live-pill";
       removeMqttBtn.disabled = true;
+    }
+
+    // Responder agentes pela placa status
+    if (st.respondAgentsInstalled) {
+      respondAgentsStatusSpan.textContent = "Instalado";
+      respondAgentsStatusSpan.className = "phone-live-pill ok";
+      toggleRespondBtn.hidden = true;
+      removeRespondBtn.hidden = false;
+    } else {
+      respondAgentsStatusSpan.textContent = "Não instalado";
+      respondAgentsStatusSpan.className = "phone-live-pill";
+      toggleRespondBtn.hidden = false;
+      removeRespondBtn.hidden = true;
     }
   };
 
@@ -361,6 +389,103 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
     h("div", { class: "row" },
       saveAgentPanelBtn,
     ),
+  );
+
+  // Responder agentes pela placa (L11.6) handlers
+  const showHooksPreview = async (enable: boolean) => {
+    clearError();
+    currentTargetEnable = enable;
+    previewLoadingSpan.hidden = false;
+    previewContainer.hidden = false;
+    previewFilesContainer.replaceChildren();
+    confirmApplyBtn.hidden = true;
+    cancelPreviewBtn.hidden = false;
+
+    try {
+      const preview = await esp32HooksPreview(enable);
+      previewLoadingSpan.hidden = true;
+      if (!preview || !preview.files) {
+        showError("Não foi possível carregar a pré-visualização das configurações.");
+        return;
+      }
+
+      currentPreviewFingerprints = {};
+      backupNoticeP.textContent = preview.backupNotice || "";
+
+      for (const file of preview.files) {
+        currentPreviewFingerprints[file.id] = file.fingerprint;
+
+        const fileBlock = h("div", { style: "margin-top: 12px; border: 1px solid var(--border-subtle, #333); border-radius: 6px; padding: 10px;" },
+          h("div", { style: "font-weight: 600; font-size: 13px; margin-bottom: 4px;", text: file.path }),
+          h("div", { class: "hint", text: file.changed ? (file.exists ? "Arquivo será modificado:" : "Arquivo novo será criado:") : "Sem alterações neste arquivo." }),
+          h("pre", {
+            style: "background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 11px; max-height: 200px; white-space: pre-wrap;",
+            text: file.diff || file.after || "(sem alterações)"
+          }),
+        );
+        previewFilesContainer.append(fileBlock);
+      }
+
+      confirmApplyBtn.hidden = false;
+    } catch (err) {
+      previewLoadingSpan.hidden = true;
+      showError(String(err));
+    }
+  };
+
+  toggleRespondBtn.addEventListener("click", () => showHooksPreview(true));
+  removeRespondBtn.addEventListener("click", () => showHooksPreview(false));
+
+  cancelPreviewBtn.addEventListener("click", () => {
+    previewContainer.hidden = true;
+    previewFilesContainer.replaceChildren();
+    confirmApplyBtn.hidden = true;
+    cancelPreviewBtn.hidden = true;
+    previewLoadingSpan.hidden = true;
+    currentPreviewFingerprints = {};
+  });
+
+  confirmApplyBtn.addEventListener("click", async () => {
+    clearError();
+    confirmApplyBtn.disabled = true;
+    try {
+      await esp32HooksApply(currentTargetEnable, currentPreviewFingerprints);
+      previewContainer.hidden = true;
+      previewFilesContainer.replaceChildren();
+      confirmApplyBtn.hidden = true;
+      cancelPreviewBtn.hidden = true;
+      const st = await Bridge.esp32.status();
+      updateUI(st);
+    } catch (err) {
+      showError(String(err));
+    } finally {
+      confirmApplyBtn.disabled = false;
+    }
+  });
+
+  previewContainer.append(
+    previewLoadingSpan,
+    backupNoticeP,
+    previewFilesContainer,
+    h("div", { class: "row", style: "margin-top: 12px; gap: 8px;" },
+      confirmApplyBtn,
+      cancelPreviewBtn,
+    ),
+  );
+
+  section.append(
+    h("div", { class: "phone-divider" }),
+    h("h3", { text: "Responder agentes pela placa" }),
+    h("div", { class: "hint", text: "Encaminha perguntas do Claude Code e pedidos de permissão do Codex diretamente para aprovação na tela da placa ESP32-S3." }),
+    h("div", { class: "row" },
+      h("label", { text: "Status dos Hooks" }),
+      respondAgentsStatusSpan,
+    ),
+    h("div", { class: "row" },
+      toggleRespondBtn,
+      removeRespondBtn,
+    ),
+    previewContainer,
   );
 
   // Initial load status + refresh ao vivo enquanto a aba estiver aberta

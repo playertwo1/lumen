@@ -141,6 +141,7 @@ pub struct Settings {
     pub esp32_relay_url: String,
     pub esp32_agent_panel_enabled: bool,
     pub esp32_usage_port: u16,
+    pub esp32_respond_agents_enabled: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -224,6 +225,7 @@ impl Default for Settings {
             esp32_relay_url: String::new(),
             esp32_agent_panel_enabled: false,
             esp32_usage_port: 8737,
+            esp32_respond_agents_enabled: false,
         }
     }
 }
@@ -537,7 +539,8 @@ mod tests {
   "esp32RelayEnabled": true,
   "esp32RelayUrl": "https://esp32-relay.example.workers.dev",
   "esp32AgentPanelEnabled": true,
-  "esp32UsagePort": 8738
+  "esp32UsagePort": 8738,
+  "esp32RespondAgentsEnabled": false
 }"##;
 
     fn custom() -> Value {
@@ -1085,6 +1088,7 @@ mod tests {
                 "esp32RelayUrl",
                 "esp32AgentPanelEnabled",
                 "esp32UsagePort",
+                "esp32RespondAgentsEnabled",
             ]
         );
         let _ = std::fs::remove_dir_all(&dir);

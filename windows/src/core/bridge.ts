@@ -671,8 +671,32 @@ export const Bridge = {
       callOrThrow<Esp32BridgeStatus>("esp32_save_relay", { enabled, url, key }),
     setAgentPanel: (enabled: boolean, usagePort?: number) =>
       callOrThrow<Esp32BridgeStatus>("esp32_set_agent_panel", { enabled, usagePort: usagePort ?? null }),
+    hooksPreview: (enable: boolean) => esp32HooksPreview(enable),
+    hooksApply: (enable: boolean, fingerprints: Record<string, string>) =>
+      esp32HooksApply(enable, fingerprints),
   },
 };
+
+export interface Esp32HookFilePreview {
+  id: string;
+  path: string;
+  exists: boolean;
+  changed: boolean;
+  diff: string;
+  after: string;
+  fingerprint: string;
+}
+
+export interface Esp32HooksPreview {
+  files: Esp32HookFilePreview[];
+  backupNotice: string;
+}
+
+export const esp32HooksPreview = (enable: boolean) =>
+  callOrThrow<Esp32HooksPreview>("esp32_hooks_preview", { enable });
+
+export const esp32HooksApply = (enable: boolean, fingerprints: Record<string, string>) =>
+  callOrThrow<string[]>("esp32_hooks_apply", { enable, fingerprints });
 
 export interface Esp32BridgeStatus {
   enabled: boolean;
@@ -694,6 +718,9 @@ export interface Esp32BridgeStatus {
   mqttRoom: string;
   mqttBoardOnline: boolean;
   mqttError: string | null;
+
+  respondAgentsEnabled: boolean;
+  respondAgentsInstalled: boolean;
 }
 
 /** Tarefas locais do Lumen (src-tauri/src/tasks). */
