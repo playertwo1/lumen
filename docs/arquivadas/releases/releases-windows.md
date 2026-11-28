@@ -2,6 +2,20 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.33 — Lumen não fecha ao parear a placa por MQTT
+
+- [x] Pedido do dono em 2026-11-28 ("Lançar a 0.7.32", com o relato "colei o código, o app fechou"). Na 0.7.32, colar o código da placa e todo início seguinte fechavam o app: `spawn_mqtt_loop` chamava `tokio::spawn` fora de um runtime Tokio (pânico "there is no reactor running" com `panic = "abort"`, exceção `0xc0000409`). Correção em `ed2ca1a5`: `tauri::async_runtime::spawn` e teste de regressão que falha sem a correção. No mesmo commit: o fechamento do MQTT consulta o eventloop até enviar o DISCONNECT (antes status vazio e presença 0 nunca saíam), e os testes de loopback e e2e deixam de depender do cofre e dos agentes reais do PC. Release em `643b7c00`.
+- [x] Validações locais: `python scripts/test-whats-new.py windows`, `npx tsc --noEmit`, `npm test` (795/795), `npm run build` e `cargo test --lib --locked` (1050 passaram, 0 falhas, 10 ignorados).
+- [x] Fumaça real antes de publicar: `windows/release/lumen.exe` iniciado com o código da placa já salvo no cofre ficou de pé por 20 s, e a placa passou de `rx=0` para `rx=30` pelo broker EMQX.
+- [x] Empacotamento e publicação locais como na 0.7.32. Microsoft Defender em `windows/release/` e nos instaladores baixados (`found no threats`). Tag [`windows-v0.7.33`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.33) (`--latest=false`) e [`windows-latest`](https://github.com/playertwo1/lumen/releases/tag/windows-latest) publicados.
+- [x] Digests do GitHub conferidos com o SHA-256 local e dos instaladores baixados:
+  - `Lumen-Windows-0.7.33-setup.exe` / `Lumen-Windows-setup.exe`: `ee92004b748832469b0c7384ba55d2a838fd97fb8ebaf6e436d5e5feeae31c0f`
+  - `Lumen-Windows-0.7.33.msi` / `Lumen-Windows.msi`: `65dbe2a27da54cb5e8074c88876bf1aef24d8314419a51c3fad97a370b3f4acf`
+  - `lumen.exe`: `0ea62fc470d484a605482ebad0d260025f49c27659c43626153009ac3d42a17c`
+  - `lumen-hook.exe`: `b516e75d0d43be794cd791a8bf15542ad54616f66f36876527d7de045af57660`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1`).
+- [ ] **NOT_RUN:** a 0.7.32 instalada fecha ao abrir, então a atualização precisa do instalador baixado; depois, ver "placa online" e seguir L10 e L11.7 com a placa e o celular.
+
 ### Windows 0.7.32 — placa ESP32 por MQTT (L10) e agentes e cotas para a placa (L11)
 
 - [x] Pedido do dono em 2026-11-28 ("Lançar a 0.7.32"): a 0.7.31 instalada não tinha o campo "Código da placa" para parear com o broker MQTT (Q0 concluído com EMQX Serverless). Entram os 18 commits após `cc9f9adf`: Q2.1–Q2.7/L10 (cliente MQTT TLS, código da placa, tarefas retidas, mídia, bearer HMAC em `/v1/voice`, remoção do pareamento 6 dígitos e da bridge do relay, testes com `rumqttd`) e L11.1–L11.6 (monitor de agentes, perguntas e permissões com HMAC v2, previsão de cota, Max Tracker, publicação MQTT e hooks com consentimento). Release em `7c8af0df`.
@@ -13,7 +27,7 @@
   - `lumen.exe`: `ca187bbbed95524f4613b160741a4059035efbc545deb997f99c3129884fd6b0`
   - `lumen-hook.exe`: `b70855c2d8fed691efdd6a8a83bb7c2645148bd873a46e07c6ac98aaef41c6b9`
 - [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1`).
-- [ ] **NOT_RUN:** atualizar no PC, colar o código da placa, ver "placa online" pelo broker e seguir L10 (tarefas e mídia) e L11.7 (agentes) com a placa e o celular.
+- [ ] **Falha:** colar o código da placa fechava o app (e todo início seguinte); corrigido na 0.7.33.
 
 ### Windows 0.7.31 — painel "Uso" da placa ESP32 com cota zerada, Claude/Antigravity e selo LAN ao vivo
 

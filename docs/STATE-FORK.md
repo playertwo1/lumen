@@ -1,6 +1,6 @@
 # STATE do fork — ponto de retomada
 
-**Atualizado:** 2026-11-28 · **Última release:** [`windows-v0.7.32`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.32) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md), [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) e [L9 — Ponte com a placa ESP32-S3 AMOLED](roadmap/l9-placa-esp32.md) (validação do dono)
+**Atualizado:** 2026-11-28 · **Última release:** [`windows-v0.7.33`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.33) · **Etapas da vez:** [L8 — Ajustes do uso real](roadmap/l8-ajustes-uso-real.md), [M2 — Controle nativo do Windows](roadmap/m2-windows-nativo.md) e [L9 — Ponte com a placa ESP32-S3 AMOLED](roadmap/l9-placa-esp32.md) (validação do dono)
 
 Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação. O que cada etapa faz está no [ROADMAP-FORK](ROADMAP-FORK.md); o histórico deste arquivo até a reorganização está em [arquivadas/state/](arquivadas/state/state-ate-2026-11-17.md).
 
@@ -23,7 +23,7 @@ Este arquivo guarda só o estado atual, o que espera o dono e a próxima ação.
 
 ## Pendências do dono (validação real)
 
-- **Placa por MQTT e agentes (`0.7.32`, 2026-11-28)**: atualizar, colar o código da placa em Integrações → Placa ESP32-S3, ver a placa online pelo broker EMQX e seguir a L10 (tarefas e mídia) e a L11.7 (agentes) com a placa e o celular.
+- **Placa por MQTT e agentes (`0.7.33`, 2026-11-28; a `0.7.32` fechava ao parear)**: instalar pelo instalador baixado, colar o código da placa em Integrações → Placa ESP32-S3, ver a placa online pelo broker EMQX e seguir a L10 (tarefas e mídia) e a L11.7 (agentes) com a placa e o celular.
 - **Placa ESP32 — tela "Uso" zerada, Claude/Antigravity e LAN (`0.7.31`, 2026-11-27)**: instalar a `0.7.31` no PC e conferir na tela "Uso" da placa que o Codex aparece com `0%` e `"zera em —"` enquanto a janela estiver zerada, além das cotas de Claude e Antigravity, Sala/Relay preservados nos ajustes e selo LAN verde ao vivo.
 - **L9 — Ponte nativa com a placa ESP32-S3 AMOLED (`0.7.30`, 2026-11-27)**: parear código de 6 dígitos em Configurações → Integrações → Placa ESP32-S3, testar voz (`POST /v1/voice`), tarefas sem duplicar (LAN e relay Cloudflare AES-256-GCM), controle de mídia/volume e painel `/api/tokens` + `/api/agents` na placa física; conferir revogação (`401`).
 - **Alertas de cota depois de um aviso comum (`0.7.29`)**: com dois alertas de cota na fila, salvar uma nota no meio do primeiro e conferir que o segundo aparece quando “Nota salva” some.
