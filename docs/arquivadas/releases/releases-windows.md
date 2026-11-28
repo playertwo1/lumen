@@ -2,6 +2,19 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.32 — placa ESP32 por MQTT (L10) e agentes e cotas para a placa (L11)
+
+- [x] Pedido do dono em 2026-11-28 ("Lançar a 0.7.32"): a 0.7.31 instalada não tinha o campo "Código da placa" para parear com o broker MQTT (Q0 concluído com EMQX Serverless). Entram os 18 commits após `cc9f9adf`: Q2.1–Q2.7/L10 (cliente MQTT TLS, código da placa, tarefas retidas, mídia, bearer HMAC em `/v1/voice`, remoção do pareamento 6 dígitos e da bridge do relay, testes com `rumqttd`) e L11.1–L11.6 (monitor de agentes, perguntas e permissões com HMAC v2, previsão de cota, Max Tracker, publicação MQTT e hooks com consentimento). Release em `7c8af0df`.
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.32: 3 items in 1 languages`), `npx tsc --noEmit`, `npm test` (795/795), `npm run build`, `cargo test --lib --locked` (1049 passaram, 0 falhas, 10 ignorados) e `cargo test --lib --locked version` (8/8).
+- [x] Empacotamento e publicação locais como na 0.7.31 (`npm run pack`, `CARGO_PROFILE_RELEASE_LTO=thin`, `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4`). Microsoft Defender em `windows/release/` e nos instaladores baixados da release (`found no threats`). Tag [`windows-v0.7.32`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.32) (`--latest=false`) e [`windows-latest`](https://github.com/playertwo1/lumen/releases/tag/windows-latest) publicados.
+- [x] Digests do GitHub conferidos com o SHA-256 local e dos instaladores baixados:
+  - `Lumen-Windows-0.7.32-setup.exe` / `Lumen-Windows-setup.exe`: `b913e129ad26a462152ae964f0afdd28f812929457a1adfd86fb633b66214f68`
+  - `Lumen-Windows-0.7.32.msi` / `Lumen-Windows.msi`: `d67faadcf0f48dc9bf44e2fed5b56ea126ef4def989f719f1c385232550566ea`
+  - `lumen.exe`: `ca187bbbed95524f4613b160741a4059035efbc545deb997f99c3129884fd6b0`
+  - `lumen-hook.exe`: `b70855c2d8fed691efdd6a8a83bb7c2645148bd873a46e07c6ac98aaef41c6b9`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1`).
+- [ ] **NOT_RUN:** atualizar no PC, colar o código da placa, ver "placa online" pelo broker e seguir L10 (tarefas e mídia) e L11.7 (agentes) com a placa e o celular.
+
 ### Windows 0.7.31 — painel "Uso" da placa ESP32 com cota zerada, Claude/Antigravity e selo LAN ao vivo
 
 - [x] Pedido do dono em 2026-11-27 para publicar os ajustes pós-0.7.30 na `main` (`f0dcee7e`, `5498b59f`, `625c7f34`, `ad5eab94`, `ece7a1a0`, `e434bc81`; release em `96610772`): janela de cota já zerada passa a ir como `0%` e reset desconhecido (`—`) em vez de porcentagem antiga e `"zera em 0min"` (Codex, Claude e Antigravity); coleta de cota do Claude (OAuth e uso do plano da ilha) e Antigravity (`agy_plan`, busca de `agy.exe` em `LocalAppData` e maior cota entre grupos); preservação de Sala e URL do Relay ao reabrir ajustes; badge LAN/relay verde com atualização ao vivo.
