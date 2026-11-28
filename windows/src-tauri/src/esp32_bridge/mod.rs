@@ -7,6 +7,7 @@
 pub mod agent_status;
 pub mod audio_wav;
 pub mod crypto;
+pub mod interactions;
 pub mod mqtt;
 pub mod relay;
 pub mod server;
@@ -30,7 +31,7 @@ use tokio::sync::watch;
 
 use crate::{secrets, settings};
 
-use self::tokens_agents::{ClaudeQuotaCache, Esp32AgentPanelState};
+use self::tokens_agents::ClaudeQuotaCache;
 
 pub const DEFAULT_BRIDGE_PORT: u16 = 8787;
 pub const DEFAULT_USAGE_PORT: u16 = 8737;
@@ -84,11 +85,12 @@ pub struct Esp32Runtime {
     pub claude_model_week: Mutex<usage_history::ClaudeModelWeekQuota>,
     pub agy_quota: Mutex<ClaudeQuotaCache>,
     pub usage_history: Arc<usage_history::UsageHistoryStore>,
-    pub agent_panel: Mutex<Esp32AgentPanelState>,
+    pub interactions: Arc<interactions::InteractionStore>,
     pub agent_monitor: Arc<agent_status::AgentStatusMonitor>,
     pub mqtt_state: Arc<mqtt::MqttRuntimeState>,
     pub mqtt_handle: Mutex<Option<mqtt::MqttHandle>>,
     pub mqtt_voice_bearer: Mutex<Option<String>>,
+    pub mqtt_room_key: Mutex<Option<String>>,
     pub mqtt_known_synced_ids: Mutex<HashSet<String>>,
     pub mqtt_last_published: Mutex<HashMap<String, String>>,
     shutdown_tx: Mutex<Option<watch::Sender<bool>>>,
@@ -99,9 +101,11 @@ impl Esp32Runtime {
     pub fn new(app: Option<AppHandle>) -> Arc<Self> {
         let mqtt_state = Arc::new(mqtt::MqttRuntimeState::new());
         let mut initial_voice_bearer = None;
+        let mut initial_room_key = None;
         let initial_keys = if let Some(cfg) = load_mqtt_config_from_vault() {
             mqtt_state.set_configured(crypto::extract_broker_host(&cfg.uri), cfg.room);
             initial_voice_bearer = Some(crypto::voice_bearer_hex(&cfg.key));
+            initial_room_key = Some(cfg.key);
             // Migração limpa (Q2.6): MQTT já configurado, limpa secrets legados do cofre.
             secrets::clear_legacy_esp32_secrets();
             Vec::new()
@@ -130,11 +134,12 @@ impl Esp32Runtime {
             claude_model_week: Mutex::new(usage_history::ClaudeModelWeekQuota::default()),
             agy_quota: Mutex::new(ClaudeQuotaCache::default()),
             usage_history: Arc::new(usage_history::UsageHistoryStore::new(history_path)),
-            agent_panel: Mutex::new(Esp32AgentPanelState::default()),
+            interactions: Arc::new(interactions::InteractionStore::new(true)),
             agent_monitor: Arc::new(agent_status::AgentStatusMonitor::new()),
             mqtt_state,
             mqtt_handle: Mutex::new(None),
             mqtt_voice_bearer: Mutex::new(initial_voice_bearer),
+            mqtt_room_key: Mutex::new(initial_room_key),
             mqtt_known_synced_ids: Mutex::new(HashSet::new()),
             mqtt_last_published: Mutex::new(HashMap::new()),
             shutdown_tx: Mutex::new(None),
@@ -188,11 +193,27 @@ impl Esp32Runtime {
 
     pub fn has_paired_keys(&self) -> bool {
         self.mqtt_voice_bearer.lock().unwrap().is_some()
+            || self.mqtt_room_key.lock().unwrap().is_some()
             || !self.keys.lock().unwrap().is_empty()
+    }
+
+    pub fn room_key_for_hmac(&self) -> Option<String> {
+        if let Some(k) = self.mqtt_room_key.lock().unwrap().clone() {
+            if !k.trim().is_empty() {
+                return Some(k);
+            }
+        }
+        self.keys
+            .lock()
+            .unwrap()
+            .first()
+            .map(|k| k.key.clone())
+            .filter(|k| !k.trim().is_empty())
     }
 
     pub(crate) fn complete_mqtt_migration_with<F: FnOnce()>(&self, room_key: &str, clear_legacy: F) {
         *self.mqtt_voice_bearer.lock().unwrap() = Some(crypto::voice_bearer_hex(room_key));
+        *self.mqtt_room_key.lock().unwrap() = Some(room_key.to_string());
         self.keys.lock().unwrap().clear();
         clear_legacy();
     }
@@ -401,6 +422,56 @@ impl mqtt::MqttCallbacks for RuntimeMqttCallbacks {
 
     fn on_media_action(&self, action: &str) -> Option<mqtt::MediaStatePayload> {
         handle_mqtt_media_action(&self.rt, action)
+    }
+
+    fn on_agent_decision(&self, plain_json: &str) {
+        handle_mqtt_agent_decision(&self.rt, plain_json);
+    }
+}
+
+pub(crate) fn handle_mqtt_agent_decision(rt: &Esp32Runtime, plain_json: &str) {
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(plain_json) else {
+        return;
+    };
+    let Some(request_id) = val.get("request_id").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(view_sha256) = val.get("view_sha256").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(verdict) = val.get("verdict").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(ts) = val.get("ts").and_then(serde_json::Value::as_i64) else {
+        return;
+    };
+    let now_ms = interactions::InteractionStore::now_ms();
+    let now_sec = Esp32Runtime::now_secs();
+    if let Ok((outcome, _)) = rt
+        .interactions
+        .resolve_mqtt(request_id, view_sha256, verdict, ts, now_ms, now_sec)
+    {
+        if let (Some(app), Some(pid)) = (rt.app.as_ref(), outcome.pipe_request_id.as_deref()) {
+            apply_pipe_outcome(app, pid, outcome.verdict);
+        }
+    }
+}
+
+pub(crate) fn apply_pipe_outcome(app: &AppHandle, pid: &str, verdict: interactions::Verdict) {
+    match verdict {
+        interactions::Verdict::Approve => {
+            crate::resolve_approval(app, pid, "allow");
+            let _ = tauri::Emitter::emit_to(app, "island", "approval-expired", pid);
+        }
+        interactions::Verdict::Deny => {
+            crate::resolve_approval(app, pid, "deny");
+            let _ = tauri::Emitter::emit_to(app, "island", "approval-expired", pid);
+        }
+        interactions::Verdict::Terminal => {
+            crate::recap::forget_request(app, pid);
+            crate::pipe::decline(app, pid);
+            let _ = tauri::Emitter::emit_to(app, "island", "approval-expired", pid);
+        }
     }
 }
 
@@ -739,7 +810,10 @@ pub(crate) fn build_agent_status_snapshot(rt: &Esp32Runtime) -> serde_json::Valu
     let claude_dir = agent_status::default_claude_projects_dir();
     let codex_dir = agent_status::default_codex_sessions_dir();
     let now_ms = crate::tasks::now_utc_ms_pub();
-    rt.agent_monitor.snapshot(&claude_dir, &codex_dir, now_ms)
+    let mut snap = rt.agent_monitor.snapshot(&claude_dir, &codex_dir, now_ms);
+    rt.interactions
+        .attach_pending_to_agent_status(&mut snap, interactions::InteractionStore::now_ms());
+    snap
 }
 
 pub(crate) fn build_enriched_usage_payload(rt: &Esp32Runtime) -> serde_json::Value {
@@ -869,16 +943,14 @@ pub fn note_claude_plan_usage(
 
 pub fn note_agent_turn(app: &AppHandle, agent: &str, cwd: &str) {
     if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
-        rt.agent_panel
-            .lock()
-            .unwrap()
-            .on_stop_or_notify(agent, cwd, Esp32Runtime::now_secs());
+        rt.interactions.note_turn(agent, cwd);
     }
 }
 
 pub fn note_agent_clear(app: &AppHandle) {
     if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
-        rt.agent_panel.lock().unwrap().on_clear();
+        rt.interactions
+            .note_clear(interactions::InteractionStore::now_ms());
     }
 }
 
@@ -891,23 +963,22 @@ pub fn note_permission_request(
     command: &str,
 ) {
     if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
-        rt.agent_panel.lock().unwrap().on_permission(
+        rt.interactions.park_pipe_or_legacy(
             Some(pipe_request_id.to_string()),
             agent,
             cwd,
             tool,
             command,
-            Esp32Runtime::now_secs(),
+            interactions::HOLD_SECS,
+            interactions::InteractionStore::now_ms(),
         );
     }
 }
 
 pub fn clear_permission_request(app: &AppHandle, pipe_request_id: &str) {
     if let Some(rt) = app.try_state::<Arc<Esp32Runtime>>() {
-        rt.agent_panel
-            .lock()
-            .unwrap()
-            .clear_by_pipe_id(pipe_request_id);
+        rt.interactions
+            .clear_by_pipe_id(pipe_request_id, interactions::InteractionStore::now_ms());
     }
 }
 
@@ -984,6 +1055,7 @@ pub fn esp32_clear_mqtt(
 ) -> Result<Esp32BridgeStatus, String> {
     clear_mqtt_config_from_vault()?;
     *rt.mqtt_voice_bearer.lock().unwrap() = None;
+    *rt.mqtt_room_key.lock().unwrap() = None;
     rt.mqtt_state.configured.store(false, Ordering::Relaxed);
     rt.mqtt_state.set_connected(false);
     *rt.mqtt_state.host.write().unwrap() = String::new();

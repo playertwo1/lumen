@@ -2,7 +2,7 @@
 
 # L11 — Agentes e cotas para a placa (ideias do VibePulse)
 
-**Estado:** Em andamento (L11.1 e L11.3 concluídas). Atualizado em 2026-11-27.
+**Estado:** Em andamento (L11.1, L11.2 e L11.3 concluídas). Atualizado em 2026-11-28.
 
 **Objetivo:** o Lumen faz no Windows o que o tokenserver do VibePulse faz no Mac:
 - sabe quais agentes (Claude Code, Codex) estão trabalhando, com modelo e esforço;
@@ -34,30 +34,30 @@ Entrega isso pela rede local (`/api/*`, porta 8787/8737, como na L9.6) e pelo MQ
 
 ## L11.2 — Segurar e responder perguntas e permissões
 
-- [ ] Rotas de hook só por loopback (recusar outro IP, `Host` e `Origin` estranhos):
+- [x] Rotas de hook só por loopback (recusar outro IP, `Host` e `Origin` estranhos): *(`esp32_bridge/server.rs`: `is_loopback_ip`, `is_valid_loopback_host`, `validate_hook_ingress` + `l11_2_loopback_hook_guards_and_end_to_end_interactions`)*
   - **Claude Code:** `PreToolUse` com matcher `AskUserQuestion` → `/api/hook/question`; `PermissionRequest` → `/api/hook/permission`. Hooks HTTP com prazo de 120 s.
-  - **Codex:** hook `PermissionRequest` → `/api/codex/permission`, e ferramenta MCP `ask` → `/api/codex/question` (o VibePulse traz o plugin: `permission_hook.py`, `mcp_server.py`; portar ou reaproveitar com atribuição).
-- [ ] Guarda de pedidos como `interactions.py`:
+  - **Codex:** hook `PermissionRequest` → `/api/codex/permission`, e ferramenta MCP `ask` → `/api/codex/question` (contrato portado em Rust sem alterar configs reais).
+- [x] Guarda de pedidos como `interactions.py`: *(`esp32_bridge/interactions.rs`: `InteractionStore`)*
   - limites: até 8 pendentes, identificador aleatório de 16 bytes, textos cortados em 96/64/64 bytes;
   - prazo de 120 s; o cliente que caiu é detectado a cada 2 s;
   - só o pedido mais antigo vai no campo `pending` do `/api/agent-status` e no tópico `pc/agentes/pedido`.
-- [ ] Regras de `can_approve`, sem exceção:
+- [x] Regras de `can_approve`, sem exceção: *(`can_approve_rules_for_claude_and_codex_and_truncation` + `safe_shell_command_whitelist_and_chaining_blocks`)*
   - **pergunta do Claude:** uma questão, sem múltipla escolha, e uma opção cujo rótulo termina em `(recommended)`. Sem marcador, não aprova (nunca inventar);
   - **pergunta do Codex:** 2 ou 3 opções e exatamente uma recomendada;
   - **permissão do Codex:** só a faixa segura (`ls`/`cat`/`head`/`tail`/`wc`/`grep`/`rg` sem opções; `git status`/`diff`/`log`/`show`/`branch`; `npm test` / `npm run test` / `npm run build`; `cargo test` / `cargo build`; `go test`; `pytest`; `python -m unittest`; `cmake --build`; `make`/`ninja` com alvos `all`/`build`/`test`/`check`; `idf.py build`), bloqueando `; & | > <` acento grave `$` e quebra de linha;
   - texto cortado bloqueia a aprovação.
-- [ ] Resposta na mesma sessão:
+- [x] Resposta na mesma sessão: *(`build_claude_question_hook_response`, `build_permission_hook_response`, `build_codex_question_response`, `HttpResponse::empty_ok`)*
   - **pergunta do Claude:** `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{"questions":[...],"answers":{"<pergunta>":"<rótulo>"}}}}`;
   - **permissão:** `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny"}}}`;
   - **Codex `ask`:** `{"status":"answered","option_index":i,"answer":"..."}` ou `{"status":"computer"}`;
   - **sem decisão:** corpo vazio, e o terminal assume.
-- [ ] Decisões aceitas:
+- [x] Decisões aceitas: *(`server.rs` + `mqtt.rs` + `interactions.rs`: `resolve_http`, `panic_http`, `resolve_mqtt`)*
   - **rede local:** `POST /api/interaction/<id>`, com HMAC v2 `v2|<provider>|<id>|<view_sha256>|<verdict>|<ts>` e a chave da sala;
   - **pânico:** `POST /api/panic`;
   - **MQTT:** `pc/agentes/decisao`.
   - Em todas: `ts` a ±90 s, `view_sha256` igual, uso único e a primeira resposta vence.
-- [ ] Substituir o `Esp32AgentPanelState` atual (aprovação de permissão da L9.6) por esta guarda, mantendo `/api/agents` enquanto a placa antiga existir.
-- [ ] Checkpoint L11.2: testes com os vetores do VibePulse (`test-vectors/`) para HMAC, `view_sha256`, faixa segura, regra de recomendação, prazo, cliente caído e "silêncio nunca aprova".
+- [x] Substituir o `Esp32AgentPanelState` atual (aprovação de permissão da L9.6) por esta guarda, mantendo `/api/agents` enquanto a placa antiga existir. *(`esp32_bridge/mod.rs` + `server.rs` + `legacy_agents_snapshot`)*
+- [x] Checkpoint L11.2: testes com os vetores do VibePulse (`test-vectors/`) para HMAC, `view_sha256`, faixa segura, regra de recomendação, prazo, cliente caído e "silêncio nunca aprova". *(`fixed_hmac_and_view_sha256_vectors_match_board_and_vibepulse`, `silence_never_approves_across_all_rejection_cases`, `queue_limits_8_pending_and_oldest_first`, `l11_2_loopback_hook_guards_and_end_to_end_interactions`)*
 
 ## L11.3 — Previsão de ritmo e semanal do modelo
 

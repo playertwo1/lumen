@@ -171,6 +171,7 @@ pub trait MqttCallbacks: Send + Sync + 'static {
     fn on_task_delete(&self, entity_id: &str);
     fn on_settle_prune(&self, seen_task_ids: &HashSet<String>, retained_count: usize);
     fn on_media_action(&self, action: &str) -> Option<MediaStatePayload>;
+    fn on_agent_decision(&self, _plain_json: &str) {}
 }
 
 #[derive(Debug)]
@@ -283,6 +284,7 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
         let tasks_sub_topic = format!("sm/{room}/tarefas/+");
         let media_action_topic = format!("sm/{room}/pc/midia");
         let media_state_topic = format!("sm/{room}/pc/midia/estado");
+        let agent_decision_topic = format!("sm/{room}/pc/agentes/decisao");
         let task_topic_prefix = format!("sm/{room}/tarefas/");
 
         let mut suback_tasks_ok = false;
@@ -362,6 +364,7 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
                                 SubscribeFilter::new(presence_board_topic.clone(), QoS::AtLeastOnce),
                                 SubscribeFilter::new(tasks_sub_topic.clone(), QoS::AtLeastOnce),
                                 SubscribeFilter::new(media_action_topic.clone(), QoS::AtLeastOnce),
+                                SubscribeFilter::new(agent_decision_topic.clone(), QoS::AtLeastOnce),
                             ];
                             let _ = client.subscribe_many(filters).await;
 
@@ -414,6 +417,14 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
                                                     }
                                                 }
                                             }
+                                        }
+                                    }
+                                }
+                            } else if topic == agent_decision_topic {
+                                if let Ok(env_str) = String::from_utf8(payload) {
+                                    if let Some((from, plain_json)) = decrypt_incoming_envelope(&key, &env_str, &state) {
+                                        if from != "lumen" {
+                                            callbacks.on_agent_decision(&plain_json);
                                         }
                                     }
                                 }

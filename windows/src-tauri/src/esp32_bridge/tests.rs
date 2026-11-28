@@ -182,15 +182,20 @@ async fn loopback_api_panel_gates_tokens_agents_and_replay_409() {
     assert_eq!(dec2.status(), 409);
 
     // PC-side settlement clears pending approval -> ESP32 gets 409
-    let pipe_esp_id = rt.agent_panel.lock().unwrap().on_permission(
-        Some("pipe-99".into()),
-        "Claude",
-        "/repo/lumen",
-        "Bash",
-        "echo hi",
-        Esp32Runtime::now_secs(),
-    );
-    rt.agent_panel.lock().unwrap().clear_by_pipe_id("pipe-99");
+    let pipe_esp_id = rt
+        .interactions
+        .park_pipe_or_legacy(
+            Some("pipe-99".into()),
+            "Claude",
+            "/repo/lumen",
+            "Bash",
+            "echo hi",
+            super::interactions::HOLD_SECS,
+            super::interactions::InteractionStore::now_ms(),
+        )
+        .unwrap();
+    rt.interactions
+        .clear_by_pipe_id("pipe-99", super::interactions::InteractionStore::now_ms());
     let dec_cleared = client
         .post(format!("{base}/api/agents/decide"))
         .json(&json!({ "id": pipe_esp_id, "decision": "allow" }))
@@ -306,6 +311,353 @@ async fn legacy_secrets_kept_until_mqtt_saved_then_migrated_and_cleared() {
         .await
         .unwrap();
     assert_eq!(hmac_after.status(), 200);
+
+    let _ = tx.send(true);
+}
+
+#[tokio::test]
+async fn l11_2_loopback_hook_guards_and_end_to_end_interactions() {
+    use super::interactions;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (base, _key, rt, tx) = spawn_loopback_server(true, false).await;
+    let room_key = "sala-teste-0123456789abcdef";
+    *rt.mqtt_room_key.lock().unwrap() = Some(room_key.to_string());
+    *rt.mqtt_voice_bearer.lock().unwrap() = Some(crypto::voice_bearer_hex(room_key));
+
+    let port: u16 = base
+        .rsplit_once(':')
+        .unwrap()
+        .1
+        .parse()
+        .unwrap();
+    let client = reqwest::Client::new();
+
+    // 1. Hook guards: Host estranho -> 403; Origin presente -> 403; Content-Type text/plain -> 415
+    for path in [
+        "/api/hook/question",
+        "/api/hook/permission",
+        "/api/codex/question",
+        "/api/codex/permission",
+    ] {
+        let bad_host = client
+            .post(format!("{base}{path}"))
+            .header("Host", "attacker.example")
+            .header("Content-Type", "application/json")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(bad_host.status(), 403, "expected 403 for bad Host on {path}");
+
+        let bad_origin = client
+            .post(format!("{base}{path}"))
+            .header("Origin", "https://attacker.example")
+            .header("Content-Type", "application/json")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(bad_origin.status(), 403, "expected 403 for Origin on {path}");
+
+        let bad_ct = client
+            .post(format!("{base}{path}"))
+            .header("Content-Type", "text/plain")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(bad_ct.status(), 415, "expected 415 for text/plain on {path}");
+    }
+
+    // IP não-loopback na validação direta -> 403
+    assert!(!server::is_loopback_ip("192.168.1.20".parse().unwrap()));
+    assert!(server::is_loopback_ip("127.0.0.1".parse().unwrap()));
+
+    // 2. Claude PreToolUse (AskUserQuestion) fica segurado até POST /api/interaction/<id> com HMAC v2
+    let base_cl = base.clone();
+    let hook_task = tokio::spawn(async move {
+        reqwest::Client::new()
+            .post(format!("{base_cl}/api/hook/question"))
+            .json(&json!({
+                "session_id": "s-claude",
+                "cwd": "C:\\projetos\\lumen",
+                "hook_event_name": "PreToolUse",
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [{
+                        "question": "Qual abordagem usar?",
+                        "header": "Auth",
+                        "multiSelect": false,
+                        "options": [
+                            { "label": "Manter atual", "description": "Simples" },
+                            { "label": "Nova camada (Recommended)", "description": "Mais limpa" }
+                        ]
+                    }]
+                }
+            }))
+            .send()
+            .await
+            .unwrap()
+    });
+
+    // Aguarda pending aparecer no /api/agent-status
+    let mut pending_val = None;
+    for _ in 0..40 {
+        let st: Value = client
+            .get(format!("{base}/api/agent-status"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if let Some(p) = st.get("pending") {
+            pending_val = Some(p.clone());
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let pending = pending_val.expect("pending presente em /api/agent-status");
+    let req_id = pending["request_id"].as_str().unwrap().to_string();
+    let view_sha = pending["view_sha256"].as_str().unwrap().to_string();
+    assert_eq!(pending["provider"], "claude");
+    assert_eq!(pending["kind"], "question");
+    assert_eq!(pending["can_approve"], true);
+    assert_eq!(pending["title"], "Nova camada");
+
+    let ts = Esp32Runtime::now_secs() as i64;
+    let mac = interactions::sign_answer_v2(
+        room_key,
+        "claude",
+        &req_id,
+        &view_sha,
+        "approve",
+        ts,
+    )
+    .unwrap();
+    let ans = client
+        .post(format!("{base}/api/interaction/{req_id}"))
+        .json(&json!({
+            "provider": "claude",
+            "view_sha256": view_sha,
+            "verdict": "approve",
+            "ts": ts,
+            "hmac": mac
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ans.status(), 200);
+
+    let hook_resp = hook_task.await.unwrap();
+    assert_eq!(hook_resp.status(), 200);
+    let hook_json: Value = hook_resp.json().await.unwrap();
+    assert_eq!(
+        hook_json["hookSpecificOutput"]["permissionDecision"],
+        "allow"
+    );
+    assert_eq!(
+        hook_json["hookSpecificOutput"]["updatedInput"]["answers"]["Qual abordagem usar?"],
+        "Nova camada (Recommended)"
+    );
+
+    // 3. Codex MCP question (/api/codex/question) + panic (/api/panic) -> status computer deny
+    let base_cx = base.clone();
+    let codex_task = tokio::spawn(async move {
+        reqwest::Client::new()
+            .post(format!("{base_cx}/api/codex/question"))
+            .json(&json!({
+                "cwd": "/repo/lumen",
+                "session_id": "s-codex",
+                "turn_id": "t-1",
+                "question": "Rodar agora?",
+                "options": [
+                    { "label": "Sim", "recommended": true },
+                    { "label": "Não" }
+                ]
+            }))
+            .send()
+            .await
+            .unwrap()
+    });
+
+    for _ in 0..40 {
+        if rt
+            .interactions
+            .pending_count(interactions::InteractionStore::now_ms())
+            == 1
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let ts_p = Esp32Runtime::now_secs() as i64;
+    let panic_mac = interactions::sign_panic(room_key, ts_p).unwrap();
+    let panic_resp = client
+        .post(format!("{base}/api/panic"))
+        .json(&json!({ "verdict": "deny", "ts": ts_p, "hmac": panic_mac }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(panic_resp.status(), 200);
+    let panic_json: Value = panic_resp.json().await.unwrap();
+    assert_eq!(panic_json["denied"], 1);
+
+    let codex_resp = codex_task.await.unwrap();
+    let codex_json: Value = codex_resp.json().await.unwrap();
+    assert_eq!(codex_json["status"], "computer");
+    assert_eq!(codex_json["reason"], "deny");
+
+    // 4. Cliente caído: conecta, envia POST /api/codex/permission e fecha socket -> vaga liberada em <= 2s
+    let perm_body = serde_json::to_vec(&json!({
+        "hook_event_name": "PermissionRequest",
+        "session_id": "s-ghost",
+        "turn_id": "t-ghost",
+        "cwd": "/repo/lumen",
+        "tool_name": "Shell",
+        "tool_input": { "command": "cargo test" }
+    }))
+    .unwrap();
+    let mut sock = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    let raw_req = format!(
+        "POST /api/codex/permission HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        perm_body.len()
+    );
+    sock.write_all(raw_req.as_bytes()).await.unwrap();
+    sock.write_all(&perm_body).await.unwrap();
+    sock.flush().await.unwrap();
+
+    for _ in 0..40 {
+        if rt
+            .interactions
+            .pending_count(interactions::InteractionStore::now_ms())
+            == 1
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        rt.interactions
+            .pending_count(interactions::InteractionStore::now_ms()),
+        1
+    );
+    drop(sock);
+    let mut freed = false;
+    for _ in 0..60 {
+        if rt
+            .interactions
+            .pending_count(interactions::InteractionStore::now_ms())
+            == 0
+        {
+            freed = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(freed, "cliente caído deve liberar a vaga dentro de 2s");
+
+    // 5. Decisão via MQTT (pc/agentes/decisao) resolve o pedido estacionado
+    let ev_mqtt = json!({
+        "hook_event_name": "PermissionRequest",
+        "session_id": "s-mqtt",
+        "turn_id": "t-mqtt",
+        "cwd": "/repo/lumen",
+        "tool_name": "Shell",
+        "tool_input": { "command": "cargo build" }
+    });
+    let base_mq = base.clone();
+    let mq_task = tokio::spawn(async move {
+        reqwest::Client::new()
+            .post(format!("{base_mq}/api/codex/permission"))
+            .json(&ev_mqtt)
+            .send()
+            .await
+            .unwrap()
+    });
+    let mut mq_pending = None;
+    for _ in 0..40 {
+        if let Some(p) = rt
+            .interactions
+            .pending_public(interactions::InteractionStore::now_ms())
+        {
+            mq_pending = Some(p);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let mq_p = mq_pending.unwrap();
+    let mq_dec = json!({
+        "request_id": mq_p["request_id"],
+        "view_sha256": mq_p["view_sha256"],
+        "verdict": "approve",
+        "ts": Esp32Runtime::now_secs() as i64
+    })
+    .to_string();
+    super::handle_mqtt_agent_decision(&rt, &mq_dec);
+    let mq_resp: Value = mq_task.await.unwrap().json().await.unwrap();
+    assert_eq!(
+        mq_resp["hookSpecificOutput"]["decision"]["behavior"],
+        "allow"
+    );
+
+    // 6. Terminal ("terminal") retorna corpo vazio no permission hook (silêncio nunca aprova)
+    let mut raw_sock = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    let term_req = format!(
+        "POST /api/hook/permission HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        perm_body.len()
+    );
+    raw_sock.write_all(term_req.as_bytes()).await.unwrap();
+    raw_sock.write_all(&perm_body).await.unwrap();
+    raw_sock.flush().await.unwrap();
+
+    let mut term_pending = None;
+    for _ in 0..40 {
+        if let Some(p) = rt
+            .interactions
+            .pending_public(interactions::InteractionStore::now_ms())
+        {
+            term_pending = Some(p);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let tp = term_pending.unwrap();
+    let ts_t = Esp32Runtime::now_secs() as i64;
+    let mac_t = interactions::sign_answer_v2(
+        room_key,
+        "claude",
+        tp["request_id"].as_str().unwrap(),
+        tp["view_sha256"].as_str().unwrap(),
+        "terminal",
+        ts_t,
+    )
+    .unwrap();
+    let resp_t = client
+        .post(format!("{base}/api/interaction/{}", tp["request_id"].as_str().unwrap()))
+        .json(&json!({
+            "provider": "claude",
+            "view_sha256": tp["view_sha256"],
+            "verdict": "terminal",
+            "ts": ts_t,
+            "hmac": mac_t
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp_t.status(), 200);
+
+    let mut raw_out = Vec::new();
+    raw_sock.read_to_end(&mut raw_out).await.unwrap();
+    let raw_str = String::from_utf8_lossy(&raw_out);
+    assert!(raw_str.starts_with("HTTP/1.1 200 OK\r\n"));
+    let body_after_headers = raw_str.split_once("\r\n\r\n").unwrap().1;
+    assert!(body_after_headers.is_empty(), "terminal deve retornar corpo vazio");
 
     let _ = tx.send(true);
 }
