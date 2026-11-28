@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.7.32",
+      "items": [
+        {
+          "icon": "shield",
+          "title": { "pt-BR": "Placa ESP32 por MQTT, em qualquer rede" },
+          "detail": { "pt-BR": "Cole o código da placa em Integrações. Tarefas, mídia e agentes vão por broker cifrado, também fora de casa." }
+        },
+        {
+          "icon": "chat",
+          "title": { "pt-BR": "Responda os agentes pela placa" },
+          "detail": { "pt-BR": "Aprove perguntas do Claude Code e do Codex pela placa ou pelo celular. Sem resposta, nada é aprovado." }
+        },
+        {
+          "icon": "clock",
+          "title": { "pt-BR": "Previsão e histórico de cota" },
+          "detail": { "pt-BR": "A placa mostra quando a cota deve acabar e o histórico de picos das últimas 20 semanas." }
+        }
+      ]
+    },
+    {
       "version": "0.7.31",
       "items": [
         {

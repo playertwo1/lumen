@@ -1,5 +1,12 @@
 # Changelog
 
+## Windows 0.7.32 — 28 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Placa ESP32 por MQTT (L10):** o Lumen conversa com a placa e com a Segunda Mente por um broker MQTT na nuvem, com TLS e conteúdo cifrado (AES-GCM), em casa e fora. O pareamento é feito colando o código da placa em Integrações → Placa ESP32-S3. Tarefas sincronizam por tópicos retidos, a mídia é controlada pelo MQTT e `/v1/voice` exige bearer HMAC da chave da sala.
+- **Saem o código de 6 dígitos e a ponte pelo relay:** o pareamento de 6 dígitos, as rotas HTTP antigas (`/v1/tasks/sync`, `/v1/media`) e a sala de bridge do relay Cloudflare foram removidos; a placa precisa estar com o firmware MQTT.
+- **Agentes e cotas na placa (L11):** monitor de Claude Code e Codex (`/api/agent-status` v2), perguntas e permissões seguras até a placa ou o celular responderem com HMAC v2 (silêncio nunca aprova), previsão de ritmo da cota com histórico de 8 dias, Max Tracker de 400 dias (`/api/max-tracker`) e publicação de tudo pelo MQTT.
+- **Hooks com consentimento:** "Responder agentes pela placa" em Integrações → Placa, desligado por padrão, mostra o que será escrito antes de instalar os hooks do Claude Code e do Codex, com backup e remoção limpa.
+
 ## Windows 0.7.31 — 27 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Uso zerado na placa ESP32:** quando a janela de cota do Codex, Claude ou Antigravity já zerou, o painel "Uso" da placa passa a mostrar 0% e tempo zerado (`—`) em vez de porcentagens antigas e "zera em 0min".
