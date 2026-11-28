@@ -8,6 +8,7 @@ pub mod agent_status;
 pub mod audio_wav;
 pub mod crypto;
 pub mod interactions;
+pub mod max_tracker;
 pub mod mqtt;
 pub mod relay;
 pub mod server;
@@ -85,6 +86,7 @@ pub struct Esp32Runtime {
     pub claude_model_week: Mutex<usage_history::ClaudeModelWeekQuota>,
     pub agy_quota: Mutex<ClaudeQuotaCache>,
     pub usage_history: Arc<usage_history::UsageHistoryStore>,
+    pub max_tracker: Arc<max_tracker::MaxTrackerStore>,
     pub interactions: Arc<interactions::InteractionStore>,
     pub agent_monitor: Arc<agent_status::AgentStatusMonitor>,
     pub mqtt_state: Arc<mqtt::MqttRuntimeState>,
@@ -122,6 +124,16 @@ impl Esp32Runtime {
                 std::process::id()
             ))
         };
+        let max_tracker_path = if app.is_some() {
+            max_tracker::default_max_tracker_path()
+        } else {
+            static TRACKER_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let n = TRACKER_SEQ.fetch_add(1, Ordering::Relaxed);
+            std::env::temp_dir().join(format!(
+                "lumen-esp32-rt-max-tracker-{}-{n}.json",
+                std::process::id()
+            ))
+        };
         Arc::new(Self {
             app,
             keys: Mutex::new(initial_keys),
@@ -134,6 +146,7 @@ impl Esp32Runtime {
             claude_model_week: Mutex::new(usage_history::ClaudeModelWeekQuota::default()),
             agy_quota: Mutex::new(ClaudeQuotaCache::default()),
             usage_history: Arc::new(usage_history::UsageHistoryStore::new(history_path)),
+            max_tracker: Arc::new(max_tracker::MaxTrackerStore::new(max_tracker_path)),
             interactions: Arc::new(interactions::InteractionStore::new(true)),
             agent_monitor: Arc::new(agent_status::AgentStatusMonitor::new()),
             mqtt_state,
@@ -847,6 +860,23 @@ pub(crate) fn build_enriched_usage_payload(rt: &Esp32Runtime) -> serde_json::Val
         let _ = rt.usage_history.record_many(&samples, Some(now_sec));
     }
 
+    if !snap.claude_stale {
+        let _ = rt.max_tracker.observe_quota(
+            "claude",
+            snap.claude_session_pct,
+            snap.claude_week_pct,
+            now_sec,
+        );
+    }
+    if !snap.codex_stale {
+        let _ = rt.max_tracker.observe_quota(
+            "codex",
+            snap.codex_session_pct,
+            snap.codex_week_pct,
+            now_sec,
+        );
+    }
+
     let claude_fc = match claude_week_reset {
         Some(reset_at) => rt.usage_history.forecast("claude", "week", reset_at, now_sec),
         None => usage_history::ProviderForecast {
@@ -867,6 +897,13 @@ pub(crate) fn build_enriched_usage_payload(rt: &Esp32Runtime) -> serde_json::Val
     let model_week = rt.claude_model_week.lock().unwrap().clone();
     usage_history::merge_model_week_into_usage(&mut payload, &model_week);
     payload
+}
+
+pub(crate) fn build_max_tracker_payload(rt: &Esp32Runtime) -> serde_json::Value {
+    let claude_dir = agent_status::default_claude_projects_dir();
+    let codex_dir = agent_status::default_codex_sessions_dir();
+    rt.max_tracker.backfill_step(&claude_dir, &codex_dir);
+    rt.max_tracker.snapshot(Esp32Runtime::now_secs())
 }
 
 pub(crate) fn build_live_tokens_snapshot(rt: &Esp32Runtime) -> tokens_agents::TokensSnapshot {

@@ -766,6 +766,15 @@ async fn handle_api_route(req: HttpRequest, rt: &Arc<Esp32Runtime>) -> HttpRespo
             .unwrap_or_else(|_| json!({ "v": 2, "seq": 0, "agents": { "claude": { "active_count": 0, "jobs": [] }, "codex": { "active_count": 0, "jobs": [] } } }));
             HttpResponse::json(200, "OK", &snap)
         }
+        ("GET", "/api/max-tracker") => {
+            let rt_bg = rt.clone();
+            let payload = tokio::task::spawn_blocking(move || {
+                super::build_max_tracker_payload(&rt_bg)
+            })
+            .await
+            .unwrap_or_else(|_| json!({ "v": 1, "error": "max_tracker_unavailable" }));
+            HttpResponse::json(200, "OK", &payload)
+        }
         ("GET", "/api/agents") => {
             let now_ms = InteractionStore::now_ms();
             let now_sec = Esp32Runtime::now_secs();

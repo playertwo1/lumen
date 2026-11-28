@@ -75,10 +75,10 @@ Entrega isso pela rede local (`/api/*`, porta 8787/8737, como na L9.6) e pelo MQ
 
 ## L11.4 — Max Tracker
 
-- [ ] Histórico de 400 dias em `%LOCALAPPDATA%\Lumen\max-tracker.json` (schema v1 do VibePulse), alimentado pela cota (pico diário da janela de 5 h; semana marcada só com 100%) e pelo volume de tokens dos JSONL (com leitura retroativa limitada a 1 MiB por passo).
-- [ ] Derivados: sequência de dias programando, semanas seguidas no máximo, semanas no máximo, pico médio de 20 semanas, dias no máximo e níveis de volume em tercis.
-- [ ] `GET /api/max-tracker` v1, com 20 semanas × 7 dias por provedor, `[pct, nível]` e `-1` sem dado.
-- [ ] Checkpoint L11.4: testes portados de `test_max_tracker.py`.
+- [x] Histórico de 400 dias em `%LOCALAPPDATA%\Lumen\max-tracker.json` (schema v1 do VibePulse), alimentado pela cota (pico diário da janela de 5 h; semana marcada só com 100%) e pelo volume de tokens dos JSONL (com leitura retroativa limitada a 1 MiB por passo).
+- [x] Derivados: sequência de dias programando, semanas seguidas no máximo, semanas no máximo, pico médio de 20 semanas, dias no máximo e níveis de volume em tercis.
+- [x] `GET /api/max-tracker` v1, com 20 semanas × 7 dias por provedor, `[pct, nível]` e `-1` sem dado.
+- [x] Checkpoint L11.4: testes portados de `test_max_tracker.py`.
 
 ## L11.5 — Publicação pelo MQTT (era a L10.7)
 

@@ -268,6 +268,28 @@ async fn loopback_agent_status_v2_endpoint() {
 }
 
 #[tokio::test]
+async fn loopback_max_tracker_endpoint() {
+    let (base, _key, _rt, tx) = spawn_loopback_server(true, true).await;
+    let client = reqwest::Client::new();
+
+    let r = client
+        .get(format!("{base}/api/max-tracker"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let j: Value = r.json().await.unwrap();
+    assert_eq!(j["v"], 1);
+    assert_eq!(j["weeks"], 20);
+    assert!(j["claude"].is_object());
+    assert!(j["codex"].is_object());
+    assert_eq!(j["claude"]["days"].as_array().unwrap().len(), 140);
+    assert_eq!(j["claude"]["weekMaxed"].as_array().unwrap().len(), 20);
+
+    let _ = tx.send(true);
+}
+
+#[tokio::test]
 async fn legacy_secrets_kept_until_mqtt_saved_then_migrated_and_cleared() {
     let _guard = PAUSED_GUARD.lock().await;
     crate::integrations::PAUSED.store(false, Ordering::SeqCst);
