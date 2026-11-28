@@ -2,6 +2,20 @@
 
 # Releases Windows do fork
 
+### Windows 0.7.34 — menos tráfego MQTT do status de agentes e uso
+
+- [x] Pedido do dono em 2026-11-28 para reduzir o tráfego MQTT de `pc/agentes/status` dentro da cota grátis de 1 GB/mês do EMQX Serverless. Causa: `spawn_telemetry_loop` em `windows/src-tauri/src/esp32_bridge/mod.rs` mantinha `agents.*.jobs[].updated_ms` na normalização, fazendo cada tique de 500 ms contar como mudança. Correção em `cfcc8ae6`: funções puras `normalize_agent_status` (remove `seq`, `pending.expires_in_*` e `jobs[].updated_ms`) e `status_publish_decision` (imediato >= 1 s em `active_count`/`task_id`/`state`/`pending`, >= 10 s em `activity`/`model`/`effort`, refresh a cada 60 s apenas com jobs ativos); `pc/uso` documentado (`hub.c` não desconta o tempo localmente) e limitado a <= 1 msg / 60 s. Release em `33b659a7`.
+- [x] Validações locais: `python scripts/test-whats-new.py windows` (`0.7.34: 1 items in 1 languages`), `npx tsc --noEmit`, `npm test` (795/795), `npm run build` e `cargo test --lib --locked` (1056 passaram, 0 falhas, 10 ignorados — inclui 6 testes novos de `status_publish_decision`).
+- [x] Fumaça real e medição na COM7 antes de publicar: `windows/release/lumen.exe` permaneceu aberto (> 22 s no teste de fumaça e > 125 s na medição). Com agente Claude ativo (`claude.active_count` 1→7 em `/api/agent-status`), o `rx` na `COM7` (`!h mqtt`) foi: antes (0.7.33) **44 msg/min**; depois (0.7.34) `rx=6` (T=0s) → `rx=10` (T=60s) → `rx=14` (T=125s), ou seja, **4 msg/min** (~91% de redução, abaixo do teto de 8/min).
+- [x] Empacotamento e publicação locais (`npm run pack`, `LTO=thin`, `CODEGEN_UNITS=4`). Microsoft Defender em `windows/release/` e nos instaladores baixados (`found no threats`). Tag [`windows-v0.7.34`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.34) (`--latest=false`) e [`windows-latest`](https://github.com/playertwo1/lumen/releases/tag/windows-latest) publicados.
+- [x] Digests do GitHub conferidos com o SHA-256 local e dos instaladores baixados:
+  - `Lumen-Windows-0.7.34-setup.exe` / `Lumen-Windows-setup.exe`: `c4c640628ea56f3b04c63ff6561436171c48644256060fcd5bf5c80ce6a510eb`
+  - `Lumen-Windows-0.7.34.msi` / `Lumen-Windows.msi`: `16aa18aa8898275b4197b6dd111006b381f02f0dabd0f2f71295f1e46966b119`
+  - `lumen.exe`: `b2a3e4f2378fc7b3ed94ea091f7760899b67cc281f4c840f1de8d17d763663cd`
+  - `lumen-hook.exe`: `668b96357086d8bf20fe17060c17a1a4196a954c800644cd1ab686db14b612f5`
+- [ ] **NOT_RUN:** script sintético de upgrade MSI/NSIS (`scripts/test-lumen-upgrade.ps1`).
+- [ ] **NOT_RUN:** conferência visual na tela da placa de que os agentes continuam exibidos por > 2 min seguidos sem sumir e voltar, e validação completa da L10/L11.7 no uso real.
+
 ### Windows 0.7.33 — Lumen não fecha ao parear a placa por MQTT
 
 - [x] Pedido do dono em 2026-11-28 ("Lançar a 0.7.32", com o relato "colei o código, o app fechou"). Na 0.7.32, colar o código da placa e todo início seguinte fechavam o app: `spawn_mqtt_loop` chamava `tokio::spawn` fora de um runtime Tokio (pânico "there is no reactor running" com `panic = "abort"`, exceção `0xc0000409`). Correção em `ed2ca1a5`: `tauri::async_runtime::spawn` e teste de regressão que falha sem a correção. No mesmo commit: o fechamento do MQTT consulta o eventloop até enviar o DISCONNECT (antes status vazio e presença 0 nunca saíam), e os testes de loopback e e2e deixam de depender do cofre e dos agentes reais do PC. Release em `643b7c00`.
