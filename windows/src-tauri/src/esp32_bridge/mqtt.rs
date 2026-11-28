@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rumqttc::{AsyncClient, Event, Incoming, LastWill, MqttOptions, QoS, SubscribeFilter};
+use rumqttc::{AsyncClient, Event, Incoming, LastWill, MqttOptions, Outgoing, QoS, SubscribeFilter};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -325,7 +325,9 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
     let room = cfg.room.clone();
     let key = cfg.key.clone();
 
-    tokio::spawn(async move {
+    // Chamado também da thread principal e de comandos Tauri síncronos, onde não há
+    // runtime Tokio: `tokio::spawn` entra em pânico ali e derruba o app (0.7.32).
+    tauri::async_runtime::spawn(async move {
         let presence_lumen_topic = format!("sm/{room}/presenca/lumen");
         let presence_board_topic = format!("sm/{room}/presenca/placa");
         let tasks_sub_topic = format!("sm/{room}/tarefas/+");
@@ -552,6 +554,18 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
                                 )
                                 .await;
                             let _ = client.disconnect().await;
+                            // O rumqttc só envia o que foi enfileirado enquanto o eventloop é
+                            // consultado: sem isto, status vazio, presença e DISCONNECT se perdiam.
+                            if is_connected {
+                                let deadline = tokio::time::Instant::now() + Duration::from_millis(1000);
+                                loop {
+                                    match tokio::time::timeout_at(deadline, eventloop.poll()).await {
+                                        Ok(Ok(Event::Outgoing(Outgoing::Disconnect))) => break,
+                                        Ok(Ok(_)) => {}
+                                        _ => break,
+                                    }
+                                }
+                            }
                             state.set_connected(false);
                             if let Some(tx) = done {
                                 let _ = tx.send(());
@@ -699,6 +713,30 @@ mod tests {
                 artist: Some("Artist".into()),
             })
         }
+    }
+
+    #[test]
+    fn spawn_mqtt_loop_outside_tokio_runtime_does_not_panic() {
+        // Regressão da 0.7.32: colar o código da placa chamava `tokio::spawn` sem runtime.
+        let joined = std::thread::spawn(|| {
+            let cfg = MqttConfig {
+                uri: "mqtt://127.0.0.1:1".into(),
+                user: "u".into(),
+                pass: "p".into(),
+                room: "salateste123".into(),
+                key: "00".repeat(32),
+            };
+            spawn_mqtt_loop(
+                cfg,
+                Arc::new(DummyCallbacks),
+                Arc::new(MqttRuntimeState::new()),
+                Duration::from_millis(10),
+            )
+            .map(|_| ())
+        })
+        .join();
+        assert!(joined.is_ok(), "spawn_mqtt_loop entrou em pânico fora de um runtime Tokio");
+        assert!(joined.unwrap().is_ok());
     }
 
     #[test]
@@ -1211,8 +1249,10 @@ mod tests {
 
         // 6. Testa handle.shutdown() verificando pc/agentes/pedido vazio e pc/agentes/status com active_count: 0
         let status_topic = format!("sm/{room}/pc/agentes/status");
-        handle.shutdown().await.unwrap();
+        // Mesma ordem do app (`mod.rs`): para a telemetria antes de fechar o MQTT, senão um
+        // status lido dos agentes reais deste PC pode chegar depois do status vazio.
         let _ = shutdown_tx.send(true);
+        handle.shutdown().await.unwrap();
 
         tokio::time::sleep(Duration::from_millis(200)).await;
         let msgs = placa_msgs.lock().unwrap().clone();

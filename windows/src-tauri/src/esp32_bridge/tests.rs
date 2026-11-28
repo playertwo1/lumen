@@ -16,6 +16,9 @@ async fn spawn_loopback_server(
 ) -> (String, Option<String>, Arc<Esp32Runtime>, watch::Sender<bool>) {
     let rt = Esp32Runtime::new(None);
     rt.keys.lock().unwrap().clear();
+    // `Esp32Runtime::new` lê o cofre real; um PC já pareado não pode mudar o resultado.
+    *rt.mqtt_room_key.lock().unwrap() = None;
+    *rt.mqtt_voice_bearer.lock().unwrap() = None;
     rt.agent_panel_enabled.store(agent_panel, Ordering::SeqCst);
 
     let key = if with_key {
