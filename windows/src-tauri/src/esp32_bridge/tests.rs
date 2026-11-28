@@ -261,3 +261,51 @@ async fn loopback_agent_status_v2_endpoint() {
 
     let _ = tx.send(true);
 }
+
+#[tokio::test]
+async fn legacy_secrets_kept_until_mqtt_saved_then_migrated_and_cleared() {
+    let _guard = PAUSED_GUARD.lock().await;
+    crate::integrations::PAUSED.store(false, Ordering::SeqCst);
+    let (base, legacy_key, rt, tx) = spawn_loopback_server(false, true).await;
+    let legacy_key = legacy_key.unwrap();
+    let client = reqwest::Client::new();
+
+    // Antes de salvar código MQTT: chave legada ainda autentica /v1/voice.
+    let before = client
+        .post(format!("{base}/v1/voice"))
+        .bearer_auth(&legacy_key)
+        .json(&json!({ "text": "antes da migracao", "mock": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(before.status(), 200);
+
+    // Após salvar código MQTT: migração limpa chaves legadas e ativa bearer HMAC de voz.
+    let mut cleared = false;
+    let room_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    rt.complete_mqtt_migration_with(room_key, || {
+        cleared = true;
+    });
+    assert!(cleared);
+    assert!(rt.keys.lock().unwrap().is_empty());
+
+    let legacy_after = client
+        .post(format!("{base}/v1/voice"))
+        .bearer_auth(&legacy_key)
+        .json(&json!({ "text": "legado", "mock": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(legacy_after.status(), 401);
+
+    let hmac_after = client
+        .post(format!("{base}/v1/voice"))
+        .bearer_auth(crypto::voice_bearer_hex(room_key))
+        .json(&json!({ "text": "migrado", "mock": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(hmac_after.status(), 200);
+
+    let _ = tx.send(true);
+}

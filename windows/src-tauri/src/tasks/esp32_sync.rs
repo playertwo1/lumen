@@ -426,9 +426,8 @@ pub(crate) fn apply_mqtt_task_local(
         updated.version = prev_version.saturating_add(1);
 
         local.store.upsert_remote(updated.clone())?;
-        local
-            .sync
-            .enqueue_local_mutation(&updated, prev_version, incoming_updated_ms)?;
+        // Decisão L10.3: mutações recebidas da placa via MQTT não entram na outbox L6,
+        // porque o celular (F17) já sincroniza diretamente pelos tópicos retidos `sm/<sala>/tarefas/+`.
         Ok(true)
     } else {
         let new_item = TodoItem {
@@ -452,15 +451,12 @@ pub(crate) fn apply_mqtt_task_local(
             version: 1,
             deleted_at: None,
         };
-        local.store.upsert_remote(new_item.clone())?;
-        local
-            .sync
-            .enqueue_local_mutation(&new_item, 0, incoming_updated_ms)?;
+        local.store.upsert_remote(new_item)?;
         Ok(true)
     }
 }
 
-/// Apaga localmente uma tarefa quando um payload vazio chega pelo MQTT (sem republicar).
+/// Apaga localmente uma tarefa quando um payload vazio chega pelo MQTT (sem republicar e sem outbox L6).
 pub(crate) fn delete_mqtt_task_local(
     local: &mut LocalState,
     entity_id: &str,
@@ -470,14 +466,10 @@ pub(crate) fn delete_mqtt_task_local(
     if id.is_empty() {
         return Ok(false);
     }
-    let Some(existing) = local.store.get(id).cloned() else {
+    if local.store.get(id).is_none() {
         return Ok(false);
-    };
-    let prev_version = existing.version;
-    let deleted = local.store.delete(id, now_ms)?;
-    local
-        .sync
-        .enqueue_local_mutation(&deleted, prev_version, now_ms)?;
+    }
+    local.store.delete(id, now_ms)?;
     Ok(true)
 }
 
@@ -561,7 +553,6 @@ pub fn apply_mqtt_task(
     };
     if changed {
         let _ = mgr.wake_tx.send(());
-        let _ = mgr.sync_wake_tx.send(());
         let _ = tauri::Emitter::emit(app, "tasks-changed", ());
         emit_task_sync_state(app, &mgr);
     }
@@ -578,7 +569,6 @@ pub fn delete_mqtt_task(app: &AppHandle, entity_id: &str, now_ms: i64) -> Result
     };
     if deleted {
         let _ = mgr.wake_tx.send(());
-        let _ = mgr.sync_wake_tx.send(());
         let _ = tauri::Emitter::emit(app, "tasks-changed", ());
         emit_task_sync_state(app, &mgr);
     }
@@ -610,7 +600,6 @@ pub fn reconcile_mqtt_retained(
     };
     if !res.deleted_ids.is_empty() {
         let _ = mgr.wake_tx.send(());
-        let _ = mgr.sync_wake_tx.send(());
         let _ = tauri::Emitter::emit(app, "tasks-changed", ());
         emit_task_sync_state(app, &mgr);
     }
@@ -787,6 +776,8 @@ mod tests {
         let item = local.store.get("esp-lww-1").unwrap();
         assert_eq!(item.text, "Versao nova");
         assert!(item.done);
+        // Decisão L10.3: tarefas recebidas pelo MQTT não entram na outbox L6.
+        assert!(local.sync.outbox().is_empty());
     }
 
     #[test]

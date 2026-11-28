@@ -191,6 +191,12 @@ impl Esp32Runtime {
             || !self.keys.lock().unwrap().is_empty()
     }
 
+    pub(crate) fn complete_mqtt_migration_with<F: FnOnce()>(&self, room_key: &str, clear_legacy: F) {
+        *self.mqtt_voice_bearer.lock().unwrap() = Some(crypto::voice_bearer_hex(room_key));
+        self.keys.lock().unwrap().clear();
+        clear_legacy();
+    }
+
     pub fn note_lan_activity(&self) {
         *self.lan_last_ok.lock().unwrap() = Some(Instant::now());
     }
@@ -960,10 +966,8 @@ pub fn esp32_save_mqtt_code(
 ) -> Result<Esp32BridgeStatus, String> {
     let parsed = crypto::parse_mqtt_pair_code(&code_json)?;
     save_mqtt_config_to_vault(&parsed)?;
-    *rt.mqtt_voice_bearer.lock().unwrap() = Some(crypto::voice_bearer_hex(&parsed.k));
     // Migração limpa (Q2.6): remove secrets legados depois de configurar o MQTT.
-    rt.keys.lock().unwrap().clear();
-    secrets::clear_legacy_esp32_secrets();
+    rt.complete_mqtt_migration_with(&parsed.k, secrets::clear_legacy_esp32_secrets);
     rt.mqtt_state
         .set_configured(crypto::extract_broker_host(&parsed.uri), parsed.sala.clone());
     let next = update_esp32_settings(&app, |s| {

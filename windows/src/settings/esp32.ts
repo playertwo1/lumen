@@ -109,7 +109,7 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
     class: "path",
   }) as HTMLTextAreaElement;
   const connectMqttBtn = h("button", { class: "primary", text: "Conectar placa" }) as HTMLButtonElement;
-  const removeMqttBtn = h("button", { class: "danger", text: "Remover conexão" }) as HTMLButtonElement;
+  const removeMqttBtn = h("button", { class: "danger", text: "Esquecer placa" }) as HTMLButtonElement;
 
   const mqttHostSpan = h("span", { text: "—" });
   const mqttRoomSpan = h("span", { text: "—" });
@@ -167,7 +167,10 @@ export function esp32Section(makeToggle: Toggle): HTMLElement {
       mqttHostSpan.textContent = st.mqttHost || "—";
       mqttRoomSpan.textContent = st.mqttRoom || "—";
       if (st.mqttError) {
-        mqttStatusSpan.textContent = `Erro: ${st.mqttError}`;
+        mqttStatusSpan.textContent =
+          st.mqttError === "Chave da placa mudou — cole o código novo"
+            ? st.mqttError
+            : `Erro: ${st.mqttError}`;
         mqttStatusSpan.className = "phone-live-pill err";
       } else if (st.mqttConnected) {
         mqttStatusSpan.textContent = "Conectado";

@@ -19,6 +19,39 @@ use tokio::sync::mpsc;
 use super::crypto::{open_mqtt_envelope, seal_mqtt_envelope};
 
 pub const DEFAULT_SETTLE_DURATION: Duration = Duration::from_secs(3);
+pub const REVOKED_KEY_ERROR_MSG: &str = "Chave da placa mudou — cole o código novo";
+
+fn is_valid_envelope_shape(raw: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return false;
+    };
+    v.get("v").and_then(|x| x.as_u64()) == Some(1)
+        && v.get("from").and_then(|x| x.as_str()).is_some_and(|s| !s.trim().is_empty())
+        && v.get("iv").and_then(|x| x.as_str()).is_some()
+        && v.get("ct").and_then(|x| x.as_str()).is_some()
+        && v.get("tag").and_then(|x| x.as_str()).is_some()
+}
+
+pub(crate) fn decrypt_incoming_envelope(
+    key: &str,
+    env_str: &str,
+    state: &MqttRuntimeState,
+) -> Option<(String, String)> {
+    match open_mqtt_envelope(key, env_str) {
+        Ok((from, plain_json)) => {
+            if state.last_error.read().unwrap().as_deref() == Some(REVOKED_KEY_ERROR_MSG) {
+                state.set_last_error(None);
+            }
+            Some((from, plain_json))
+        }
+        Err(_) => {
+            if is_valid_envelope_shape(env_str) {
+                state.set_last_error(Some(REVOKED_KEY_ERROR_MSG.to_string()));
+            }
+            None
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MqttConfig {
@@ -361,7 +394,7 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
                                         retained_tasks_count += 1;
                                     }
                                     if let Ok(env_str) = String::from_utf8(payload) {
-                                        if let Ok((from, plain_json)) = open_mqtt_envelope(&key, &env_str) {
+                                        if let Some((from, plain_json)) = decrypt_incoming_envelope(&key, &env_str, &state) {
                                             if from != "lumen" {
                                                 callbacks.on_task_upsert(entity_id, &plain_json);
                                             }
@@ -370,7 +403,7 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
                                 }
                             } else if topic == media_action_topic {
                                 if let Ok(env_str) = String::from_utf8(payload) {
-                                    if let Ok((from, plain_json)) = open_mqtt_envelope(&key, &env_str) {
+                                    if let Some((from, plain_json)) = decrypt_incoming_envelope(&key, &env_str, &state) {
                                         if from != "lumen" {
                                             if let Ok(action_req) = serde_json::from_str::<MediaActionPayload>(&plain_json) {
                                                 if let Some(media_resp) = callbacks.on_media_action(&action_req.action) {
@@ -738,5 +771,24 @@ mod tests {
         // Encerra cliente limpo
         let _ = handle.shutdown().await;
         board_loop.abort();
+    }
+
+    #[test]
+    fn revoked_key_triggers_expected_error_message_and_recovers() {
+        let state = MqttRuntimeState::new();
+        let old_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let new_key = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+        let env_from_new = seal_mqtt_envelope(new_key, "placa", r#"{"action":"next"}"#).unwrap();
+        assert!(decrypt_incoming_envelope(old_key, &env_from_new, &state).is_none());
+        assert_eq!(
+            state.snapshot().last_error.as_deref(),
+            Some(REVOKED_KEY_ERROR_MSG)
+        );
+
+        // Após atualizar a chave para a nova, o erro de chave revogada limpa.
+        let opened = decrypt_incoming_envelope(new_key, &env_from_new, &state);
+        assert!(opened.is_some());
+        assert_eq!(state.snapshot().last_error, None);
     }
 }
