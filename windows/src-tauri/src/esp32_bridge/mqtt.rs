@@ -171,7 +171,7 @@ pub trait MqttCallbacks: Send + Sync + 'static {
     fn on_task_delete(&self, entity_id: &str);
     fn on_settle_prune(&self, seen_task_ids: &HashSet<String>, retained_count: usize);
     fn on_media_action(&self, action: &str) -> Option<MediaStatePayload>;
-    fn on_agent_decision(&self, _plain_json: &str) {}
+    fn on_agent_decision(&self, _from: &str, _plain_json: &str) {}
 }
 
 #[derive(Debug)]
@@ -186,8 +186,22 @@ pub enum MqttCommand {
     PublishMediaState {
         payload: MediaStatePayload,
     },
+    PublishAgentStatus {
+        plain_json: String,
+    },
+    PublishAgentRequest {
+        plain_json: Option<String>,
+    },
+    PublishUsage {
+        plain_json: String,
+    },
+    PublishMaxTracker {
+        plain_json: String,
+    },
     SyncNow,
-    Shutdown,
+    Shutdown {
+        done: Option<tokio::sync::oneshot::Sender<()>>,
+    },
 }
 
 #[derive(Clone)]
@@ -220,6 +234,34 @@ impl MqttHandle {
             .map_err(|e| format!("Failed to send PublishMediaState command: {e}"))
     }
 
+    pub async fn publish_agent_status(&self, plain_json: String) -> Result<(), String> {
+        self.sender
+            .send(MqttCommand::PublishAgentStatus { plain_json })
+            .await
+            .map_err(|e| format!("Failed to send PublishAgentStatus command: {e}"))
+    }
+
+    pub async fn publish_agent_request(&self, plain_json: Option<String>) -> Result<(), String> {
+        self.sender
+            .send(MqttCommand::PublishAgentRequest { plain_json })
+            .await
+            .map_err(|e| format!("Failed to send PublishAgentRequest command: {e}"))
+    }
+
+    pub async fn publish_usage(&self, plain_json: String) -> Result<(), String> {
+        self.sender
+            .send(MqttCommand::PublishUsage { plain_json })
+            .await
+            .map_err(|e| format!("Failed to send PublishUsage command: {e}"))
+    }
+
+    pub async fn publish_max_tracker(&self, plain_json: String) -> Result<(), String> {
+        self.sender
+            .send(MqttCommand::PublishMaxTracker { plain_json })
+            .await
+            .map_err(|e| format!("Failed to send PublishMaxTracker command: {e}"))
+    }
+
     pub async fn sync_now(&self) -> Result<(), String> {
         self.sender
             .send(MqttCommand::SyncNow)
@@ -228,10 +270,15 @@ impl MqttHandle {
     }
 
     pub async fn shutdown(&self) -> Result<(), String> {
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
         self.sender
-            .send(MqttCommand::Shutdown)
+            .send(MqttCommand::Shutdown {
+                done: Some(done_tx),
+            })
             .await
-            .map_err(|e| format!("Failed to send Shutdown command: {e}"))
+            .map_err(|e| format!("Failed to send Shutdown command: {e}"))?;
+        let _ = tokio::time::timeout(Duration::from_millis(1200), done_rx).await;
+        Ok(())
     }
 }
 
@@ -285,6 +332,10 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
         let media_action_topic = format!("sm/{room}/pc/midia");
         let media_state_topic = format!("sm/{room}/pc/midia/estado");
         let agent_decision_topic = format!("sm/{room}/pc/agentes/decisao");
+        let agent_status_topic = format!("sm/{room}/pc/agentes/status");
+        let agent_request_topic = format!("sm/{room}/pc/agentes/pedido");
+        let usage_topic = format!("sm/{room}/pc/uso");
+        let max_tracker_topic = format!("sm/{room}/pc/max-tracker");
         let task_topic_prefix = format!("sm/{room}/tarefas/");
 
         let mut suback_tasks_ok = false;
@@ -335,16 +386,176 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
                                 }
                             }
                         }
+                        Some(MqttCommand::PublishAgentStatus { plain_json }) => {
+                            if !is_connected {
+                                continue;
+                            }
+                            match seal_mqtt_envelope(&key, "lumen", &plain_json) {
+                                Ok(envelope) => {
+                                    if let Err(e) = client
+                                        .publish(
+                                            agent_status_topic.clone(),
+                                            QoS::AtLeastOnce,
+                                            true,
+                                            envelope.into_bytes(),
+                                        )
+                                        .await
+                                    {
+                                        state.set_last_error(Some(format!(
+                                            "Erro ao publicar status dos agentes: {e}"
+                                        )));
+                                    }
+                                }
+                                Err(e) => {
+                                    state.set_last_error(Some(format!(
+                                        "Erro ao cifrar status dos agentes: {e}"
+                                    )));
+                                }
+                            }
+                        }
+                        Some(MqttCommand::PublishAgentRequest { plain_json }) => {
+                            if !is_connected {
+                                continue;
+                            }
+                            match plain_json {
+                                Some(json) => match seal_mqtt_envelope(&key, "lumen", &json) {
+                                    Ok(envelope) => {
+                                        if let Err(e) = client
+                                            .publish(
+                                                agent_request_topic.clone(),
+                                                QoS::AtLeastOnce,
+                                                true,
+                                                envelope.into_bytes(),
+                                            )
+                                            .await
+                                        {
+                                            state.set_last_error(Some(format!(
+                                                "Erro ao publicar pedido dos agentes: {e}"
+                                            )));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        state.set_last_error(Some(format!(
+                                            "Erro ao cifrar pedido dos agentes: {e}"
+                                        )));
+                                    }
+                                },
+                                None => {
+                                    if let Err(e) = client
+                                        .publish(
+                                            agent_request_topic.clone(),
+                                            QoS::AtLeastOnce,
+                                            true,
+                                            Vec::<u8>::new(),
+                                        )
+                                        .await
+                                    {
+                                        state.set_last_error(Some(format!(
+                                            "Erro ao limpar pedido dos agentes: {e}"
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                        Some(MqttCommand::PublishUsage { plain_json }) => {
+                            if !is_connected {
+                                continue;
+                            }
+                            match seal_mqtt_envelope(&key, "lumen", &plain_json) {
+                                Ok(envelope) => {
+                                    if let Err(e) = client
+                                        .publish(
+                                            usage_topic.clone(),
+                                            QoS::AtLeastOnce,
+                                            true,
+                                            envelope.into_bytes(),
+                                        )
+                                        .await
+                                    {
+                                        state.set_last_error(Some(format!(
+                                            "Erro ao publicar uso: {e}"
+                                        )));
+                                    }
+                                }
+                                Err(e) => {
+                                    state.set_last_error(Some(format!(
+                                        "Erro ao cifrar uso: {e}"
+                                    )));
+                                }
+                            }
+                        }
+                        Some(MqttCommand::PublishMaxTracker { plain_json }) => {
+                            if !is_connected {
+                                continue;
+                            }
+                            match seal_mqtt_envelope(&key, "lumen", &plain_json) {
+                                Ok(envelope) => {
+                                    if let Err(e) = client
+                                        .publish(
+                                            max_tracker_topic.clone(),
+                                            QoS::AtLeastOnce,
+                                            true,
+                                            envelope.into_bytes(),
+                                        )
+                                        .await
+                                    {
+                                        state.set_last_error(Some(format!(
+                                            "Erro ao publicar max-tracker: {e}"
+                                        )));
+                                    }
+                                }
+                                Err(e) => {
+                                    state.set_last_error(Some(format!(
+                                        "Erro ao cifrar max-tracker: {e}"
+                                    )));
+                                }
+                            }
+                        }
                         Some(MqttCommand::SyncNow) => {
                             // Can re-trigger prune callback if needed
                             if is_connected && suback_tasks_ok {
                                 callbacks.on_settle_prune(&seen_task_ids, retained_tasks_count);
                             }
                         }
-                        Some(MqttCommand::Shutdown) | None => {
-                            let _ = client.publish(presence_lumen_topic.clone(), QoS::AtLeastOnce, true, "0".as_bytes().to_vec()).await;
+                        cmd @ (Some(MqttCommand::Shutdown { .. }) | None) => {
+                            let done = match cmd {
+                                Some(MqttCommand::Shutdown { done }) => done,
+                                _ => None,
+                            };
+                            // 1) Limpa pedido pendente com payload vazio retido
+                            let _ = client
+                                .publish(
+                                    agent_request_topic.clone(),
+                                    QoS::AtLeastOnce,
+                                    true,
+                                    Vec::<u8>::new(),
+                                )
+                                .await;
+                            // 2) Publica status com active_count: 0 cifrado e retido
+                            let empty_status = r#"{"v":2,"seq":0,"agents":{"claude":{"active_count":0,"jobs":[]},"codex":{"active_count":0,"jobs":[]}}}"#;
+                            if let Ok(env) = seal_mqtt_envelope(&key, "lumen", empty_status) {
+                                let _ = client
+                                    .publish(
+                                        agent_status_topic.clone(),
+                                        QoS::AtLeastOnce,
+                                        true,
+                                        env.into_bytes(),
+                                    )
+                                    .await;
+                            }
+                            let _ = client
+                                .publish(
+                                    presence_lumen_topic.clone(),
+                                    QoS::AtLeastOnce,
+                                    true,
+                                    "0".as_bytes().to_vec(),
+                                )
+                                .await;
                             let _ = client.disconnect().await;
                             state.set_connected(false);
+                            if let Some(tx) = done {
+                                let _ = tx.send(());
+                            }
                             break;
                         }
                     }
@@ -424,7 +635,7 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
                                 if let Ok(env_str) = String::from_utf8(payload) {
                                     if let Some((from, plain_json)) = decrypt_incoming_envelope(&key, &env_str, &state) {
                                         if from != "lumen" {
-                                            callbacks.on_agent_decision(&plain_json);
+                                            callbacks.on_agent_decision(&from, &plain_json);
                                         }
                                     }
                                 }
@@ -447,7 +658,7 @@ pub fn spawn_mqtt_loop<C: MqttCallbacks>(
                             // Evita loop apertado quando a rede ou o broker falham; Shutdown ainda interrompe.
                             tokio::select! {
                                 cmd = rx.recv() => {
-                                    if matches!(cmd, Some(MqttCommand::Shutdown) | None) {
+                                    if matches!(cmd, Some(MqttCommand::Shutdown { .. }) | None) {
                                         break;
                                     }
                                 }
@@ -586,6 +797,7 @@ mod tests {
         deletes: std::sync::Mutex<Vec<String>>,
         media_actions: std::sync::Mutex<Vec<String>>,
         settles: std::sync::Mutex<Vec<(HashSet<String>, usize)>>,
+        decisions: std::sync::Mutex<Vec<(String, String)>>,
     }
 
     impl RecordingCallbacks {
@@ -595,6 +807,7 @@ mod tests {
                 deletes: std::sync::Mutex::new(Vec::new()),
                 media_actions: std::sync::Mutex::new(Vec::new()),
                 settles: std::sync::Mutex::new(Vec::new()),
+                decisions: std::sync::Mutex::new(Vec::new()),
             }
         }
     }
@@ -622,6 +835,12 @@ mod tests {
                 title: Some("Faixa Teste".into()),
                 artist: Some("Artista Teste".into()),
             })
+        }
+        fn on_agent_decision(&self, from: &str, plain_json: &str) {
+            self.decisions
+                .lock()
+                .unwrap()
+                .push((from.to_string(), plain_json.to_string()));
         }
     }
 
@@ -801,5 +1020,214 @@ mod tests {
         let opened = decrypt_incoming_envelope(new_key, &env_from_new, &state);
         assert!(opened.is_some());
         assert_eq!(state.snapshot().last_error, None);
+    }
+
+    #[tokio::test]
+    async fn mqtt_agent_decision_and_telemetry_e2e_with_embedded_broker() {
+        use crate::esp32_bridge::interactions::{InteractionStore, Verdict};
+        use crate::esp32_bridge::{spawn_telemetry_loop, Esp32Runtime, RuntimeMqttCallbacks};
+        use serde_json::{json, Value};
+
+        let port = start_embedded_broker();
+        let room = "roomagent999";
+        let key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        // 1. Clientes "placa" e "celular"
+        let mut placa_opts = MqttOptions::new(format!("placa-{room}"), "127.0.0.1", port);
+        placa_opts.set_keep_alive(Duration::from_secs(30));
+        let (placa_client, mut placa_el) = AsyncClient::new(placa_opts, 64);
+        let placa_msgs = Arc::new(std::sync::Mutex::new(Vec::<(String, Vec<u8>)>::new()));
+        let placa_msgs_task = placa_msgs.clone();
+        let placa_loop = tokio::spawn(async move {
+            loop {
+                match placa_el.poll().await {
+                    Ok(Event::Incoming(Incoming::Publish(p))) => {
+                        placa_msgs_task
+                            .lock()
+                            .unwrap()
+                            .push((p.topic, p.payload.to_vec()));
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+        });
+        placa_client
+            .subscribe(format!("sm/{room}/#"), QoS::AtLeastOnce)
+            .await
+            .unwrap();
+
+        let mut cel_opts = MqttOptions::new(format!("celular-{room}"), "127.0.0.1", port);
+        cel_opts.set_keep_alive(Duration::from_secs(30));
+        let (cel_client, mut cel_el) = AsyncClient::new(cel_opts, 64);
+        let cel_loop = tokio::spawn(async move {
+            loop {
+                if cel_el.poll().await.is_err() {
+                    break;
+                }
+            }
+        });
+        cel_client
+            .subscribe(format!("sm/{room}/#"), QoS::AtLeastOnce)
+            .await
+            .unwrap();
+
+        // 2. Sobe o Lumen MQTT
+        let rt = Esp32Runtime::new(None);
+        let state = rt.mqtt_state.clone();
+        let cb = Arc::new(RuntimeMqttCallbacks { rt: rt.clone() });
+        let cfg = MqttConfig {
+            uri: format!("mqtt://127.0.0.1:{port}"),
+            user: String::new(),
+            pass: String::new(),
+            room: room.to_string(),
+            key: key.to_string(),
+        };
+        let handle = spawn_mqtt_loop(cfg, cb, state.clone(), Duration::from_millis(100)).unwrap();
+        *rt.mqtt_handle.lock().unwrap() = Some(handle.clone());
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        spawn_telemetry_loop(rt.clone(), shutdown_rx);
+
+        // Aguarda Lumen conectar
+        for _ in 0..50 {
+            if state.connected.load(Ordering::Relaxed) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+        assert!(state.connected.load(Ordering::Relaxed));
+
+        // 3. Estaciona pedido em rt.interactions
+        let q_event = json!({
+            "session_id": "sess-1",
+            "cwd": "C:\\Users\\dev\\projeto-teste",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+                "questions": [{
+                    "question": "Confirmar operação",
+                    "header": "Auth",
+                    "multiSelect": false,
+                    "options": [
+                        {"label": "Executar (recommended)"},
+                        {"label": "Cancelar"}
+                    ]
+                }]
+            }
+        });
+        let parked = rt
+            .interactions
+            .park_claude_question(
+                &q_event,
+                120,
+                InteractionStore::now_ms(),
+            )
+            .expect("parked question");
+
+        let pedido_topic = format!("sm/{room}/pc/agentes/pedido");
+        let decisao_topic = format!("sm/{room}/pc/agentes/decisao");
+
+        // Verifica que placa recebeu pedido cifrado retido
+        let mut got_pedido = false;
+        for _ in 0..60 {
+            let msgs = placa_msgs.lock().unwrap().clone();
+            for (t, p) in msgs {
+                if t == pedido_topic && !p.is_empty() {
+                    let env_str = String::from_utf8(p).unwrap();
+                    let (from, plain) = open_mqtt_envelope(key, &env_str).unwrap();
+                    assert_eq!(from, "lumen");
+                    let val: Value = serde_json::from_str(&plain).unwrap();
+                    assert_eq!(val["request_id"], parked.request_id);
+                    assert_eq!(val["view_sha256"], parked.view_sha256);
+                    got_pedido = true;
+                    break;
+                }
+            }
+            if got_pedido {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(got_pedido, "placa deve receber pc/agentes/pedido cifrado");
+
+        // 4. Publica decisão "approve" de "placa" e logo em seguida "deny" de "celular"
+        let now_sec = Esp32Runtime::now_secs();
+        let approve_plain = json!({
+            "request_id": parked.request_id,
+            "view_sha256": parked.view_sha256,
+            "verdict": "approve",
+            "ts": now_sec
+        })
+        .to_string();
+        let approve_env = seal_mqtt_envelope(key, "placa", &approve_plain).unwrap();
+        placa_client
+            .publish(
+                decisao_topic.clone(),
+                QoS::AtLeastOnce,
+                false,
+                approve_env.into_bytes(),
+            )
+            .await
+            .unwrap();
+
+        let deny_plain = json!({
+            "request_id": parked.request_id,
+            "view_sha256": parked.view_sha256,
+            "verdict": "deny",
+            "ts": now_sec
+        })
+        .to_string();
+        let deny_env = seal_mqtt_envelope(key, "celular", &deny_plain).unwrap();
+        cel_client
+            .publish(
+                decisao_topic.clone(),
+                QoS::AtLeastOnce,
+                false,
+                deny_env.into_bytes(),
+            )
+            .await
+            .unwrap();
+
+        // 5. Verifica que placa venceu (waiter recebe Approve)
+        let waiter_res = tokio::time::timeout(Duration::from_secs(3), parked.rx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(waiter_res, Some(Verdict::Approve));
+
+        // Verifica que pc/agentes/pedido recebe payload vazio retido
+        let mut got_empty_pedido = false;
+        for _ in 0..60 {
+            let msgs = placa_msgs.lock().unwrap().clone();
+            if let Some((_, p)) = msgs.iter().rev().find(|(t, _)| t == &pedido_topic) {
+                if p.is_empty() {
+                    got_empty_pedido = true;
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(got_empty_pedido, "pedido deve ser limpo com payload vazio retido");
+
+        // 6. Testa handle.shutdown() verificando pc/agentes/pedido vazio e pc/agentes/status com active_count: 0
+        let status_topic = format!("sm/{room}/pc/agentes/status");
+        handle.shutdown().await.unwrap();
+        let _ = shutdown_tx.send(true);
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let msgs = placa_msgs.lock().unwrap().clone();
+        let last_pedido = msgs.iter().rev().find(|(t, _)| t == &pedido_topic).unwrap();
+        assert!(last_pedido.1.is_empty(), "shutdown deve publicar pedido vazio");
+
+        let last_status = msgs.iter().rev().find(|(t, _)| t == &status_topic).unwrap();
+        let env_str = String::from_utf8(last_status.1.clone()).unwrap();
+        let (from, plain) = open_mqtt_envelope(key, &env_str).unwrap();
+        assert_eq!(from, "lumen");
+        let val: Value = serde_json::from_str(&plain).unwrap();
+        assert_eq!(val["agents"]["claude"]["active_count"], 0);
+        assert_eq!(val["agents"]["codex"]["active_count"], 0);
+
+        placa_loop.abort();
+        cel_loop.abort();
     }
 }

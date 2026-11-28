@@ -619,7 +619,7 @@ async fn l11_2_loopback_hook_guards_and_end_to_end_interactions() {
         "ts": Esp32Runtime::now_secs() as i64
     })
     .to_string();
-    super::handle_mqtt_agent_decision(&rt, &mq_dec);
+    super::handle_mqtt_agent_decision(&rt, "placa", &mq_dec);
     let mq_resp: Value = mq_task.await.unwrap().json().await.unwrap();
     assert_eq!(
         mq_resp["hookSpecificOutput"]["decision"]["behavior"],

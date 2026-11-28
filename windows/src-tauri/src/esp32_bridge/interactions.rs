@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ring::digest::{digest, SHA256};
@@ -222,6 +222,7 @@ pub struct ParkedHandle {
 pub struct InteractionStore {
     inner: Mutex<StoreInner>,
     reveal_detail: AtomicBool,
+    pub notify: Arc<tokio::sync::Notify>,
 }
 
 impl Default for InteractionStore {
@@ -235,6 +236,7 @@ impl InteractionStore {
         Self {
             inner: Mutex::new(StoreInner::default()),
             reveal_detail: AtomicBool::new(reveal_detail),
+            notify: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -868,6 +870,8 @@ impl InteractionStore {
             kind.as_str()
         ));
 
+        self.notify.notify_waiters();
+
         Some(ParkedHandle {
             request_id,
             provider,
@@ -892,6 +896,7 @@ impl InteractionStore {
                 entry.provider.as_str(),
                 entry.kind.as_str()
             ));
+            self.notify.notify_waiters();
         }
     }
 
@@ -904,13 +909,18 @@ impl InteractionStore {
             .filter(|(_, e)| e.pipe_request_id.as_deref() == Some(pipe_request_id))
             .map(|(k, _)| k.clone())
             .collect();
+        let mut removed_any = false;
         for id in matching {
             if let Some(mut entry) = inner.pending.remove(&id) {
+                removed_any = true;
                 inner.legacy.approval_times.remove(&id);
                 if let Some(tx) = entry.waiter.take() {
                     let _ = tx.send(None);
                 }
             }
+        }
+        if removed_any {
+            self.notify.notify_waiters();
         }
     }
 
@@ -1027,6 +1037,8 @@ impl InteractionStore {
             verdict.as_str()
         ));
 
+        self.notify.notify_waiters();
+
         Ok((
             ResolvedOutcome {
                 verdict,
@@ -1078,6 +1090,9 @@ impl InteractionStore {
                     entry.kind.as_str()
                 ));
             }
+        }
+        if count > 0 {
+            self.notify.notify_waiters();
         }
         (count, pipe_ids)
     }
@@ -1279,6 +1294,7 @@ impl InteractionStore {
         if let Some(tx) = removed.waiter.take() {
             let _ = tx.send(Some(verdict));
         }
+        self.notify.notify_waiters();
         Ok((
             json!({
                 "ok": true,

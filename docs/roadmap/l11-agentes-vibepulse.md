@@ -82,9 +82,9 @@ Entrega isso pela rede local (`/api/*`, porta 8787/8737, como na L9.6) e pelo MQ
 
 ## L11.5 — Publicação pelo MQTT (era a L10.7)
 
-- [ ] Publicar retidos e cifrados `pc/agentes/status` (a cada mudança, no máximo 1 por segundo), `pc/agentes/pedido` (vazio quando não houver), `pc/uso` (quando mudar) e `pc/max-tracker` (no máximo 1 a cada 5 min); assinar `pc/agentes/decisao`.
-- [ ] Ao fechar o Lumen: limpar `pc/agentes/pedido` e marcar o status como vazio, para a placa não mostrar pedido fantasma.
-- [ ] Checkpoint L11.5: teste com broker embutido (`rumqttd`): pedido publicado, decisão da placa e do celular, primeira vence e pedido limpo.
+- [x] Publicar retidos e cifrados `pc/agentes/status` (a cada mudança, no máximo 1 por segundo), `pc/agentes/pedido` (vazio quando não houver), `pc/uso` (quando mudar) e `pc/max-tracker` (no máximo 1 a cada 5 min); assinar `pc/agentes/decisao`.
+- [x] Ao fechar o Lumen: limpar `pc/agentes/pedido` e marcar o status como vazio, para a placa não mostrar pedido fantasma.
+- [x] Checkpoint L11.5: teste com broker embutido (`rumqttd`): pedido publicado, decisão da placa e do celular, primeira vence e pedido limpo.
 
 ## L11.6 — Instalar os hooks com consentimento
 

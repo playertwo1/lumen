@@ -256,9 +256,12 @@ impl Esp32Runtime {
             let _ = tx.send(true);
         }
         if let Some(handle) = self.mqtt_handle.lock().unwrap().take() {
+            let (tx_done, rx_done) = std::sync::mpsc::channel();
             tauri::async_runtime::spawn(async move {
                 let _ = handle.shutdown().await;
+                let _ = tx_done.send(());
             });
+            let _ = rx_done.recv_timeout(Duration::from_millis(1200));
         }
         self.mqtt_state.set_connected(false);
         self.running.store(false, Ordering::SeqCst);
@@ -352,8 +355,8 @@ pub(crate) fn clear_mqtt_config_from_vault() -> Result<(), String> {
     Ok(())
 }
 
-struct RuntimeMqttCallbacks {
-    rt: Arc<Esp32Runtime>,
+pub(crate) struct RuntimeMqttCallbacks {
+    pub(crate) rt: Arc<Esp32Runtime>,
 }
 
 impl mqtt::MqttCallbacks for RuntimeMqttCallbacks {
@@ -437,12 +440,15 @@ impl mqtt::MqttCallbacks for RuntimeMqttCallbacks {
         handle_mqtt_media_action(&self.rt, action)
     }
 
-    fn on_agent_decision(&self, plain_json: &str) {
-        handle_mqtt_agent_decision(&self.rt, plain_json);
+    fn on_agent_decision(&self, from: &str, plain_json: &str) {
+        handle_mqtt_agent_decision(&self.rt, from, plain_json);
     }
 }
 
-pub(crate) fn handle_mqtt_agent_decision(rt: &Esp32Runtime, plain_json: &str) {
+pub(crate) fn handle_mqtt_agent_decision(rt: &Esp32Runtime, from: &str, plain_json: &str) {
+    if !matches!(from, "placa" | "celular") {
+        return;
+    }
     let Ok(val) = serde_json::from_str::<serde_json::Value>(plain_json) else {
         return;
     };
@@ -486,6 +492,109 @@ pub(crate) fn apply_pipe_outcome(app: &AppHandle, pid: &str, verdict: interactio
             let _ = tauri::Emitter::emit_to(app, "island", "approval-expired", pid);
         }
     }
+}
+
+pub fn spawn_telemetry_loop(
+    rt: Arc<Esp32Runtime>,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let mut last_request_key: Option<(String, String, bool)> = None;
+        let mut last_status_normalized: Option<serde_json::Value> = None;
+        let mut last_status_published_at: Option<Instant> = None;
+        let mut last_usage_normalized: Option<serde_json::Value> = None;
+        let mut last_max_tracker_normalized: Option<serde_json::Value> = None;
+        let mut last_max_tracker_published_at: Option<Instant> = None;
+
+        let notify = rt.interactions.notify.clone();
+
+        loop {
+            if *shutdown_rx.borrow() {
+                break;
+            }
+
+            tokio::select! {
+                _ = shutdown_rx.changed() => break,
+                _ = notify.notified() => {}
+                _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+            }
+
+            if *shutdown_rx.borrow() {
+                break;
+            }
+
+            let handle = {
+                let h = rt.mqtt_handle.lock().unwrap();
+                h.clone()
+            };
+            let Some(handle) = handle else {
+                continue;
+            };
+            if !rt.mqtt_state.snapshot().connected {
+                continue;
+            }
+
+            // 1. pc/agentes/pedido: imediato quando muda (request_id, view_sha256, can_approve), limpa com None quando vazio
+            let now_ms = interactions::InteractionStore::now_ms();
+            let pending = rt.interactions.pending_public(now_ms);
+            if let Some(ref val) = pending {
+                let req_id = val.get("request_id").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+                let view_sha = val.get("view_sha256").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+                let can_appr = val.get("can_approve").and_then(serde_json::Value::as_bool).unwrap_or(false);
+                let current_key = (req_id, view_sha, can_appr);
+                if last_request_key.as_ref() != Some(&current_key) {
+                    last_request_key = Some(current_key);
+                    let _ = handle.publish_agent_request(Some(val.to_string())).await;
+                }
+            } else if last_request_key.is_some() {
+                last_request_key = None;
+                let _ = handle.publish_agent_request(None).await;
+            }
+
+            // 2. pc/agentes/status: quando muda (sem seq e sem expires_in_s / expires_in_ms), <= 1 msg/s
+            let snap = build_agent_status_snapshot(&rt);
+            let mut norm_status = snap.clone();
+            if let Some(obj) = norm_status.as_object_mut() {
+                obj.remove("seq");
+                if let Some(p) = obj.get_mut("pending").and_then(serde_json::Value::as_object_mut) {
+                    p.remove("expires_in_s");
+                    p.remove("expires_in_ms");
+                }
+            }
+            if last_status_normalized.as_ref() != Some(&norm_status) {
+                let can_publish = last_status_published_at
+                    .map_or(true, |t| t.elapsed() >= Duration::from_secs(1));
+                if can_publish {
+                    last_status_normalized = Some(norm_status);
+                    last_status_published_at = Some(Instant::now());
+                    let _ = handle.publish_agent_status(snap.to_string()).await;
+                }
+            }
+
+            // 3. pc/uso: quando muda (sem updatedAt)
+            let usage = build_enriched_usage_payload(&rt);
+            let mut norm_usage = usage.clone();
+            if let Some(obj) = norm_usage.as_object_mut() {
+                obj.remove("updatedAt");
+            }
+            if last_usage_normalized.as_ref() != Some(&norm_usage) {
+                last_usage_normalized = Some(norm_usage);
+                let _ = handle.publish_usage(usage.to_string()).await;
+            }
+
+            // 4. pc/max-tracker: quando muda, <= 1 msg a cada 300s
+            let can_publish_max = last_max_tracker_published_at
+                .map_or(true, |t| t.elapsed() >= Duration::from_secs(300));
+            if can_publish_max {
+                let max_payload = build_max_tracker_payload(&rt);
+                if last_max_tracker_normalized.as_ref() != Some(&max_payload) {
+                    last_max_tracker_normalized = Some(max_payload.clone());
+                    last_max_tracker_published_at = Some(Instant::now());
+                    let _ = handle.publish_max_tracker(max_payload.to_string()).await;
+                }
+            }
+        }
+    });
 }
 
 pub(crate) fn handle_mqtt_media_action(
@@ -707,6 +816,7 @@ pub fn apply_runtime_config(rt: &Arc<Esp32Runtime>, cfg: &settings::Settings) {
         ) {
             Ok(handle) => {
                 *rt.mqtt_handle.lock().unwrap() = Some(handle);
+                spawn_telemetry_loop(rt.clone(), rx.clone());
             }
             Err(err) => {
                 rt.mqtt_state.set_last_error(Some(err));
