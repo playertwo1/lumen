@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.7.34",
+      "items": [
+        {
+          "icon": "bolt",
+          "title": { "pt-BR": "Menos tráfego MQTT com a placa" },
+          "detail": { "pt-BR": "A placa recebe o status dos agentes com bem menos tráfego, cabendo na cota grátis do broker." }
+        }
+      ]
+    },
+    {
       "version": "0.7.33",
       "items": [
         {

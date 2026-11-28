@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows 0.7.34 — 28 de novembro de 2026 *(Lumen; validação real pendente)*
+
+- **Menos tráfego MQTT com a placa:** o status dos agentes deixa de ser reenviado a cada segundo quando nada importante mudou, cabendo na cota grátis do broker sem fazer os agentes sumirem da placa.
+
 ## Windows 0.7.33 — 28 de novembro de 2026 *(Lumen; validação real pendente)*
 
 - **Lumen não fecha mais ao parear a placa por MQTT:** na 0.7.32, colar o código da placa (e todo início depois disso) fechava o app. O cliente MQTT agora sobe no runtime do app.

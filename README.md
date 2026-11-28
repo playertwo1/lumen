@@ -7,7 +7,7 @@
 **Ilha flutuante inteligente para Windows que acompanha seus agentes de IA, permissões, ditado offline, anotações e integrações sem tirar você do foco.**
 
 <p>
-  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.33"><img src="https://img.shields.io/badge/release-windows--v0.7.33-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.33"></a>
+  <a href="https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.34"><img src="https://img.shields.io/badge/release-windows--v0.7.34-0A84FF?style=for-the-badge&logo=github" alt="Versão windows-v0.7.34"></a>
   <a href="https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 e 11"></a>
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=black" alt="Tauri 2">
   <img src="https://img.shields.io/badge/Rust-TypeScript-F74C00?style=for-the-badge&logo=rust&logoColor=white" alt="Rust e TypeScript">
@@ -60,10 +60,10 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 
 | Instalador | Escopo | Link direto |
 |---|---|---|
+| [`windows-v0.7.34`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.34) | 28 nov. 2026 | A placa recebe o status dos agentes com bem menos tráfego, cabendo na cota grátis do broker |
 | [`windows-v0.7.33`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.33) | 28 nov. 2026 | Lumen não fecha mais ao colar o código da placa, e a placa para de mostrar agentes depois de fechar o Lumen |
 | [`windows-v0.7.32`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.32) | 28 nov. 2026 | Placa ESP32 por MQTT em qualquer rede, agentes e perguntas respondidas pela placa, previsão e histórico de cota |
 | [`windows-v0.7.31`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.31) | 27 nov. 2026 | Painel de uso da placa mostra cota zerada (0%) em vez de números antigos, além de Claude, Antigravity e selo LAN ao vivo |
-| [`windows-v0.7.30`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.30) | 27 nov. 2026 | Ponte nativa com a placa ESP32-S3 AMOLED (voz, tarefas LAN/relay, mídia e painel de cotas/agentes) |
 | **Setup do usuário (`.exe`)** | Instala apenas para o usuário atual (sem exigir admin) | [`Lumen-Windows-setup.exe`](https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows-setup.exe) |
 | **Instalador de sistema (`.msi`)** | Instalação padrão Windows Installer | [`Lumen-Windows.msi`](https://github.com/playertwo1/lumen/releases/download/windows-latest/Lumen-Windows.msi) |
 
@@ -71,10 +71,11 @@ Baixe o instalador para **Windows 10 / 11** diretamente das releases de [`player
 > Os instaladores ainda não possuem certificado Authenticode, então o SmartScreen pode exibir aviso de editor desconhecido; clique em **Mais informações → Executar mesmo assim**. Após instalar, novas versões podem ser verificadas em **Ajustes → Geral → Atualizações** com conferência de SHA-256.
 
 <details>
-<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.33</code></summary>
+<summary><b>Histórico recente de versões do Lumen (Windows)</b> — ver destaques de <code>0.6.13</code> a <code>0.7.34</code></summary>
 
 | Versão | Data | Destaques |
 |---|---|---|
+| [`windows-v0.7.30`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.30) | 27 nov. 2026 | Ponte nativa com a placa ESP32-S3 AMOLED (voz, tarefas LAN/relay, mídia e painel de cotas/agentes) |
 | [`windows-v0.7.29`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.29) | 26 nov. 2026 | Alertas de cota voltam a aparecer depois de um aviso comum |
 | [`windows-v0.7.28`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.28) | 25 nov. 2026 | Cotas de 5h e semana do Codex e do Antigravity voltam a aparecer |
 | [`windows-v0.7.27`](https://github.com/playertwo1/lumen/releases/tag/windows-v0.7.27) | 25 nov. 2026 | Hook dos agentes atualizado mesmo com sessões abertas |
