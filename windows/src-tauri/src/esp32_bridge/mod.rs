@@ -502,6 +502,134 @@ pub(crate) fn apply_pipe_outcome(app: &AppHandle, pid: &str, verdict: interactio
     }
 }
 
+pub const STATUS_IMMEDIATE_MIN_INTERVAL: Duration = Duration::from_secs(1);
+pub const STATUS_MINOR_MIN_INTERVAL: Duration = Duration::from_secs(10);
+pub const STATUS_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+pub const USAGE_MIN_INTERVAL: Duration = Duration::from_secs(60);
+
+pub fn normalize_agent_status(snap: &serde_json::Value) -> serde_json::Value {
+    let mut norm = snap.clone();
+    if let Some(obj) = norm.as_object_mut() {
+        obj.remove("seq");
+        if let Some(p) = obj
+            .get_mut("pending")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            p.remove("expires_in_s");
+            p.remove("expires_in_ms");
+        }
+        if let Some(agents) = obj
+            .get_mut("agents")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            for prov in agents.values_mut() {
+                if let Some(jobs) = prov
+                    .get_mut("jobs")
+                    .and_then(serde_json::Value::as_array_mut)
+                {
+                    for job in jobs.iter_mut() {
+                        if let Some(job_obj) = job.as_object_mut() {
+                            job_obj.remove("updated_ms");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    norm
+}
+
+fn status_has_any_jobs(norm: &serde_json::Value) -> bool {
+    norm.get("agents")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|agents| {
+            agents.values().any(|prov| {
+                prov.get("jobs")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|arr| !arr.is_empty())
+            })
+        })
+}
+
+fn job_ids_and_states(prov: Option<&serde_json::Value>) -> Vec<(String, String)> {
+    prov.and_then(|p| p.get("jobs"))
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .map(|j| {
+                    let task_id = j
+                        .get("task_id")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    let state = j
+                        .get("state")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    (task_id, state)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn has_important_status_change(
+    prev_norm: &serde_json::Value,
+    now_norm: &serde_json::Value,
+) -> bool {
+    if prev_norm.get("pending") != now_norm.get("pending") {
+        return true;
+    }
+    for prov in ["claude", "codex"] {
+        let prev_p = prev_norm.get("agents").and_then(|a| a.get(prov));
+        let now_p = now_norm.get("agents").and_then(|a| a.get(prov));
+        if prev_p.and_then(|p| p.get("active_count")) != now_p.and_then(|p| p.get("active_count"))
+        {
+            return true;
+        }
+        if job_ids_and_states(prev_p) != job_ids_and_states(now_p) {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn status_publish_decision(
+    prev_norm: Option<&serde_json::Value>,
+    prev_at: Option<Instant>,
+    now_norm: &serde_json::Value,
+    now: Instant,
+) -> bool {
+    match prev_norm {
+        None => prev_at.map_or(true, |t| {
+            now.saturating_duration_since(t) >= STATUS_IMMEDIATE_MIN_INTERVAL
+        }),
+        Some(prev) => {
+            let elapsed = prev_at.map(|t| now.saturating_duration_since(t));
+            if prev != now_norm {
+                if has_important_status_change(prev, now_norm) {
+                    elapsed.map_or(true, |d| d >= STATUS_IMMEDIATE_MIN_INTERVAL)
+                } else {
+                    elapsed.map_or(true, |d| d >= STATUS_MINOR_MIN_INTERVAL)
+                }
+            } else if status_has_any_jobs(now_norm) {
+                elapsed.map_or(true, |d| d >= STATUS_ACTIVE_REFRESH_INTERVAL)
+            } else {
+                false
+            }
+        }
+    }
+}
+
+pub fn normalize_usage_payload(usage: &serde_json::Value) -> serde_json::Value {
+    let mut norm = usage.clone();
+    if let Some(obj) = norm.as_object_mut() {
+        obj.remove("updatedAt");
+    }
+    norm
+}
+
 pub fn spawn_telemetry_loop(
     rt: Arc<Esp32Runtime>,
     mut shutdown_rx: watch::Receiver<bool>,
@@ -511,6 +639,7 @@ pub fn spawn_telemetry_loop(
         let mut last_status_normalized: Option<serde_json::Value> = None;
         let mut last_status_published_at: Option<Instant> = None;
         let mut last_usage_normalized: Option<serde_json::Value> = None;
+        let mut last_usage_published_at: Option<Instant> = None;
         let mut last_max_tracker_normalized: Option<serde_json::Value> = None;
         let mut last_max_tracker_published_at: Option<Instant> = None;
 
@@ -559,35 +688,37 @@ pub fn spawn_telemetry_loop(
                 let _ = handle.publish_agent_request(None).await;
             }
 
-            // 2. pc/agentes/status: quando muda (sem seq e sem expires_in_s / expires_in_ms), <= 1 msg/s
+            let now = Instant::now();
+
+            // 2. pc/agentes/status: mudanças importantes >= 1s, mudanças menores >= 10s, refresh com jobs >= 60s
             let snap = build_agent_status_snapshot(&rt);
-            let mut norm_status = snap.clone();
-            if let Some(obj) = norm_status.as_object_mut() {
-                obj.remove("seq");
-                if let Some(p) = obj.get_mut("pending").and_then(serde_json::Value::as_object_mut) {
-                    p.remove("expires_in_s");
-                    p.remove("expires_in_ms");
-                }
-            }
-            if last_status_normalized.as_ref() != Some(&norm_status) {
-                let can_publish = last_status_published_at
-                    .map_or(true, |t| t.elapsed() >= Duration::from_secs(1));
-                if can_publish {
-                    last_status_normalized = Some(norm_status);
-                    last_status_published_at = Some(Instant::now());
-                    let _ = handle.publish_agent_status(snap.to_string()).await;
-                }
+            let norm_status = normalize_agent_status(&snap);
+            if status_publish_decision(
+                last_status_normalized.as_ref(),
+                last_status_published_at,
+                &norm_status,
+                now,
+            ) {
+                last_status_normalized = Some(norm_status);
+                last_status_published_at = Some(now);
+                let _ = handle.publish_agent_status(snap.to_string()).await;
             }
 
-            // 3. pc/uso: quando muda (sem updatedAt)
-            let usage = build_enriched_usage_payload(&rt);
-            let mut norm_usage = usage.clone();
-            if let Some(obj) = norm_usage.as_object_mut() {
-                obj.remove("updatedAt");
-            }
-            if last_usage_normalized.as_ref() != Some(&norm_usage) {
-                last_usage_normalized = Some(norm_usage);
-                let _ = handle.publish_usage(usage.to_string()).await;
+            // 3. pc/uso: quando muda (sem updatedAt), <= 1 msg a cada 60s.
+            // A placa (`hub.c`: `ler_uso` / `fmt_reset`) não calcula o tempo restante
+            // localmente a partir do recebimento: ela exibe `*ResetMin` e `*OffsetMin`
+            // recebidos no payload. Limitamos a no máximo 1 publicação a cada 60 s
+            // (`USAGE_MIN_INTERVAL`) quando o payload normalizado muda.
+            let can_publish_usage = last_usage_published_at
+                .map_or(true, |t| now.saturating_duration_since(t) >= USAGE_MIN_INTERVAL);
+            if can_publish_usage {
+                let usage = build_enriched_usage_payload(&rt);
+                let norm_usage = normalize_usage_payload(&usage);
+                if last_usage_normalized.as_ref() != Some(&norm_usage) {
+                    last_usage_normalized = Some(norm_usage);
+                    last_usage_published_at = Some(now);
+                    let _ = handle.publish_usage(usage.to_string()).await;
+                }
             }
 
             // 4. pc/max-tracker: quando muda, <= 1 msg a cada 300s

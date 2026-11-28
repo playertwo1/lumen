@@ -686,3 +686,226 @@ async fn l11_2_loopback_hook_guards_and_end_to_end_interactions() {
 
     let _ = tx.send(true);
 }
+
+fn sample_agent_status_json(
+    seq: u64,
+    active_count: usize,
+    state: &str,
+    activity: &str,
+    model: &str,
+    effort: &str,
+    updated_ms: u64,
+    pending: Option<Value>,
+) -> Value {
+    let mut obj = json!({
+        "v": 2,
+        "seq": seq,
+        "agents": {
+            "claude": {
+                "active_count": active_count,
+                "jobs": [
+                    {
+                        "task_id": "job-1",
+                        "state": state,
+                        "activity": activity,
+                        "model": model,
+                        "effort": effort,
+                        "updated_ms": updated_ms
+                    }
+                ]
+            },
+            "codex": {
+                "active_count": 0,
+                "jobs": []
+            }
+        }
+    });
+    if let Some(p) = pending {
+        obj.as_object_mut()
+            .unwrap()
+            .insert("pending".to_string(), p);
+    }
+    obj
+}
+
+#[test]
+fn status_publish_decision_only_updated_ms_changed_does_not_publish() {
+    let t0 = std::time::Instant::now();
+    let prev = super::normalize_agent_status(&sample_agent_status_json(
+        1, 1, "running", "Read", "opus", "high", 100, None,
+    ));
+    let now_s = super::normalize_agent_status(&sample_agent_status_json(
+        2, 1, "running", "Read", "opus", "high", 25_000, None,
+    ));
+    assert_eq!(prev, now_s);
+    assert!(!super::status_publish_decision(
+        Some(&prev),
+        Some(t0),
+        &now_s,
+        t0 + std::time::Duration::from_secs(5),
+    ));
+    assert!(!super::status_publish_decision(
+        Some(&prev),
+        Some(t0),
+        &now_s,
+        t0 + std::time::Duration::from_secs(59),
+    ));
+}
+
+#[test]
+fn status_publish_decision_state_changed_publishes_immediately() {
+    let t0 = std::time::Instant::now();
+    let prev = super::normalize_agent_status(&sample_agent_status_json(
+        1, 1, "running", "Bash", "opus", "high", 100, None,
+    ));
+    let now_s = super::normalize_agent_status(&sample_agent_status_json(
+        2, 1, "waiting", "Bash", "opus", "high", 200, None,
+    ));
+    assert!(!super::status_publish_decision(
+        Some(&prev),
+        Some(t0),
+        &now_s,
+        t0 + std::time::Duration::from_millis(500),
+    ));
+    assert!(super::status_publish_decision(
+        Some(&prev),
+        Some(t0),
+        &now_s,
+        t0 + super::STATUS_IMMEDIATE_MIN_INTERVAL,
+    ));
+}
+
+#[test]
+fn status_publish_decision_only_activity_model_or_effort_changed_waits_10s() {
+    let t0 = std::time::Instant::now();
+    let prev = super::normalize_agent_status(&sample_agent_status_json(
+        1, 1, "running", "Read", "sonnet", "medium", 100, None,
+    ));
+    for (activity, model, effort) in [
+        ("Edit", "sonnet", "medium"),
+        ("Read", "opus", "medium"),
+        ("Read", "sonnet", "high"),
+    ] {
+        let now_s = super::normalize_agent_status(&sample_agent_status_json(
+            2, 1, "running", activity, model, effort, 200, None,
+        ));
+        assert!(!super::status_publish_decision(
+            Some(&prev),
+            Some(t0),
+            &now_s,
+            t0 + std::time::Duration::from_secs(1),
+        ));
+        assert!(!super::status_publish_decision(
+            Some(&prev),
+            Some(t0),
+            &now_s,
+            t0 + std::time::Duration::from_secs(9),
+        ));
+        assert!(super::status_publish_decision(
+            Some(&prev),
+            Some(t0),
+            &now_s,
+            t0 + super::STATUS_MINOR_MIN_INTERVAL,
+        ));
+    }
+}
+
+#[test]
+fn status_publish_decision_active_job_without_change_refreshes_at_60s() {
+    let t0 = std::time::Instant::now();
+    let prev = super::normalize_agent_status(&sample_agent_status_json(
+        1, 1, "running", "Read", "opus", "high", 100, None,
+    ));
+    let now_s = super::normalize_agent_status(&sample_agent_status_json(
+        2, 1, "running", "Read", "opus", "high", 59_000, None,
+    ));
+    assert!(!super::status_publish_decision(
+        Some(&prev),
+        Some(t0),
+        &now_s,
+        t0 + std::time::Duration::from_secs(59),
+    ));
+    assert!(super::status_publish_decision(
+        Some(&prev),
+        Some(t0),
+        &now_s,
+        t0 + super::STATUS_ACTIVE_REFRESH_INTERVAL,
+    ));
+}
+
+#[test]
+fn status_publish_decision_no_jobs_never_publishes_refresh() {
+    let t0 = std::time::Instant::now();
+    let prev = super::normalize_agent_status(&json!({
+        "v": 2,
+        "seq": 1,
+        "agents": {
+            "claude": { "active_count": 0, "jobs": [] },
+            "codex": { "active_count": 0, "jobs": [] }
+        }
+    }));
+    let now_s = super::normalize_agent_status(&json!({
+        "v": 2,
+        "seq": 99,
+        "agents": {
+            "claude": { "active_count": 0, "jobs": [] },
+            "codex": { "active_count": 0, "jobs": [] }
+        }
+    }));
+    assert!(!super::status_publish_decision(
+        Some(&prev),
+        Some(t0),
+        &now_s,
+        t0 + std::time::Duration::from_secs(60),
+    ));
+    assert!(!super::status_publish_decision(
+        Some(&prev),
+        Some(t0),
+        &now_s,
+        t0 + std::time::Duration::from_secs(3600),
+    ));
+}
+
+#[test]
+fn status_publish_decision_pending_appeared_or_removed_publishes_immediately() {
+    let t0 = std::time::Instant::now();
+    let without_pending = super::normalize_agent_status(&sample_agent_status_json(
+        1, 1, "running", "Bash", "opus", "high", 100, None,
+    ));
+    let with_pending = super::normalize_agent_status(&sample_agent_status_json(
+        2,
+        1,
+        "running",
+        "Bash",
+        "opus",
+        "high",
+        100,
+        Some(json!({
+            "request_id": "req-1",
+            "expires_in_s": 50,
+            "expires_in_ms": 50_000
+        })),
+    ));
+
+    // Pending apareceu -> publica em >= 1s (e bloqueia < 1s)
+    assert!(!super::status_publish_decision(
+        Some(&without_pending),
+        Some(t0),
+        &with_pending,
+        t0 + std::time::Duration::from_millis(500),
+    ));
+    assert!(super::status_publish_decision(
+        Some(&without_pending),
+        Some(t0),
+        &with_pending,
+        t0 + super::STATUS_IMMEDIATE_MIN_INTERVAL,
+    ));
+
+    // Pending removido -> publica em >= 1s
+    assert!(super::status_publish_decision(
+        Some(&with_pending),
+        Some(t0),
+        &without_pending,
+        t0 + super::STATUS_IMMEDIATE_MIN_INTERVAL,
+    ));
+}
